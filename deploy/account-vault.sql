@@ -130,6 +130,9 @@ BEGIN
     RETURN jsonb_build_object('id', a.id::text, 'credential_storage', 'vault', 'credentials', a.credentials,
         'credential_version', a.s2a_credential_version, 'platform', a.platform, 'type', a.type,
         'privacy_mode', a.extra->>'privacy_mode',
+        'websocket_settings', (SELECT coalesce(jsonb_object_agg(key,value),'{}'::jsonb) FROM jsonb_each(coalesce(a.extra,'{}'::jsonb)) WHERE key IN (
+            'openai_oauth_responses_websockets_v2_mode','openai_apikey_responses_websockets_v2_mode',
+            'openai_oauth_responses_websockets_v2_enabled','openai_apikey_responses_websockets_v2_enabled','responses_websockets_v2_enabled','openai_ws_enabled')),
         'codex_settings', (SELECT jsonb_build_object(
             'version',max(value) FILTER(WHERE key='openai_codex_client_version'),
             'synced',max(value) FILTER(WHERE key='openai_codex_client_version_synced'),

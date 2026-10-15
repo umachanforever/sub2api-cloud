@@ -49,7 +49,7 @@ Antigravity OAuth accounts expose their provider model catalog and Gemini-native
 
 TypeSafe API-key accounts support `POST /v1/systemone` with the native `jev-latest` model and `noul`, `choice`, and `score` questions. Requests are non-streaming; provider JSON responses pass through unchanged, with a 4 MiB response limit. Model discovery uses the same group-bound key.
 
-OpenAI groups also support native Responses WebSocket connections through `GET /v1/responses`, `/responses`, or `/backend-api/codex/responses`. Use a Bearer key in the upgrade request and send `response.create` JSON frames. Each turn rechecks access, records its own usage, and stays on the same provider account; `previous_response_id` continues the upstream conversation. A model change requires a new connection. Connections use the hosted gateway’s 120-second lifetime.
+OpenAI groups also support native Responses WebSocket connections through `GET /v1/responses`, `/responses`, or `/backend-api/codex/responses`. Use a Bearer key in the upgrade request and send `response.create` JSON frames. Each turn rechecks access, records its own usage, and stays on the same provider account; `previous_response_id` continues the upstream conversation. A model change requires a new connection. The account’s WebSocket disable switch and `http_bridge` selection apply in the cloud. OpenAI `http_bridge` mode and Grok Responses WebSocket use HTTP streaming with in-connection conversation and tool-call history replay. Connections use the hosted gateway’s 120-second lifetime.
 
 ## Local Supabase
 

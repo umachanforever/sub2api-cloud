@@ -18,6 +18,7 @@ import {
 } from "./gateway.ts";
 
 export type Account = StoredCredentials & {
+  websocket_settings?: Record<string,unknown>;
   codex_settings?: import("./codex_identity.ts").CodexSettings;
   id: string;
   platform?: import("./gateway.ts").Platform;

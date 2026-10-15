@@ -1,3 +1,5 @@
+import {responsesWebSocketMode} from './responses_ws_mode.ts';
+import {bridgeInput,bridgeResponses,type BridgeHistory} from './responses_http_bridge.ts';
 import NodeWebSocket,{type ClientOptions} from 'ws';
 import {ProxyAgent} from 'proxy-agent';
 import {Database,HttpError} from './db.ts';
@@ -20,9 +22,10 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  const keyHash=await hashKey(token),clientIp=request.headers.get('cf-connecting-ip')?.trim()||request.headers.get('x-real-ip')?.trim()||request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||null;
  const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
  if(!policy||policy.error)throw new HttpError(policy?.status??503,policy?.error??'database_unavailable');
- if(policy.platform!=='openai')throw new HttpError(400,'responses_websocket_requires_openai_group');
+ if(!['openai','grok'].includes(policy.platform??''))throw new HttpError(400,'responses_websocket_group_required');
  const {response,socket:client}=upgrade(request),signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
  let upstream:NodeWebSocket|undefined,agent:ProxyAgent|undefined,ended=false,model:string|undefined,upstreamModel:string|undefined,pinned:Account|undefined;
+ let history:BridgeHistory|undefined,sessionMode:string|undefined;
  let eventBytes=0,eventCount=0;
  let pending=0,pendingBytes=0,sequence=Promise.resolve(),events=Promise.resolve();
  let active:{reservation:Reservation;started:number;usage:Usage;settled?:Promise<void>;resolve:()=>void;done:Promise<void>}|undefined;
@@ -53,6 +56,10 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  };
  const abort=()=>{const timeout=signal.reason instanceof DOMException&&signal.reason.name==='TimeoutError';void close(timeout?1011:1001,timeout?504:499,timeout?'failed':'cancelled');};
  signal.addEventListener('abort',abort,{once:true});
+ const deliver=async(event:Record<string,any>,text:string)=>{
+  if(active){if(event.type==='response.output_text.delta'&&typeof event.delta==='string'&&event.delta&&active.usage.firstTokenMs===undefined)active.usage.firstTokenMs=Math.min(2147483647,Date.now()-active.started);active.usage=nativeUsage(active.reservation.account.platform??'openai','responses',event,active.usage);if(['response.completed','response.done','response.failed','response.incomplete','error'].includes(event.type))await finish(event.type==='error'?502:200,event.type==='error'?'failed':event.type==='response.incomplete'?'incomplete':event.type==='response.failed'?'failed':'completed');}
+  if(!ended){if(client.bufferedAmount+new TextEncoder().encode(text).length>MAX)throw new HttpError(502,'upstream_frame_too_large');client.send(text);}
+ };
  const connect=async(reservation:Reservation,body:Record<string,unknown>)=>{
   const account=reservation.account;let headers:Headers,target:URL;
   if(account.type==='apikey'){
@@ -69,14 +76,13 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   upstream.on('close',code=>{void close(code===1000?1000:1011,active?502:200,active?'incomplete':'completed');});
   upstream.on('message',(bytes,binary)=>{
    if(ended)return;
-   const size=bytes.byteLength;eventBytes+=size;eventCount++;
+   const size=Array.isArray(bytes)?bytes.reduce((sum,chunk)=>sum+chunk.byteLength,0):bytes.byteLength;eventBytes+=size;eventCount++;
    if(eventBytes>MAX||eventCount>512){fail(new HttpError(502,'upstream_frame_too_large'));return;}
    events=events.then(async()=>{
     if(binary)throw new HttpError(502,'invalid_upstream_frame');
     const text=bytes.toString();if(new TextEncoder().encode(text).length>MAX||client.bufferedAmount+new TextEncoder().encode(text).length>MAX)throw new HttpError(502,'upstream_frame_too_large');
     const event=JSON.parse(text);
-    if(active){if(event.type==='response.output_text.delta'&&typeof event.delta==='string'&&event.delta&&active.usage.firstTokenMs===undefined)active.usage.firstTokenMs=Math.min(2147483647,Date.now()-active.started);active.usage=nativeUsage('openai','responses',event,active.usage);if(['response.completed','response.done','response.failed','response.incomplete','error'].includes(event.type))await finish(event.type==='error'?502:200,event.type==='error'?'failed':event.type==='response.incomplete'?'incomplete':event.type==='response.failed'?'failed':'completed');}
-    if(!ended)client.send(text);
+    await deliver(event,text);
    }).catch(fail).finally(()=>{eventBytes-=size;eventCount--;});
   });
   await new Promise<void>((resolve,reject)=>{
@@ -96,12 +102,20 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   if(!reservation||reservation.error)throw new HttpError(reservation?.status??503,reservation?.error??'database_unavailable');
   let resolve!:()=>void;const done=new Promise<void>(r=>{resolve=r;});active={reservation,started:Date.now(),usage:{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'incomplete'},resolve,done};
   if(ended){await finish(499,'cancelled');return;}
-  if(reservation.account.platform!=='openai'||!['apikey','oauth'].includes(reservation.account.type)||pinned&&(reservation.account.id!==pinned.id||reservation.account.credential_version!==pinned.credential_version))throw new HttpError(409,'websocket_account_changed');
-  const mapped=reservation.upstream_model??(reservation.model_sources?mappedTarget(reservation.model_sources.mapping,model,'openai'):undefined)??model;
-  const next=defaultSolModel(mapped)??mapped;if(upstreamModel&&next!==upstreamModel)throw new HttpError(409,'model_change_requires_reconnect');upstreamModel=next;
+  if(reservation.account.platform!==policy.platform||!['apikey','oauth'].includes(reservation.account.type)||pinned&&(reservation.account.id!==pinned.id||reservation.account.credential_version!==pinned.credential_version))throw new HttpError(409,'websocket_account_changed');
+  const mapped=reservation.upstream_model??(reservation.model_sources?mappedTarget(reservation.model_sources.mapping,model,reservation.account.platform??'openai'):undefined)??model;
+  const next=reservation.account.platform==='openai'?defaultSolModel(mapped)??mapped:mapped;if(upstreamModel&&next!==upstreamModel)throw new HttpError(409,'model_change_requires_reconnect');upstreamModel=next;
   let body:Record<string,unknown>={...payload,model:next};delete body.type;delete body.stream;
-  if(reservation.account.type==='oauth'){const input=body.input,empty=input===undefined||Array.isArray(input)&&!input.length;body=normalizeBody({...body,input:empty?[{role:'user',content:''}]:input});if(empty){if(input===undefined)delete body.input;else body.input=[];}delete body.stream;}
+  if(reservation.account.type==='oauth'&&reservation.account.platform==='openai'){const input=body.input,empty=input===undefined||Array.isArray(input)&&!input.length;body=normalizeBody({...body,input:empty?[{role:'user',content:''}]:input});if(empty){if(input===undefined)delete body.input;else body.input=[];}delete body.stream;}
+  const mode=responsesWebSocketMode(reservation.account);
+  if(mode==='off')throw new HttpError(403,'websocket_disabled_for_account');
+  if(sessionMode&&mode!==sessionMode)throw new HttpError(409,'websocket_mode_changed');sessionMode??=mode;
   pinned??=reservation.account;
+  if(mode==='http_bridge'){
+    const bridged=bridgeInput(body,history);if(new TextEncoder().encode(JSON.stringify(bridged)).length>MAX)throw new HttpError(413,'websocket_context_too_large');
+    history=await bridgeResponses(db,reservation.account,bridged,request,signal,deliver);
+    return;
+  }
   if(!upstream)await connect(reservation,body);
   if(ended||signal.aborted)return;
   const frame=JSON.stringify({...body,type:'response.create'});

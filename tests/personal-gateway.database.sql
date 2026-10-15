@@ -312,6 +312,9 @@ BEGIN
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
  r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',b::text,'native_stream',true));
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'WebSocket account affinity lost'; END IF;
+ UPDATE public.accounts SET extra='{"openai_apikey_responses_websockets_v2_mode":"off","unrelated_fixture":"private"}'::jsonb WHERE id=b;
+ IF public.s2a_gateway_account_snapshot(b)->'websocket_settings' IS DISTINCT FROM '{"openai_apikey_responses_websockets_v2_mode":"off"}'::jsonb THEN RAISE EXCEPTION 'WebSocket configuration snapshot mismatch'; END IF;
+
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',foreign_account::text))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'WebSocket cross-group account accepted'; END IF;
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"websocket_account":"bad"}'::jsonb)->>'error' IS DISTINCT FROM 'invalid_websocket_account' THEN RAISE EXCEPTION 'WebSocket invalid account accepted'; END IF;

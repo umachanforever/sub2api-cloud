@@ -54,7 +54,7 @@ Supabase 每分钟执行缓存修改恢复。签名任务接管超时租约、�
 
 TypeSafe API Key 账号支持 `POST /v1/systemone`，使用原生 `jev-latest` 模型及 `noul`、`choice`、`score` 问题格式。接口采用非流式请求，供应商 JSON 响应原样返回，响应上限为 4 MiB；模型发现使用同一分组下的调用密钥。
 
-OpenAI 分组支持原生 Responses WebSocket：通过 `GET /v1/responses`、`/responses` 或 `/backend-api/codex/responses` 建立连接，升级请求携带 Bearer 密钥，随后发送 `response.create` JSON 帧。每轮独立检查权限、记录用量，并绑定同一供应商账号；使用 `previous_response_id` 继续上游会话。切换模型需要重新连接，连接期限为云端网关的 120 秒。
+OpenAI 分组支持原生 Responses WebSocket：通过 `GET /v1/responses`、`/responses` 或 `/backend-api/codex/responses` 建立连接，升级请求携带 Bearer 密钥，随后发送 `response.create` JSON 帧。每轮独立检查权限、记录用量，并绑定同一供应商账号；使用 `previous_response_id` 继续上游会话。切换模型需要重新连接，账户 WebSocket 停用开关及 `http_bridge` 模式选择在云端生效。OpenAI 的 `http_bridge` 模式及 Grok Responses WebSocket 通过 HTTP 流式请求桥接，并在连接内续接对话和工具调用历史。连接期限为云端网关的 120 秒。
 
 ## 本地 Supabase
 
