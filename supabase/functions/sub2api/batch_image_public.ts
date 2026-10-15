@@ -11,6 +11,7 @@ export function publicBatchImage(row:Row):Row{
   item_count:row.item_count??0,success_count:row.success_count??0,fail_count:row.fail_count??0,
   estimated_cost:row.estimated_cost??0,hold_amount:row.hold_amount??0,actual_cost:row.actual_cost??null,
   created_at:timestamp(row.created_at),submitted_at:timestamp(row.submitted_at),settled_at:timestamp(row.settled_at),
+  ...(typeof row.output_deletion_pending==='boolean'?{output_deletion_pending:row.output_deletion_pending}:{}),
   ...(row.parent_batch_id?{parent_batch_id:row.parent_batch_id}:{}),
   ...(row.downloaded_at?{downloaded_at:timestamp(row.downloaded_at)}:{}),
   ...(row.output_deleted_at?{output_deleted_at:timestamp(row.output_deleted_at)}:{}),

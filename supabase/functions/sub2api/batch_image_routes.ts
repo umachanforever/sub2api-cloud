@@ -59,9 +59,12 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
  if(!match)throw new HttpError(404,'not_found');
  const id=match[1],operation=match[2];
  if(!operation&&request.method==='GET')return json(200,publicBatchImage(await call(db,'s2a_batch_image_read',{...args,p_id:id})));
- if(!operation&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:true}));
+ if(!operation&&request.method==='DELETE'){await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:true});return new Response(null,{status:204});}
  if(operation==='cancel'&&!match[3]&&request.method==='POST')return json(200,publicBatchImage(await call(db,'s2a_batch_image_cancel',{...args,p_id:id})));
- if(operation==='outputs'&&!match[3]&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:false}));
+ if(operation==='outputs'&&!match[3]&&request.method==='DELETE'){
+  await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:false});
+  return json(200,publicBatchImage(await call(db,'s2a_batch_image_read',{...args,p_id:id})));
+ }
  if(operation==='download'&&!match[3]&&request.method==='GET')return trackBatchDownload(await downloadBatchImages(db,keyHash,id,clientIP,{maxItems:number(url.searchParams.get('max_items'),200,0,1000000),signal:request.signal}),db,keyHash,id,clientIP);
  if(operation==='items'&&request.method==='GET'){
   if(match[3]){

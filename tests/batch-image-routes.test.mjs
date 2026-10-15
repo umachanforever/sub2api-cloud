@@ -5,7 +5,7 @@ import {batchImageRoute} from '../supabase/functions/sub2api/batch_image_routes.
 const id='imgbatch_'+'a'.repeat(32);
 test('batch routes share hashed key authentication for reads, pagination and mutations',async()=>{
  const seen=[],db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{const args=JSON.parse(init.body);seen.push([String(url).split('/').at(-1),args]);assert.match(args.p_key_hash,/^[a-f0-9]{64}$/);assert.ok(!init.body.includes('client-secret'));return Response.json({id,items:[{custom_id:'ok',status:'success'},{custom_id:'bad',status:'failed'}]});});
- for(const [path,method,rpc] of [['/images/batches','GET','list'],[`/v1/images/batches/${id}`,'GET','read'],[`/v1/images/batches/${id}/cancel`,'POST','cancel'],[`/v1/images/batches/${id}/outputs`,'DELETE','delete'],[`/v1/images/batches/${id}`,'DELETE','delete']]){assert.equal((await batchImageRoute(new Request('https://gateway.invalid'+path,{method}),path,'client-secret',db)).status,200);assert.equal(seen.at(-1)[0],'s2a_batch_image_'+rpc);}
+ for(const [path,method,rpc] of [['/images/batches','GET','list'],[`/v1/images/batches/${id}`,'GET','read'],[`/v1/images/batches/${id}/cancel`,'POST','cancel'],[`/v1/images/batches/${id}/outputs`,'DELETE','read'],[`/v1/images/batches/${id}`,'DELETE','delete']]){assert.equal((await batchImageRoute(new Request('https://gateway.invalid'+path,{method}),path,'client-secret',db)).status,method==='DELETE'&&path.endsWith(id)?204:200);assert.equal(seen.at(-1)[0],'s2a_batch_image_'+rpc);}
  const path=`/v1/images/batches/${id}/items`,response=await batchImageRoute(new Request('https://gateway.invalid'+path+'?status=failed'),path,'client-secret',db);assert.equal((await response.json()).data[0].custom_id,'bad');
 });
 test('batch routes reject missing credentials and invalid pagination or methods before mutation',async()=>{
@@ -34,4 +34,11 @@ test('batch list forwards normalized filters and original numeric cursor',async(
  });
  await batchImageRoute(new Request('https://gateway.invalid/images/batches?cursor=40&status=queued&task_name=sample&downloaded=no&from=1767225600'),'/images/batches','key',db);
  for(const query of ['downloaded=maybe','from=invalid','cursor=-1'])await assert.rejects(batchImageRoute(new Request('https://gateway.invalid/images/batches?'+query),'/images/batches','key',db),error=>error.status===400);
+});
+
+test('record deletion returns an empty 204 and output deletion returns a public batch snapshot',async()=>{
+ const calls=[],db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{const rpc=String(url).split('/').at(-1);calls.push([rpc,JSON.parse(init.body)]);return Response.json(rpc.endsWith('_read')?{id,status:'completed',output_deletion_pending:true,created_at:'2026-01-01T00:00:00Z',account_id:'private'}:{id,deleted:true});});
+ const path='/images/batches/'+id;
+ const deleted=await batchImageRoute(new Request('https://gateway'+path,{method:'DELETE'}),path,'key',db);assert.equal(deleted.status,204);assert.equal(await deleted.text(),'');assert.equal(calls[0][1].p_hide,true);
+ const output=await batchImageRoute(new Request('https://gateway'+path+'/outputs',{method:'DELETE'}),path+'/outputs','key',db);const snapshot=await output.json();assert.equal(snapshot.object,'image.batch');assert.equal(snapshot.output_deletion_pending,true);assert.equal(snapshot.created_at,1767225600);assert.ok(!('account_id' in snapshot));assert.equal(calls[1][1].p_hide,false);
 });
