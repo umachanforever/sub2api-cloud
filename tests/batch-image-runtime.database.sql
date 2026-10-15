@@ -205,3 +205,24 @@ BEGIN
  IF r->>'status' IS DISTINCT FROM 'running' OR NOT EXISTS(SELECT 1 FROM s2a_private.batch_image_runtime WHERE batch_id=ident AND cancel_requested AND stage='poll') THEN RAISE EXCEPTION 'upstream cancel falsely completed'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE ident text; lease uuid; state text; result jsonb;
+BEGIN
+ FOREACH state IN ARRAY ARRAY['failed','cancelled','expired','index_failure'] LOOP
+  ident:='imgbatch_'||replace(gen_random_uuid()::text,'-',''); lease:=gen_random_uuid();
+  INSERT INTO public.batch_image_jobs(batch_id,user_id,provider,model,item_count,status) VALUES(ident,1,'gemini_api','gemini-image',1,'running');
+  INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count) VALUES(ident,'cover','pending',0);
+  INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,stage,input_ref,provider_job_name,lease_id,lease_until)
+   VALUES(ident,1,1,1,1,'fixture',repeat('a',64),CASE WHEN state='index_failure' THEN 'index' ELSE 'poll' END,'files/input','batches/result',lease,clock_timestamp()+interval '3 minutes');
+  IF state='index_failure' THEN result:=public.s2a_batch_image_runtime_fail(ident,lease,'BATCH_RESULT_INVALID');
+  ELSE result:=public.s2a_batch_image_runtime_observed(ident,lease,state); END IF;
+  IF result->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'terminal observation rejected: %',state; END IF;
+  IF NOT EXISTS(SELECT 1 FROM public.batch_image_items WHERE job_id=ident AND status=CASE WHEN state='cancelled' THEN 'cancelled' ELSE 'failed' END AND error_code IS NOT NULL AND indexed_at IS NOT NULL) THEN RAISE EXCEPTION 'terminal item left pending: %',state; END IF;
+  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND finished_at IS NOT NULL AND fail_count=CASE WHEN state='cancelled' THEN 0 ELSE 1 END AND cancelled_count=CASE WHEN state='cancelled' THEN 1 ELSE 0 END) THEN RAISE EXCEPTION 'terminal totals mismatch: %',state; END IF;
+  IF public.s2a_batch_image_runtime_observed(ident,lease,'running')->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'terminal state resurrected'; END IF;
+ END LOOP;
+END $$;
+ROLLBACK;

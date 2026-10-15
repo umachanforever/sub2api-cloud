@@ -102,8 +102,14 @@ BEGIN
     UPDATE public.batch_image_jobs SET status=native_status,last_error_code=p_error,last_error_message=NULL,
         started_at=CASE WHEN p_state='running' THEN coalesce(started_at,clock_timestamp()) ELSE started_at END,
         cancelled_count=CASE WHEN p_state='cancelled' THEN item_count ELSE cancelled_count END,
+        fail_count=CASE WHEN p_state IN ('failed','expired') THEN item_count ELSE fail_count END,
         finished_at=CASE WHEN next_stage='failed' THEN coalesce(finished_at,clock_timestamp()) ELSE finished_at END,
         updated_at=clock_timestamp() WHERE batch_id=p_id;
+    IF next_stage='failed' THEN
+        UPDATE public.batch_image_items SET status=CASE WHEN p_state='cancelled' THEN 'cancelled' ELSE 'failed' END,
+            error_code=coalesce(p_error,CASE p_state WHEN 'cancelled' THEN 'BATCH_CANCELLED' WHEN 'expired' THEN 'BATCH_EXPIRED' ELSE 'BATCH_PROVIDER_FAILED' END),
+            indexed_at=clock_timestamp() WHERE job_id=p_id AND status='pending';
+    END IF;
     RETURN jsonb_build_object('applied',true,'stage',next_stage);
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_fail(p_id text,p_lease uuid,p_error text)
@@ -116,7 +122,8 @@ BEGIN
     IF task.stage IN ('completed','failed') THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
     IF p_error IS NULL OR p_error !~ '^[A-Z][A-Z0-9_]{0,99}$' THEN RETURN jsonb_build_object('error','invalid_batch_image_error','status',400); END IF;
     UPDATE s2a_private.batch_image_runtime SET stage='failed',error_code=p_error,lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
-    UPDATE public.batch_image_jobs SET status='failed',last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
+    UPDATE public.batch_image_jobs SET status='failed',fail_count=item_count,last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
+    UPDATE public.batch_image_items SET status='failed',error_code=p_error,indexed_at=clock_timestamp() WHERE job_id=p_id AND status='pending';
     RETURN jsonb_build_object('applied',true);
 END $$;
 CREATE OR REPLACE FUNCTION s2a_private.batch_model_supported(mapping jsonb,model text)
