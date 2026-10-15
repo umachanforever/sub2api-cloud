@@ -25,3 +25,13 @@ test('HTTP idempotency keys retain the same batch and avoid duplicate storage on
  const request=()=>new Request('https://gateway.invalid/v1/images/batches',{method:'POST',headers:{'idempotency-key':'client-request-1','content-type':'application/json'},body:JSON.stringify({model:'gemini-image',items:[{prompt:'blue square'}]})});
  const first=await (await batchImageRoute(request(),'/v1/images/batches','client-secret',db)).json(),second=await (await batchImageRoute(request(),'/v1/images/batches','client-secret',db)).json();assert.equal(first.id,second.id);assert.equal(jobs.size,1);assert.equal(uploads,1);
 });
+
+test('batch list forwards normalized filters and original numeric cursor',async()=>{
+ const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{
+  const args=JSON.parse(init.body);assert.equal(args.p_offset,40);
+  assert.deepEqual(args.p_filters,{status:'queued',task_name:'sample',downloaded:false,from:'2026-01-01T00:00:00.000Z'});
+  return Response.json({items:[],total:0});
+ });
+ await batchImageRoute(new Request('https://gateway.invalid/images/batches?cursor=40&status=queued&task_name=sample&downloaded=no&from=1767225600'),'/images/batches','key',db);
+ for(const query of ['downloaded=maybe','from=invalid','cursor=-1'])await assert.rejects(batchImageRoute(new Request('https://gateway.invalid/images/batches?'+query),'/images/batches','key',db),error=>error.status===400);
+});

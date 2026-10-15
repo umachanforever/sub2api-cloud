@@ -15,12 +15,29 @@ function number(value:string|null,fallback:number,min:number,max:number):number{
  if(value===null)return fallback;
  if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value))||Number(value)<min||Number(value)>max)throw new HttpError(400,'invalid_batch_pagination');return Number(value);
 }
+function listFilters(url:URL):Record<string,unknown>{
+ const filters:Record<string,unknown>={};
+ for(const key of ['status','task_name']){const value=url.searchParams.get(key)?.trim();if(value)filters[key]=value;}
+ const downloaded=url.searchParams.get('downloaded')?.trim().toLowerCase();
+ if(downloaded&&!['all'].includes(downloaded)){
+  if(['true','1','yes','downloaded'].includes(downloaded))filters.downloaded=true;
+  else if(['false','0','no','not_downloaded'].includes(downloaded))filters.downloaded=false;
+  else throw new HttpError(400,'invalid_batch_downloaded_filter');
+ }
+ for(const key of ['from','to']){
+  const value=url.searchParams.get(key)?.trim();if(!value)continue;
+  const time=/^\d+$/.test(value)?Number(value)*1000:Date.parse(value);
+  if(!Number.isFinite(time)||!Number.isFinite(new Date(time).getTime()))throw new HttpError(400,'invalid_batch_time_filter');
+  filters[key]=new Date(time).toISOString();
+ }
+ return filters;
+}
 export async function batchImageRoute(request:Request,pathname:string,token:string,db:Database):Promise<Response>{
  if(!token)throw new HttpError(401,'unauthorized');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
  const path=pathname.replace(/^\/images\//,'/v1/images/'),url=new URL(request.url),base='/v1/images/batches',keyHash=await hashKey(token),clientIP=imageTaskClientIP(request),args={p_key_hash:keyHash,p_client_ip:clientIP};
  if(path===base){
-  if(request.method==='GET')return json(200,await call(db,'s2a_batch_image_list',{...args,p_limit:number(url.searchParams.get('limit'),20,1,100),p_offset:number(url.searchParams.get('offset'),0,0,1000000)}));
+  if(request.method==='GET')return json(200,await call(db,'s2a_batch_image_list',{...args,p_limit:number(url.searchParams.get('limit'),20,1,100),p_offset:number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),p_filters:listFilters(url)}));
   if(request.method==='POST'){
    const idempotency=request.headers.get('idempotency-key');
    if(idempotency!==null&&(!idempotency.trim()||new TextEncoder().encode(idempotency).length>255||/[\u0000-\u001f]/.test(idempotency)))throw new HttpError(400,'invalid_idempotency_key');
@@ -46,7 +63,7 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
   const snapshot=await call(db,'s2a_batch_image_read',{...args,p_id:id});
   if(!Array.isArray(snapshot.items))throw new HttpError(503,'invalid_batch_response');
   const status=url.searchParams.get('status');if(status&&!['pending','success','failed','cancelled'].includes(status))throw new HttpError(400,'invalid_batch_item_status');
-  const items=snapshot.items.filter(item=>!status||item.status===status),offset=number(url.searchParams.get('offset'),0,0,1000000),limit=number(url.searchParams.get('limit'),20,1,200);
+  const items=snapshot.items.filter(item=>!status||item.status===status),offset=number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),limit=number(url.searchParams.get('limit'),20,1,200);
   return json(200,{items:items.slice(offset,offset+limit),total:items.length,limit,offset});
  }
  throw new HttpError(405,'method_not_allowed');

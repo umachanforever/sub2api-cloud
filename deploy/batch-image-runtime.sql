@@ -282,7 +282,8 @@ BEGIN
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
         'output_expires_at',native.output_expires_at,'output_deletion_pending',task.cleanup_requested AND task.cleaned_at IS NULL,'error_code',native.last_error_code,'items',items));
 END $$;
-CREATE OR REPLACE FUNCTION public.s2a_batch_image_list(p_key_hash text,p_limit integer DEFAULT 20,p_offset integer DEFAULT 0,p_client_ip text DEFAULT NULL)
+DROP FUNCTION IF EXISTS public.s2a_batch_image_list(text,integer,integer,text);
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_list(p_key_hash text,p_limit integer DEFAULT 20,p_offset integer DEFAULT 0,p_client_ip text DEFAULT NULL,p_filters jsonb DEFAULT '{}'::jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE policy jsonb; identity jsonb; entries jsonb; total bigint;
 BEGIN
@@ -292,12 +293,22 @@ BEGIN
     IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
     IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 OR p_offset IS NULL OR p_offset NOT BETWEEN 0 AND 1000000 THEN RETURN jsonb_build_object('error','invalid_batch_pagination','status',400); END IF;
     SELECT count(*) INTO total FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
-        WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL;
+        WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL
+            AND (coalesce(p_filters->>'status','') IN ('','all') OR j.status=CASE p_filters->>'status' WHEN 'queued' THEN 'submitted' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
+            AND (coalesce(p_filters->>'task_name','')='' OR position(lower(p_filters->>'task_name') IN lower(coalesce(j.task_name,'')))>0)
+            AND (NOT p_filters ? 'downloaded' OR (j.downloaded_at IS NOT NULL)=(p_filters->>'downloaded')::boolean)
+            AND (NOT p_filters ? 'from' OR j.created_at>=(p_filters->>'from')::timestamptz)
+            AND (NOT p_filters ? 'to' OR j.created_at<=(p_filters->>'to')::timestamptz);
     SELECT coalesce(jsonb_agg(public.s2a_batch_image_read(p_key_hash,q.batch_id,p_client_ip)-'items' ORDER BY q.created_at DESC,q.batch_id DESC),'[]'::jsonb) INTO entries
         FROM (SELECT r.batch_id,j.created_at FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
             WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL
+            AND (coalesce(p_filters->>'status','') IN ('','all') OR j.status=CASE p_filters->>'status' WHEN 'queued' THEN 'submitted' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
+            AND (coalesce(p_filters->>'task_name','')='' OR position(lower(p_filters->>'task_name') IN lower(coalesce(j.task_name,'')))>0)
+            AND (NOT p_filters ? 'downloaded' OR (j.downloaded_at IS NOT NULL)=(p_filters->>'downloaded')::boolean)
+            AND (NOT p_filters ? 'from' OR j.created_at>=(p_filters->>'from')::timestamptz)
+            AND (NOT p_filters ? 'to' OR j.created_at<=(p_filters->>'to')::timestamptz)
             ORDER BY j.created_at DESC,r.batch_id DESC LIMIT p_limit OFFSET p_offset) q;
-    RETURN jsonb_build_object('items',entries,'total',total,'limit',p_limit,'offset',p_offset);
+    RETURN jsonb_build_object('object','list','data',entries,'has_more',p_offset+jsonb_array_length(entries)<total,'items',entries,'total',total,'limit',p_limit,'offset',p_offset);
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_content_resolve(p_key_hash text,p_id text,p_custom_id text,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$

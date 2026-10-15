@@ -126,6 +126,10 @@ BEGIN
  IF r->>'id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'auto provider selection failed: %',r; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND provider='vertex' AND account_id=a) THEN RAISE EXCEPTION 'auto provider did not bind Vertex'; END IF;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'auto provider replay mismatch'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"task_name":"images","downloaded":false}'::jsonb)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'list matching filters failed'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"task_name":"missing"}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'list task filter ignored'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":true}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'list downloaded filter ignored'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"from":"2100-01-01T00:00:00Z"}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'list time filter ignored'; END IF;
  UPDATE s2a_private.batch_image_runtime SET updated_at=clock_timestamp()-interval '11 minutes' WHERE batch_id=ident;
  IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'abandoned upload claimed'; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='failed' AND last_error_code='BATCH_UPLOAD_TIMEOUT' AND finished_at IS NOT NULL) THEN RAISE EXCEPTION 'abandoned upload not failed'; END IF;
