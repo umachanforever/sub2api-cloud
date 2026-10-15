@@ -5,7 +5,7 @@ function textContent(value: unknown, role: string): string | Item[] | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") return value;
   if (!Array.isArray(value)) throw new Error("Unsupported chat content");
-  return value.map((part) => {
+  const parts = value.map((part): Item | null => {
     if (part?.type === "text" && typeof part.text === "string") {
       return {
         type: role === "assistant" ? "output_text" : "input_text",
@@ -27,6 +27,19 @@ function textContent(value: unknown, role: string): string | Item[] | null {
         ...(image.detail ? { detail: image.detail } : {}),
       };
     }
+    if (part?.type === "file" && role === "user") {
+      const file = part.file;
+      if (file !== undefined && (file === null || typeof file !== "object" || Array.isArray(file))) throw new Error("Invalid chat file");
+      for (const field of ["filename", "file_data", "file_id"]) {
+        if (file?.[field] !== undefined && typeof file[field] !== "string") throw new Error("Invalid chat file");
+      }
+      // Upstream skips file parts without a usable payload or provider file ID.
+      if (!file?.file_data && !file?.file_id) return null;
+      return {
+        type: "input_file",
+        ...Object.fromEntries(["filename", "file_data", "file_id"].filter(field => file[field]).map(field => [field, file[field]])),
+      };
+    }
     if (
       part?.type === "refusal" && role === "assistant" &&
       typeof part.refusal === "string"
@@ -34,7 +47,8 @@ function textContent(value: unknown, role: string): string | Item[] | null {
       return { type: "refusal", refusal: part.refusal };
     }
     throw new Error("Unsupported chat content");
-  });
+  }).filter((part): part is Item => part !== null);
+  return parts.length ? parts : "";
 }
 
 export function chatToResponses(body: Item): Item {
@@ -285,8 +299,12 @@ export async function completedResponse(
   body: ReadableStream<Uint8Array>,
 ): Promise<Item> {
   let completed: Item | undefined, failed = false;
+  const outputItems = new Map<number, Item>();
   for await (const event of responseEvents(body.getReader())) {
     if (["response.failed", "error"].includes(event.type)) failed = true;
+    if (event.type === "response.output_item.done" && Number.isInteger(event.output_index) && event.output_index >= 0 && event.item && typeof event.item === "object" && !Array.isArray(event.item)) {
+      outputItems.set(event.output_index, event.item);
+    }
     if (["response.completed", "response.incomplete"].includes(event.type)) {
       completed = event.response;
     }
@@ -294,6 +312,10 @@ export async function completedResponse(
   if (failed) throw new Error("Upstream generation failed");
   if (!completed || typeof completed !== "object") {
     throw new Error("Upstream ended without completion");
+  }
+  // Some providers omit completed items from the terminal response envelope.
+  if ((!Array.isArray(completed.output) || completed.output.length === 0) && outputItems.size) {
+    completed = { ...completed, output: [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item) };
   }
   return completed;
 }
