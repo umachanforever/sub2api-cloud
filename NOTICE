@@ -30,6 +30,11 @@ deployment platform; this project is not an official Supabase product.
 Code comments and the primary documentation are translated into English;
 README.zh-CN.md provides the Chinese documentation. Upstream attribution is retained.
 
+The Edge WASM Gemini request converters are generated from the original
+backend/internal/service/gemini_messages_compat_service.go with their transitive
+pure-function dependencies. The build verifies the generated source against
+the retained original Go implementation.
+
 The provider model picker metadata is derived from the pinned upstream
 OpenAI, Claude, and Gemini CLI catalogs in backend/internal/pkg/.
 

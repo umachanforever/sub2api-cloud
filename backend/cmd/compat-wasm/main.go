@@ -31,6 +31,13 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "gemini_request" {
+		converted, err := convertClaudeMessagesToGeminiGenerateContent(input.Body)
+		if err != nil {
+			return nil, err
+		}
+		return json.RawMessage(ensureGeminiFunctionCallThoughtSignatures(converted)), nil
+	}
 	if input.Operation == "open_anthropic" {
 		if len(states)+len(anthropicStates) >= 32 {
 			return nil, fmt.Errorf("capacity")

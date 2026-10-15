@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import {originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+
+test('original Gemini request converter preserves images, tool history, signatures and schema normalization',async()=>{
+ await originalChatBridgeCount();
+ const body={system:[{type:'text',text:'policy'}],messages:[
+  {role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/png',data:'AA=='}}]},
+  {role:'assistant',content:[{type:'tool_use',id:'tool-1',name:'lookup',input:{q:'hello'}}]},
+  {role:'user',content:[{type:'tool_result',tool_use_id:'tool-1',content:[{type:'text',text:'answer'},{type:'image',source:{type:'base64',media_type:'image/png',data:'AQ=='}}]}]},
+ ],tools:[{name:'lookup',input_schema:{type:'object',additionalProperties:false,properties:{q:{type:'integer',exclusiveMinimum:0,enum:[1,2]}}}}],max_tokens:42,temperature:0.2,top_p:0.8,stop_sequences:['stop']};
+ const result=JSON.parse(globalThis.__s2aCompatCall(JSON.stringify({operation:'gemini_request',body})));
+ assert.equal(result.error,undefined);
+ const value=result.value;
+ assert.equal(value.systemInstruction.parts[0].text,'policy');
+ assert.equal(value.contents[0].parts[0].inlineData.mimeType,'image/png');
+ assert.equal(value.contents[1].role,'model');
+ assert.equal(value.contents[1].parts[0].thoughtSignature,'skip_thought_signature_validator');
+ assert.equal(value.contents[1].parts[0].functionCall.name,'lookup');
+ assert.equal(value.contents[2].parts[0].functionResponse.name,'lookup');
+ assert.equal(value.contents[2].parts[1].inlineData.data,'AQ==');
+ const schema=value.tools[0].functionDeclarations[0].parameters;
+ assert.equal(schema.type,'OBJECT');assert.equal(schema.additionalProperties,undefined);
+ assert.equal(schema.properties.q.minimum,1);assert.deepEqual(schema.properties.q.enum,['1','2']);
+ assert.equal(value.generationConfig.maxOutputTokens,42);assert.equal(value.generationConfig.temperature,0.2);
+ assert.deepEqual(value.generationConfig.stopSequences,['stop']);
+ assert.equal(await originalChatBridgeCount(),0);
+});
