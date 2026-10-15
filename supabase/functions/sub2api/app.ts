@@ -35,14 +35,14 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|realtime|custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?|embeddings|images\/(?:(?:generations|edits)(?:\/async)?|tasks\/[^/]+))$/.test(pathname)) {
+      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|systemone|tts|stt|realtime|custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?|embeddings|images\/(?:(?:generations|edits)(?:\/async)?|tasks\/[^/]+))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
       if (/^\/images\/batches(?:\/|$)/.test(pathname)) pathname='/v1'+pathname;
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|tts|stt|realtime|custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|systemone|tts|stt|realtime|custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (/^\/v1\/images\/(?:generations|edits)\/async$/.test(pathname)) errorContext.endpoint=pathname;
       if (/^\/v1\/images\/tasks\/[^/]+$/.test(pathname)) errorContext.endpoint='/v1/images/tasks/:task_id';
       if (pathname === "/internal/jobs/batch-images") return await batchImageJobs(request,db);

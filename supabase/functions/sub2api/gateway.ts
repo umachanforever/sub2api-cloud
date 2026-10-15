@@ -1,5 +1,5 @@
 import { defaultSolModel, normalizeModernCodexResponses } from "./codex_models.ts";
-export type Platform = "openai" | "anthropic" | "gemini" | "antigravity" | "grok";
+export type Platform = "openai" | "anthropic" | "gemini" | "antigravity" | "grok" | "typesafe";
 export type ApiKeyCredentials = { api_key: string; base_url?: string };
 export type AccountCredentials = OAuthCredentials | ApiKeyCredentials;
 

@@ -1,3 +1,4 @@
+import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
 import {imageGenerationIntent} from './image_policy.ts';
 import {countGeminiTokens} from './gemini_count_tokens.ts';
@@ -137,6 +138,7 @@ async function proxyWithIdentity(
   const embeddings = path === "/v1/embeddings" && request.method === "POST";
   const imageEdit = ["/v1/images/edits", "/images/edits"].includes(path);
   const images = ["/v1/images/generations", "/images/generations", "/v1/images/edits", "/images/edits"].includes(path) && request.method === "POST";
+  const systemOne=path==='/v1/systemone'&&request.method==='POST';
   const chat = path === "/v1/chat/completions" && request.method === "POST";
   const messages = path === "/v1/messages" && request.method === "POST";
   const gemini = request.method === "POST"
@@ -144,7 +146,7 @@ async function proxyWithIdentity(
       .exec(path)
     : null;
   const geminiTokens=gemini?.[2]==='countTokens';
-  const protocol: NativeProtocol = voice ? "voice" : embeddings
+  const protocol: NativeProtocol = systemOne ? "systemone" : voice ? "voice" : embeddings
     ? "embeddings"
     : images
     ? "images"
@@ -166,7 +168,7 @@ async function proxyWithIdentity(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch && !voice) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch && !voice && !systemOne) {
     throw new HttpError(404, "not_found");
   }
   if(geminiTokens&&db.config.dataModel==='native'){
@@ -181,6 +183,11 @@ async function proxyWithIdentity(
     try{await requireGrokPlatform('grok_voice_requires_grok_group');}
     catch(error){await request.body?.cancel().catch(()=>{});throw error;}
   }
+  if(systemOne){
+    const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
+    if(!policy||policy.error)throw new HttpError(policy?.status??403,policy?.error??'database_unavailable');
+    if(policy.platform!=='typesafe')throw new HttpError(400,'systemone_requires_typesafe_group');
+  }
   let body: Record<string, unknown> | undefined;
   let imageMultipart:FormData|undefined;
   let stream = true, includeUsage = false;
@@ -190,8 +197,8 @@ async function proxyWithIdentity(
       const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
       imageMultipart=parsed?.form;
       if(voiceKind==='stt'||customVoiceMethod&&!['GET','DELETE'].includes(request.method))voiceBytes=await voiceUpload(request,limit);
-      const raw = realtime?{model:'grok-voice-latest'}:customVoiceMethod?{model:'custom-voices'}:voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
-      if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
+      const raw = realtime?{model:'grok-voice-latest'}:customVoiceMethod?{model:'custom-voices'}:voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,systemOne?validateSystemOneJson:gemini?validateGeminiCacheJson:undefined);
+      if (!systemOne && raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
       if (
@@ -201,7 +208,7 @@ async function proxyWithIdentity(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = geminiTokens || embeddings || inputTokens || messageTokens || search || grokSearch || voice ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = systemOne || geminiTokens || embeddings || inputTokens || messageTokens || search || grokSearch || voice ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -296,7 +303,7 @@ async function proxyWithIdentity(
       upstream_model?:string;
       model_sources?:ModelSources;
     };
-    const mappedModel=voice?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
+    const mappedModel=voice||systemOne?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
     let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
@@ -395,6 +402,13 @@ async function proxyWithIdentity(
       if(grokSearch&&(account.platform??'openai')!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
+      if(systemOne&&(platform!=='typesafe'||!apiKey)||platform==='typesafe'&&!systemOne&&!models)throw new HttpError(400,'systemone_requires_typesafe_account');
+      if(platform==='typesafe'&&models){
+        if(clientVersion!==null)throw new HttpError(400,'codex_manifest_requires_oauth');
+        if(modelId&&decodeURIComponent(modelId)!=='jev-latest')throw new HttpError(404,'model_not_found');
+        const entry={id:'jev-latest',object:'model',created:0,owned_by:'typesafe'};
+        return await nativeResponse(Response.json(modelId?entry:{object:'list',data:[entry]}),platform,'models',false,signal,requestId,finish,path,model_allowlist,model_sources);
+      }
       if(realtime){
         const {relayGrokRealtime}=await import('./grok_realtime.ts');
         if(platform!=='grok')throw new HttpError(400,'grok_voice_requires_grok_group');

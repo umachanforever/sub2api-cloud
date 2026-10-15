@@ -1,3 +1,4 @@
+import {systemOneTokens} from './typesafe.ts';
 import {grokImageBody} from './grok_images.ts';
 import { normalizeModernCodexResponses } from "./codex_models.ts";
 import { grokHeaders } from './grok_config.ts';
@@ -11,6 +12,7 @@ import { json } from "./http.ts";
 
 type Item = Record<string, any>;
 export type NativeProtocol =
+  | "systemone"
   | "embeddings"
   | "videos"
   | "images"
@@ -26,6 +28,7 @@ const origins: Record<Platform, string> = {
   gemini: "https://generativelanguage.googleapis.com",
   antigravity: "https://cloudcode-pa.googleapis.com",
   grok: "https://api.x.ai",
+  typesafe: "https://api.typesafe.ai",
 };
 
 export function apiKeyRequest(
@@ -51,6 +54,8 @@ export function apiKeyRequest(
   if (
     (["openai", "grok"].includes(platform) &&
       !["chat", "responses", "models", "images", ...(platform === "openai" ? ["embeddings"] : ["voice", "videos"])].includes(protocol)) ||
+    (platform === "typesafe" && protocol !== "systemone") ||
+    (protocol === "systemone" && platform !== "typesafe") ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
     (path.startsWith("/v1beta/models") && protocol === "models" &&
@@ -73,7 +78,7 @@ export function apiKeyRequest(
     accept: streaming ? "text/event-stream" : "application/json",
   });
   let providerPath = path;
-  if (platform === "openai" || platform === "grok") {
+  if (platform === "openai" || platform === "grok" || platform === "typesafe") {
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
     if (protocol === "embeddings") providerPath = "/v1/embeddings";
@@ -390,6 +395,16 @@ export async function nativeResponse(
   transformValue?: (value:Item,streaming:boolean)=>Item,
 ): Promise<Response> {
   if (!upstream.body) throw new HttpError(502, "invalid_upstream_response");
+  if(protocol==='systemone'){
+    const reader=upstream.body.getReader(),chunks:Uint8Array[]=[];let size=0;
+    try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>4*1024*1024)throw new HttpError(502,'upstream_response_too_large');chunks.push(value);}}catch(error){await reader.cancel().catch(()=>{});throw error;}finally{reader.releaseLock();}
+    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+    let value;try{value=JSON.parse(new TextDecoder().decode(bytes));}catch{throw new HttpError(502,'invalid_upstream_response');}
+    if(!value||typeof value!=='object'||Array.isArray(value))throw new HttpError(502,'invalid_upstream_response');
+    await finish(upstream.status,{input:systemOneTokens(value.usage?.input_tokens),output:systemOneTokens(value.usage?.output_tokens),cacheCreation:null,cacheRead:null,outcome:'completed'});
+    return new Response(bytes,{status:upstream.status,headers:{'content-type':'application/json','cache-control':'no-store'}});
+  }
+
   if (!streaming) {
     let value = await upstream.json();
     if (

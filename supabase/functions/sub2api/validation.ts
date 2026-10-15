@@ -207,7 +207,7 @@ export function parseAccountCredentials(
   platform: unknown = "openai",
   type: unknown = "oauth",
 ): AccountCredentials {
-  if (!["openai", "anthropic", "gemini", "grok"].includes(platform as string)) {
+  if (!["openai", "anthropic", "gemini", "grok", "typesafe"].includes(platform as string)) {
     throw new HttpError(501, "unsupported_platform");
   }
   if (type === "oauth" && platform === "openai") {
@@ -251,7 +251,8 @@ export function parseAccountCredentials(
       openai: "https://api.openai.com",
       anthropic: "https://api.anthropic.com",
       gemini: "https://generativelanguage.googleapis.com",
-    }[platform as "openai" | "anthropic" | "gemini"];
+      typesafe: "https://api.typesafe.ai",
+    }[platform as "openai" | "anthropic" | "gemini" | "typesafe"];
     let url: URL;
     try {
       url = new URL(input.base_url);

@@ -47,6 +47,8 @@ Grok API-key and OAuth accounts support native Chat Completions, Responses, and 
 
 Antigravity OAuth accounts expose their provider model catalog and Gemini-native `generateContent` / `streamGenerateContent` routes, plus Claude Messages with JSON or SSE output. Claude clients can use the `/antigravity` base path with the same group-bound API key. Configure `ANTIGRAVITY_OAUTH_CLIENT_ID` and `ANTIGRAVITY_OAUTH_CLIENT_SECRET` for cloud refresh. The gateway retains the encrypted project ID, injects the upstream identity prompt while preserving caller instructions, unwraps internal response envelopes, and uses the provider's fixed daily and production endpoints for fallback.
 
+TypeSafe API-key accounts support `POST /v1/systemone` with the native `jev-latest` model and `noul`, `choice`, and `score` questions. Requests are non-streaming; provider JSON responses pass through unchanged, with a 4 MiB response limit. Model discovery uses the same group-bound key.
+
 ## Local Supabase
 
 ```sh

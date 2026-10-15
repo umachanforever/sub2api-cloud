@@ -281,3 +281,20 @@ BEGIN
     IF public.s2a_personal_video_resolve(video_hash,'video_'||repeat('a',40))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key resolved video'; END IF;
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint;g bigint;a bigint;k bigint;h text;r jsonb;
+BEGIN
+ INSERT INTO public.users(email,password_hash,balance) VALUES('typesafe-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('TypeSafe fixture','typesafe') RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'typesafe-'||gen_random_uuid(),'TypeSafe fixture',g) RETURNING id,s2a_key_hash INTO k,h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('TypeSafe fixture','typesafe','apikey','{"api_key":"synthetic-key"}',1) RETURNING id INTO a;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ IF public.s2a_personal_key_policy(h)->>'platform' IS DISTINCT FROM 'typesafe' THEN RAISE EXCEPTION 'TypeSafe policy rejected'; END IF;
+ r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid());
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'TypeSafe admission rejected'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint,p_upstream_model=>'jev-latest');
+ IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0) THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
+END $$;
+ROLLBACK;
