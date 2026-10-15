@@ -116,7 +116,7 @@ BEGIN
     IF policy ? 'error' THEN RETURN policy; END IF;
     IF policy->>'platform'<>'gemini' OR NOT coalesce((policy->>'allow_batch_image_generation')::boolean,false) THEN RETURN jsonb_build_object('error','batch_image_generation_forbidden','status',403); END IF;
     IF p_id IS NULL OR p_id !~ '^imgbatch_[a-f0-9]{32}$' OR p_hash IS NULL OR p_hash !~ '^[a-f0-9]{64}$'
-        OR p_model IS NULL OR p_model !~ '^[A-Za-z0-9._-]{1,128}$' OR p_provider IS NULL OR p_provider NOT IN ('gemini_api','vertex')
+        OR p_model IS NULL OR p_model !~ '^[A-Za-z0-9._-]{1,128}$' OR p_provider IS NULL OR p_provider NOT IN ('','gemini_api','vertex')
         OR p_count IS NULL OR p_count NOT BETWEEN 1 AND 200 OR p_name IS NULL OR octet_length(p_name)>255 OR p_name ~ '[[:cntrl:]]'
         THEN RETURN jsonb_build_object('error','invalid_batch_image_request','status',400); END IF;
     IF coalesce((policy->'model_allowlist'->>'enabled')::boolean,false) THEN
@@ -131,13 +131,13 @@ BEGIN
     SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
     IF FOUND THEN
         IF task.user_id<>(identity->>'user_id')::bigint OR task.key_id<>(identity->>'key_id')::bigint OR task.group_id<>(identity->>'group_id')::bigint OR task.key_hash<>p_key_hash OR task.request_hash<>p_hash
-            OR NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=p_id AND provider=p_provider AND model=p_model AND item_count=p_count AND task_name=p_name)
+            OR NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=p_id AND (p_provider='' OR provider=p_provider) AND model=p_model AND item_count=p_count AND task_name=p_name)
             THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
         RETURN jsonb_build_object('id',p_id,'ready',task.ready);
     END IF;
     SELECT accounts.* INTO a FROM s2a_private.accounts accounts JOIN public.account_groups ag ON ag.account_id=accounts.id
         JOIN public.groups g ON g.id=ag.group_id WHERE g.id=(identity->>'group_id')::bigint AND accounts.platform='gemini'
-        AND accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END
+        AND accounts.type IN ('apikey','service_account') AND (p_provider='' OR accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END)
         AND accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
         AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
         AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp() AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
@@ -145,7 +145,7 @@ BEGIN
         ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id LIMIT 1 FOR UPDATE OF accounts;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','no_available_batch_account','status',503); END IF;
     INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count,task_name,request_hash)
-        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,p_provider,p_model,p_count,p_name,p_hash);
+        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,CASE WHEN a.type='service_account' THEN 'vertex' ELSE 'gemini_api' END,p_model,p_count,p_name,p_hash);
     INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,ready,credential_version,client_ip)
         VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,(identity->>'group_id')::bigint,a.id,p_key_hash,p_hash,false,a.s2a_credential_version,p_client_ip);
     RETURN jsonb_build_object('id',p_id,'ready',false);

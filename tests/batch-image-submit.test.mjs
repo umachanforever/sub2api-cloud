@@ -13,3 +13,14 @@ test('denied admission and failed storage never make a batch claimable',async()=
 test('an already persisted batch replay does not upload or enqueue again',async()=>{
  let calls=0;const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async()=>{calls++;return Response.json({id,ready:true});});await submitBatchImage(db,hash,input,{id});assert.equal(calls,1);
 });
+test('retry restores automatic task name and keeps the original request hash',async()=>{
+ const calls=[],db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{
+  const name=String(url).split('/').at(-1),body=JSON.parse(init.body);calls.push(name);
+  if(name.endsWith('_read'))return Response.json({id,task_name:'2026-10-01 12:34:56'});
+  assert.equal(body.p_name,'2026-10-01 12:34:56');assert.equal(body.p_provider,'');return Response.json({id,ready:true});
+ });await submitBatchImage(db,hash,{model:'gemini-image',items:[{prompt:'blue square'}]},{id});assert.deepEqual(calls,['s2a_batch_image_read','s2a_batch_image_prepare']);
+});
+test('a retry cannot use another key to read the stored automatic name',async()=>{
+ let calls=0;const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async()=>{calls++;return Response.json({error:'batch_image_forbidden',status:403});});
+ await assert.rejects(submitBatchImage(db,hash,{model:'gemini-image',items:[{prompt:'blue square'}]},{id}),error=>error.status===403);assert.equal(calls,1);
+});

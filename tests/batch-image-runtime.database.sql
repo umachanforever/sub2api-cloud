@@ -97,3 +97,19 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='completed' AND success_count=1 AND fail_count=1 AND actual_cost=0 AND output_expires_at IS NOT NULL) THEN RAISE EXCEPTION 'native index totals mismatch'; END IF;
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint;g bigint;a bigint;h text;ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');r jsonb;
+BEGIN
+ INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-auto-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch auto fixture','gemini',true) RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-auto-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING s2a_key_hash INTO h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Vertex batch auto','gemini','service_account','{"service_account":{"project_id":"fixture"}}',4) RETURNING id INTO a;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ r:=public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images');
+ IF r->>'id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'auto provider selection failed: %',r; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND provider='vertex' AND account_id=a) THEN RAISE EXCEPTION 'auto provider did not bind Vertex'; END IF;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'auto provider replay mismatch'; END IF;
+END $$;
+ROLLBACK;

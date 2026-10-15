@@ -8,13 +8,25 @@ function checked(value:unknown,id:string):Record<string,unknown>{
  if(typeof row.error==='string')throw new HttpError(typeof row.status==='number'?row.status:503,row.error);
  if(row.id!==id||typeof row.ready!=='boolean')throw new HttpError(503,'invalid_batch_submission_response');return row;
 }
-// Retrying a caller-supplied ID requires the same normalized request, including task_name.
+// Restore the stored automatic name before hashing a retry of the same batch.
 export async function submitBatchImage(db:Database,keyHash:string,input:unknown,options:{id?:string;clientIP?:string|null;signal?:AbortSignal}={}):Promise<{id:string;ready:true}>{
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
- const normalized=batchImageInput(input),id=options.id??'imgbatch_'+crypto.randomUUID().replaceAll('-',''),signal=options.signal??AbortSignal.timeout(60000);
+ const id=options.id??'imgbatch_'+crypto.randomUUID().replaceAll('-',''),signal=options.signal??AbortSignal.timeout(60000);
  if(!/^imgbatch_[a-f0-9]{32}$/.test(id)||!/^[a-f0-9]{64}$/.test(keyHash))throw new HttpError(400,'invalid_batch_submission');
+ let normalized=batchImageInput(input);
+ const raw=input as Record<string,unknown>;
+ if(options.id&&(raw.task_name===undefined||raw.task_name===null||typeof raw.task_name==='string'&&!raw.task_name.trim())){
+  const existing=await db.rpc<Record<string,unknown>>('s2a_batch_image_read',{p_key_hash:keyHash,p_id:id,p_client_ip:options.clientIP??null});
+  if(!existing||typeof existing!=='object'||Array.isArray(existing))throw new HttpError(503,'invalid_batch_submission_response');
+  if(typeof existing.error==='string'){
+   if(existing.error!=='batch_image_not_found'||existing.status!==404)throw new HttpError(typeof existing.status==='number'?existing.status:503,existing.error);
+  }else{
+   if(existing.id!==id||typeof existing.task_name!=='string')throw new HttpError(503,'invalid_batch_submission_response');
+   normalized=batchImageInput({...raw,task_name:existing.task_name});
+  }
+ }
  const body=new TextEncoder().encode(JSON.stringify(normalized)),hash=await imageBytesHash(body);
- const prepared=checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider||'gemini_api',p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
+ const prepared=checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
  if(prepared.ready===true)return {id,ready:true};
  const stored=await storeBatchRequest(db,id,normalized,signal);
  if(stored.requestHash!==hash)throw new HttpError(503,'batch_submission_hash_changed');
