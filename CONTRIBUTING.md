@@ -25,7 +25,10 @@ The native management integration suite uses isolated PostgreSQL and Redis conta
 
 ```sh
 (cd backend && go build ./cmd/server)
-docker pull public.ecr.aws/supabase/postgres:17.11.0.003
+if ! docker pull public.ecr.aws/supabase/postgres:17.11.0.003; then
+  docker pull supabase/postgres:17.11.0.003
+  docker tag supabase/postgres:17.11.0.003 public.ecr.aws/supabase/postgres:17.11.0.003
+fi
 docker pull redis:8-alpine
 mkdir -p .local
 S2A_AUTH_ACCEPTANCE_FIXTURE=1 S2A_ACCOUNT_VAULT=1 S2A_PERSONAL_HTTP=1 \

@@ -54,7 +54,10 @@ jobs:
           S2A_POSTGRES_IMAGE: public.ecr.aws/supabase/postgres:17.11.0.003
           S2A_MANAGEMENT_BINARY: ${{ github.workspace }}/backend/server
         run: |
-          docker pull "$S2A_POSTGRES_IMAGE"
+          if ! docker pull "$S2A_POSTGRES_IMAGE"; then
+            docker pull supabase/postgres:17.11.0.003
+            docker tag supabase/postgres:17.11.0.003 "$S2A_POSTGRES_IMAGE"
+          fi
           docker pull redis:8-alpine
           mkdir -p .local
           node scripts/accept-management.mjs
