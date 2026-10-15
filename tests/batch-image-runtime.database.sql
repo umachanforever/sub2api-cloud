@@ -1,0 +1,28 @@
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE job jsonb; first_lease uuid; second_lease uuid; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
+BEGIN
+    IF has_table_privilege('service_role','s2a_private.batch_image_runtime','SELECT') OR has_function_privilege('anon','public.s2a_batch_image_runtime_claim()','EXECUTE') THEN RAISE EXCEPTION 'batch runtime ACL mismatch'; END IF;
+    INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count) VALUES(ident,1,1,1,'gemini_api','gemini-image',1);
+    INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash) VALUES(ident,1,1,1,1,'fixture',repeat('1',64));
+    job:=public.s2a_batch_image_runtime_claim()->0;first_lease:=(job->>'lease_id')::uuid;
+    IF job->>'batch_id' IS DISTINCT FROM ident OR job->>'recover_create'<>'false' THEN RAISE EXCEPTION 'claim mismatch'; END IF;
+    IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'double claim'; END IF;
+    IF public.s2a_batch_image_runtime_checkpoint(ident,gen_random_uuid(),'files/input','files/output')->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'foreign lease accepted'; END IF;
+    IF public.s2a_batch_image_runtime_dispatch(ident,first_lease)->>'error' IS DISTINCT FROM 'batch_image_create_already_dispatched' THEN RAISE EXCEPTION 'create before upload'; END IF;
+    IF public.s2a_batch_image_runtime_checkpoint(ident,first_lease,'files/input','files/output')->>'applied'<>'true' THEN RAISE EXCEPTION 'checkpoint failed'; END IF;
+    IF public.s2a_batch_image_runtime_checkpoint(ident,first_lease,'files/input','files/output')->>'applied'<>'false' THEN RAISE EXCEPTION 'checkpoint replay'; END IF;
+    IF public.s2a_batch_image_runtime_dispatch(ident,first_lease)->>'dispatched'<>'true' THEN RAISE EXCEPTION 'dispatch failed'; END IF;
+    IF public.s2a_batch_image_runtime_dispatch(ident,first_lease)->>'error' IS DISTINCT FROM 'batch_image_create_already_dispatched' THEN RAISE EXCEPTION 'duplicate create'; END IF;
+    UPDATE s2a_private.batch_image_runtime SET lease_until=clock_timestamp()-interval '1 second' WHERE batch_id=ident;
+    job:=public.s2a_batch_image_runtime_claim()->0;second_lease:=(job->>'lease_id')::uuid;
+    IF first_lease=second_lease OR job->>'recover_create'<>'true' THEN RAISE EXCEPTION 'uncertain creation not recovered'; END IF;
+    IF public.s2a_batch_image_runtime_created(ident,first_lease,'batches/one')->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'stale writer'; END IF;
+    IF public.s2a_batch_image_runtime_dispatch(ident,second_lease)->>'error' IS DISTINCT FROM 'batch_image_create_already_dispatched' THEN RAISE EXCEPTION 'recovery repeated create'; END IF;
+    IF public.s2a_batch_image_runtime_created(ident,second_lease,'batches/one')->>'applied'<>'true' THEN RAISE EXCEPTION 'recovery failed'; END IF;
+    IF public.s2a_batch_image_runtime_created(ident,second_lease,'batches/one')->>'applied'<>'false' THEN RAISE EXCEPTION 'created replay'; END IF;
+    IF public.s2a_batch_image_runtime_created(ident,second_lease,'batches/two')->>'error' IS DISTINCT FROM 'batch_image_stage_conflict' THEN RAISE EXCEPTION 'job overwritten'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND provider_job_name='batches/one' AND status='submitted') THEN RAISE EXCEPTION 'native job not updated'; END IF;
+END $$;
+ROLLBACK;

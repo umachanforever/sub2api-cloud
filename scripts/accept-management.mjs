@@ -715,6 +715,9 @@ try {
     sql(readFileSync(root + "/deploy/image-tasks.sql", "utf8"));
     sql(readFileSync(root + "/deploy/image-tasks.sql", "utf8"));
     sql(readFileSync(root + "/tests/image-tasks.database.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/batch-image-runtime.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/batch-image-runtime.sql", "utf8"));
+    sql(readFileSync(root + "/tests/batch-image-runtime.database.sql", "utf8"));
     sql(readFileSync(root + "/deploy/image-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/deploy/image-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/tests/image-scheduler.database.sql", "utf8"));
