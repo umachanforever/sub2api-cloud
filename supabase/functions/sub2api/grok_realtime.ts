@@ -23,6 +23,8 @@ export async function relayGrokRealtime(request:Request,target:string,headers:He
  };
  const abort=()=>{void end(1001,499,'cancelled');};
  signal.addEventListener('abort',abort,{once:true});
+ upstream.on('error',()=>{void end(1011,502,'failed');});
+ upstream.on('close',code=>{void end(code===1000?1000:1011,code===1000?200:502,code===1000?'completed':'failed');});
  upstream.binaryType='arraybuffer';
  upstream.on('message',(raw,binary)=>{
   if(ended)return;const data=binary?new Uint8Array(raw as ArrayBuffer).buffer:raw.toString(),size=typeof data==='string'?new TextEncoder().encode(data).length:data.byteLength;
@@ -33,18 +35,19 @@ export async function relayGrokRealtime(request:Request,target:string,headers:He
  });
  try{
   await new Promise<void>((resolve,reject)=>{
-   const fail=()=>reject(new HttpError(502,'realtime_upstream_unavailable'));
-   const onAbort=()=>reject(new HttpError(504,'realtime_connect_cancelled'));
-   upstream.once('open',()=>{signal.removeEventListener('abort',onAbort);upstream.pause();resolve();});
-   upstream.once('error',fail);upstream.once('close',fail);signal.addEventListener('abort',onAbort,{once:true});
+   const cleanup=()=>{upstream.removeListener('open',onOpen);upstream.removeListener('error',fail);upstream.removeListener('close',fail);signal.removeEventListener('abort',onAbort);};
+   const fail=()=>{cleanup();reject(new HttpError(502,'realtime_upstream_unavailable'));};
+   const onAbort=()=>{cleanup();reject(new HttpError(504,'realtime_connect_cancelled'));};
+   const onOpen=()=>{cleanup();upstream.pause();resolve();};
+   upstream.once('open',onOpen);upstream.once('error',fail);upstream.once('close',fail);signal.addEventListener('abort',onAbort,{once:true});
+   if(signal.aborted)onAbort();
   });
+  if(ended)throw new HttpError(502,'realtime_upstream_unavailable');
   signal.throwIfAborted();const upgraded=upgrade(request);client=upgraded.socket;client.binaryType='arraybuffer';
   client.onopen=()=>{if(ended){try{client?.close(1001);}catch{}return;}opened=true;try{for(const item of queued)client!.send(item.data);queued.length=0;queuedBytes=0;upstream.resume();}catch{void end(1011,502,'failed');}};
   client.onmessage=event=>{if(ended)return;const data=event.data,size=typeof data==='string'?new TextEncoder().encode(data).length:data instanceof ArrayBuffer?data.byteLength:MAX_BYTES+1;if(size>MAX_BYTES||upstream.bufferedAmount+size>MAX_BYTES){void end(1009,400,'failed');return;}upstream.send(data,{binary:typeof data!=='string'},error=>{if(error)void end(1011,502,'failed');});};
   client.onclose=event=>{void end(event.code===1000?1000:1001,event.code===1000?200:499,event.code===1000?'completed':'cancelled');};
   client.onerror=()=>{void end(1011,499,'cancelled');};
-  upstream.on('close',code=>{void end(code===1000?1000:1011,code===1000?200:502,code===1000?'completed':'failed');});
-  upstream.on('error',()=>{void end(1011,502,'failed');});
   const runtime=(globalThis as typeof globalThis&{EdgeRuntime?:{waitUntil(promise:Promise<unknown>):void}}).EdgeRuntime;runtime?.waitUntil(done);
   return upgraded.response;
  }catch(error){await end(1011,signal.aborted?499:502,signal.aborted?'cancelled':'failed');throw error instanceof HttpError?error:new HttpError(502,'realtime_upstream_unavailable');}

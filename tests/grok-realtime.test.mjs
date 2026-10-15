@@ -36,3 +36,18 @@ test('realtime requires an upgrade and validates key platform before upstream co
  const plain=await handler(new Request('https://gateway/v1/realtime',{headers:{authorization:'Bearer sk-client'}}));assert.equal(plain.status,426);
  const wrong=await handler(new Request('https://gateway/v1/realtime',{headers:{authorization:'Bearer sk-client',upgrade:'websocket'}}));assert.equal(wrong.status,400);assert.equal(acquired,0);
 });
+test('realtime client upgrade failure releases the reservation and closes the upstream',async t=>{
+ const server=await fixture(t),finishes=[];let upgraded=false;
+ await assert.rejects(relayGrokRealtime(new Request('https://gateway/v1/realtime'),'https://api.x.ai/v1/realtime',new Headers(),null,new AbortController().signal,async(status,usage)=>finishes.push({status,usage}),()=>{upgraded=true;throw new Error('client upgrade failed');},(_url,options)=>new NodeWebSocket('ws://127.0.0.1:'+server.address().port,options)),/realtime_upstream_unavailable/);
+ await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(upgraded,true);assert.equal(finishes.length,1);assert.equal(finishes[0].usage.outcome,'failed');
+});
+test('realtime abort during handshake releases the reservation and removes abort listeners',async t=>{
+ const server=await fixture(t),abort=new AbortController(),finishes=[];let upstream;
+ const original=abort.signal.addEventListener.bind(abort.signal),remove=abort.signal.removeEventListener.bind(abort.signal),listeners=new Set();
+ abort.signal.addEventListener=(type,listener,options)=>{if(type==='abort')listeners.add(listener);return original(type,listener,options);};
+ abort.signal.removeEventListener=(type,listener,options)=>{if(type==='abort')listeners.delete(listener);return remove(type,listener,options);};
+ const result=relayGrokRealtime(new Request('https://gateway/v1/realtime'),'https://api.x.ai/v1/realtime',new Headers(),null,abort.signal,async(status,usage)=>finishes.push({status,usage}),()=>{throw new Error('must not upgrade');},(_url,options)=>{upstream=new NodeWebSocket('ws://127.0.0.1:'+server.address().port,options);queueMicrotask(()=>abort.abort());return upstream;});
+ await assert.rejects(result,/realtime_connect_cancelled/);await new Promise(resolve=>setTimeout(resolve,20));
+ assert.equal(finishes.length,1);assert.equal(finishes[0].usage.outcome,'cancelled');assert.equal(listeners.size,0);assert.equal(upstream.readyState,NodeWebSocket.CLOSED);
+});
