@@ -252,6 +252,7 @@ export function chatToResponses(body: Item): Item {
 // Network chunks may split SSE frames, JSON and UTF-8 characters.
 export async function* responseEvents(
   reader: ReadableStreamDefaultReader<Uint8Array>,
+  maxFrame = 1_048_576,
 ): AsyncGenerator<Item> {
   const decoder = new TextDecoder();
   let pending = "";
@@ -273,14 +274,14 @@ export async function* responseEvents(
         : decoder.decode(value, { stream: true });
       let boundary: RegExpExecArray | null;
       while ((boundary = /\r?\n\r?\n/.exec(pending))) {
-        if (boundary.index > 1_048_576) {
+        if (boundary.index > maxFrame) {
           throw new Error("Upstream event too large");
         }
         const event = frameEvent(pending.slice(0, boundary.index));
         pending = pending.slice(boundary.index + boundary[0].length);
         if (event) yield event;
       }
-      if (pending.length > 1_048_576) {
+      if (pending.length > maxFrame) {
         throw new Error("Upstream event too large");
       }
       if (done) {

@@ -2,12 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBackendHandler} from './handler.mjs';
 import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
+import {imageResponses} from '../supabase/functions/sub2api/image_responses.ts';
 import {imageForm} from '../supabase/functions/sub2api/image_input.ts';
 const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
-async function fixture(forward,{type="apikey"}={}){
+async function fixture(forward,{type="apikey",upstreamModel="gpt-image-2"}={}){
  const stored=await encryptCredentials(type==='apikey'?{api_key:'provider-key'}:{access_token:'oauth-private',refresh_token:'refresh-private',expires_at:Date.now()+3600000,chatgpt_account_id:'chatgpt-account'},config.encryptionKey),leases=[],finishes=[];
  const handler=createBackendHandler(config,async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',upstream_model:'gpt-image-2',account:{...stored,id:'1',platform:'openai',type,credential_version:1}});}
+  if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',upstream_model:upstreamModel,account:{...stored,id:'1',platform:'openai',type,credential_version:1}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
   return forward(String(url),init);
@@ -109,4 +110,53 @@ test('Malformed edit image and mask references fail before account reservation',
   const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({prompt:'Edit',...fields})}));
   assert.equal(response.status,400,JSON.stringify(fields));assert.equal(value.leases.length,0);assert.equal(value.finishes.length,0);
  }
+});
+
+test('OAuth Responses bridge preserves image tool options, edits and aggregate usage',async()=>{
+ for(const stream of [false,true]){
+  const image={id:'img',type:'image_generation_call',result:'aW1hZ2U=',output_format:'webp',revised_prompt:'original'};
+  const frames=[{type:'response.image_generation_call.partial_image',partial_image_index:0,partial_image_b64:'cGFydA=='},{type:'response.output_item.done',item:image},{type:'response.completed',response:{status:'completed',created_at:123,output:[image],usage:output.usage}}];
+  const value=await fixture((url,init)=>{
+   assert.equal(url,'https://chatgpt.com/backend-api/codex/responses');assert.equal(new Headers(init.headers).get('openai-beta'),'responses=experimental');
+   const body=JSON.parse(init.body);assert.equal(body.model,'gpt-5.6-luna');assert.equal(body.stream,true);assert.equal(body.store,false);assert.equal(body.input[0].content[0].text,'Edit exactly');assert.equal(body.input[0].content[1].image_url,'https://example.com/image.png');assert.equal(body.tools[0].model,'gpt-image-1');assert.equal(body.tools[0].action,'edit');assert.equal(body.tools[0].input_image_mask.image_url,'https://example.com/mask.png');assert.equal(body.tools[0].output_format,'webp');assert.equal(body.tools[0].prompt,undefined);
+   return new Response(frames.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}});
+  },{type:'oauth',upstreamModel:'gpt-image-1'});
+  const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'image-alias',prompt:'Edit exactly',images:[{image_url:'https://example.com/image.png'}],mask:{image_url:'https://example.com/mask.png'},output_format:'webp',stream,response_format:'url'})}));
+  assert.equal(response.status,200);
+  if(stream){const text=await response.text();assert.match(text,/event: image_edit.partial_image/);assert.match(text,/event: image_edit.completed/);assert.equal((text.match(/image_edit.completed/g)||[]).length,2);assert.match(text,/data:image\/webp;base64,aW1hZ2U=/);}
+  else{const result=await response.json();assert.equal(result.created,123);assert.equal(result.data[0].url,'data:image/webp;base64,aW1hZ2U=');assert.equal(result.data[0].model,'image-alias');assert.equal(result.data[0].b64_json,undefined);}
+  assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_input_tokens,12);assert.equal(value.finishes[0].p_output_tokens,7);
+ }
+});
+
+test('Responses image bridge requires successful terminal completion and never bills partial output',async()=>{
+ const image={id:'img',type:'image_generation_call',result:'aW1hZ2U='};
+ for(const terminal of [undefined,{type:'response.failed',response:{status:'failed'}},{type:'response.incomplete',response:{status:'incomplete'}},{type:'response.completed',response:{status:'completed',output:[]}}]){
+  const events=[{type:'response.image_generation_call.partial_image',partial_image_b64:'cGFydA=='}];
+  if(terminal?.type!=='response.completed')events.push({type:'response.output_item.done',item:image});
+  if(terminal)events.push(terminal);
+  const value=await fixture(()=>new Response(events.map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}}),{type:'oauth',upstreamModel:'gpt-image-1'});
+  const response=await value.handler(new Request('https://gateway/v1/images/generations',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-image-1',prompt:'Draw'})}));
+  assert.equal(response.status,502);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'failed');
+ }
+});
+test('Responses image bridge backfills terminal images from output-item events without duplicate usage',async()=>{
+ const image={id:'img',type:'image_generation_call',result:'aW1hZ2U='};
+ const value=await fixture(()=>new Response([{type:'response.output_item.done',item:image},{type:'response.output_item.done',item:image},{type:'response.completed',response:{status:'completed',output:[],usage:output.usage}}].map(event=>'data: '+JSON.stringify(event)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}}),{type:'oauth',upstreamModel:'gpt-image-1'});
+ const response=await value.handler(new Request('https://gateway/v1/images/generations',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-image-1',prompt:'Draw'})}));
+ assert.equal(response.status,200);assert.equal((await response.json()).data.length,1);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_output_tokens,7);
+});
+
+test('Responses image bridge handles image frames larger than the text-event limit',async()=>{
+ const image='A'.repeat(2*1024*1024);
+ const value=await fixture(()=>new Response('data: '+JSON.stringify({type:'response.completed',response:{status:'completed',output:[{id:'img',type:'image_generation_call',result:image}],usage:output.usage}})+'\n\n',{headers:{'content-type':'text/event-stream'}}),{type:'oauth',upstreamModel:'gpt-image-1'});
+ const response=await value.handler(new Request('https://gateway/v1/images/generations',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-image-1',prompt:'Draw'})}));
+ assert.equal(response.status,200);assert.equal((await response.json()).data[0].b64_json.length,image.length);assert.equal(value.finishes[0].p_outcome,'completed');
+});
+
+test('Cancelling a Responses image stream cancels an upstream waiting for more events',async()=>{
+ let cancelled=false;
+ const response=await imageResponses(new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({type:'response.image_generation_call.partial_image',partial_image_b64:'cGFydA=='})+'\n\n'));},cancel(){cancelled=true;}}),{headers:{'content-type':'text/event-stream'}}),true);
+ const reader=response.body.getReader();assert.equal((await reader.read()).done,false);
+ await reader.cancel();assert.equal(cancelled,true);
 });

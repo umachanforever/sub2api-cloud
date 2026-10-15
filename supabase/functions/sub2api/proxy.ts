@@ -1,4 +1,5 @@
-import {oauthImageRequest,oauthImageOutput} from './oauth_images.ts';
+import {imageResponses} from './image_responses.ts';
+import {oauthImageRequest,oauthImageOutput,directModels} from './oauth_images.ts';
 import {imageForm,validateImageEdit} from './image_input.ts';
 import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
@@ -473,6 +474,7 @@ export async function proxy(
       }
       responseAccepted = native ? native.streaming : stream;
       if (native) {
+        if(images&&!apiKey&&!directModels.has(String(forwardedBody?.model)))upstream=await imageResponses(upstream,native.streaming);
         return await nativeResponse(
           upstream,
           platform,
