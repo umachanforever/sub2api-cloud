@@ -62,7 +62,7 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir, requ
         ) return reply(403, null, "local_origin_required");
       }
       const url = new URL(request.url, "http://127.0.0.1");
-      const gatewayPath = /^\/(?:(?:antigravity\/)?(?:v1\/(?:responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|messages(?:\/count_tokens)?|alpha\/search|embeddings|images\/(?:generations|edits)|usage)|v1beta\/models(?:\/[^/]+)?)|antigravity\/models|alpha\/search|messages\/count_tokens|responses(?:\/input_tokens)?|backend-api\/codex\/(?:alpha\/search|models|responses(?:\/input_tokens)?)|models(?:\/[^/]+)?|chat\/completions|embeddings|images\/(?:generations|edits))$/.test(url.pathname);
+      const gatewayPath = /^\/(?:(?:antigravity\/)?(?:v1\/(?:responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|messages(?:\/count_tokens)?|alpha\/search|embeddings|images\/(?:generations|edits|batches(?:\/(?:models|imgbatch_[a-f0-9]{32}(?:\/(?:items(?:\/[^/]+\/content)?|download|cancel|outputs))?))?)|usage)|v1beta\/models(?:\/[^/]+)?)|antigravity\/models|alpha\/search|messages\/count_tokens|responses(?:\/input_tokens)?|backend-api\/codex\/(?:alpha\/search|models|responses(?:\/input_tokens)?)|models(?:\/[^/]+)?|chat\/completions|embeddings|images\/(?:generations|edits|batches(?:\/(?:models|imgbatch_[a-f0-9]{32}(?:\/(?:items(?:\/[^/]+\/content)?|download|cancel|outputs))?))?))$/.test(url.pathname);
       if (!gatewayPath && await serveStatic(request, response, url.pathname, staticDir)) return;
       if (
         url.pathname === "/api/v1/settings/public" && request.method === "GET"
