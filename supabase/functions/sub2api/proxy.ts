@@ -73,10 +73,24 @@ export async function proxy(
   errorContext: ErrorContext,
   requiredPlatform?: Platform,
 ): Promise<Response> {
+  return proxyWithIdentity(request,path,await hashKey(token),db,errorContext,requiredPlatform);
+}
+
+export type ImageJobIdentity = {id:string;lease_id:string;key_hash:string;client_ip:string|null;platform:"openai"|"grok";model:string;operation:"generations"|"edits"};
+
+// Only signed workers may obtain this identity from the private queue RPC.
+// No public request field or header can select a key hash or a job lease.
+export async function proxyImageJob(request:Request,job:ImageJobIdentity,db:Database,errorContext:ErrorContext):Promise<Response>{
+  if(db.config.dataModel!=="native"||request.method!=="POST"||!/^imgtask_[a-f0-9]{32}$/.test(job.id)||!/^([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})$/.test(job.lease_id)||!(/^[a-f0-9]{64}$/.test(job.key_hash))||!["openai","grok"].includes(job.platform)||!["generations","edits"].includes(job.operation))throw new HttpError(400,"invalid_image_job_identity");
+  return proxyWithIdentity(request,"/v1/images/"+job.operation,job.key_hash,db,errorContext,job.platform,job);
+}
+
+async function proxyWithIdentity(
+  request:Request,path:string,keyHash:string,db:Database,errorContext:ErrorContext,requiredPlatform?:Platform,imageJob?:ImageJobIdentity,
+):Promise<Response>{
   const requestId = errorContext.requestId;
-  const keyHash = await hashKey(token);
   errorContext.keyHash = keyHash;
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
+  const clientIp = imageJob ? imageJob.client_ip : request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
   const requireGrokPlatform=async(code:string)=>{
@@ -198,6 +212,7 @@ export async function proxy(
         }
         raw.model="gpt-image-2";
       }
+      if(imageJob&&(raw.stream===true||raw.model!==imageJob.model))throw new HttpError(400,"image_task_input_mismatch");
       const requestedModel = gemini ? gemini[1] : raw.model;
       if (
         typeof requestedModel !== "string" || !requestedModel.trim() ||
@@ -254,6 +269,7 @@ export async function proxy(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(routingModel),
+        ...(imageJob?{image_task:imageJob.id,image_job_lease:imageJob.lease_id}:{}),
         ...(cacheName?{cached_content:cacheName}:{}),
         ...(inputTokens || messageTokens || geminiTokens ? {count_only:true} : {}),
         ...(search || grokSearch ? {web_search:true,search_operation:grokSearch?grokSearchKind:'alpha_search'} : {}),
@@ -539,7 +555,7 @@ export async function proxy(
             ? 15
             : 0,
         );
-        if ([401, 403, 429].includes(status) || status >= 500) {
+        if (!imageJob && ([401, 403, 429].includes(status) || status >= 500)) {
           excluded.push(account.id);
           continue;
         }
