@@ -24,6 +24,26 @@ ALTER TABLE public.usage_logs ALTER COLUMN requested_model TYPE varchar(200);
 ALTER TABLE public.usage_logs ALTER COLUMN upstream_model TYPE varchar(200);
 ALTER TABLE public.usage_logs ADD COLUMN IF NOT EXISTS s2a_personal_details jsonb;
 
+-- Match the account-level Responses WebSocket mode precedence used by the gateway.
+CREATE OR REPLACE FUNCTION s2a_private.responses_websocket_mode(platform text,account_type text,extra jsonb)
+RETURNS text LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
+DECLARE prefix text; mode text; flag text;
+BEGIN
+ IF platform='grok' THEN RETURN 'http_bridge'; END IF;
+ IF platform IS DISTINCT FROM 'openai' THEN RETURN 'off'; END IF;
+ prefix:=CASE WHEN account_type='apikey' THEN 'openai_apikey' ELSE 'openai_oauth' END;
+ IF jsonb_typeof(extra->(prefix||'_responses_websockets_v2_mode'))='string' THEN
+  mode:=lower(btrim(extra->>(prefix||'_responses_websockets_v2_mode')));
+  IF mode IN ('off','ctx_pool','shared','dedicated','passthrough','http_bridge') THEN RETURN mode; END IF;
+ END IF;
+ FOREACH flag IN ARRAY ARRAY[prefix||'_responses_websockets_v2_enabled','responses_websockets_v2_enabled','openai_ws_enabled'] LOOP
+  IF jsonb_typeof(extra->flag)='boolean' THEN RETURN CASE WHEN (extra->>flag)::boolean THEN 'ctx_pool' ELSE 'off' END; END IF;
+ END LOOP;
+ RETURN 'ctx_pool';
+END $$;
+ALTER FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_key_hash text,p_model text,p_request_id uuid,p_excluded bigint[] DEFAULT '{}',
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
@@ -116,6 +136,7 @@ BEGIN
             WHERE accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
                 AND accounts.platform=g.platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
                 AND (bound_account_id IS NULL OR accounts.id=bound_account_id)
+                AND (NOT coalesce((p_billing_context->>'responses_websocket')::boolean,false) OR s2a_private.responses_websocket_mode(accounts.platform,accounts.type,accounts.extra)<>'off')
                 AND (NOT coalesce((p_billing_context->>'cache_create')::boolean,false) OR (g.platform='gemini' AND accounts.type='apikey'))
                 AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
                 AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp()

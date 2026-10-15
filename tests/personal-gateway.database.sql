@@ -316,6 +316,19 @@ BEGIN
  IF public.s2a_gateway_account_snapshot(b)->'websocket_settings' IS DISTINCT FROM '{"openai_apikey_responses_websockets_v2_mode":"off"}'::jsonb THEN RAISE EXCEPTION 'WebSocket configuration snapshot mismatch'; END IF;
 
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ IF s2a_private.responses_websocket_mode('openai','apikey','{"openai_apikey_responses_websockets_v2_mode":" SHARED ","responses_websockets_v2_enabled":false}')<>'shared'
+ OR s2a_private.responses_websocket_mode('openai','oauth','{"openai_apikey_responses_websockets_v2_enabled":false,"responses_websockets_v2_enabled":true}')<>'ctx_pool'
+ OR s2a_private.responses_websocket_mode('openai','oauth','{"openai_oauth_responses_websockets_v2_enabled":false,"responses_websockets_v2_enabled":true}')<>'off'
+ THEN RAISE EXCEPTION 'WebSocket mode precedence mismatch'; END IF;
+ IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',b::text,'responses_websocket',true))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'Disabled pinned WebSocket account accepted'; END IF;
+ UPDATE public.accounts SET extra='{"openai_apikey_responses_websockets_v2_enabled":false}' WHERE id=a;
+ UPDATE public.accounts SET extra='{}' WHERE id=b;
+ r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>' {"responses_websocket":true}'::jsonb);
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'Disabled preferred WebSocket account was not skipped'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid());
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'HTTP selection incorrectly excluded WebSocket-disabled account'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',foreign_account::text))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'WebSocket cross-group account accepted'; END IF;
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"websocket_account":"bad"}'::jsonb)->>'error' IS DISTINCT FROM 'invalid_websocket_account' THEN RAISE EXCEPTION 'WebSocket invalid account accepted'; END IF;
 END $$;
