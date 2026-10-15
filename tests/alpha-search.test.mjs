@@ -10,6 +10,7 @@ async function fixture(forward,{platform='openai',type='apikey',pat=false}={}){
   const handler=createBackendHandler(config,async(url,init)=>{
     if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',account:{...stored,id:'1',platform,type,credential_version:1}});}
     if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+    if(String(url).includes("/rpc/"))return Response.json(null);
     return forward(String(url),init);
   });
   const request=(path,body,headers={authorization:'Bearer gateway-key'})=>handler(new Request('https://gateway'+path,{method:'POST',headers:{'content-type':'application/json',...headers},body:JSON.stringify(body)}));
@@ -31,7 +32,7 @@ test('standalone search aliases use minimal OAuth headers, mapped models and no 
 });
 test('API-key search uses the platform endpoint and sanitizes provider failures',async()=>{
  const value=await fixture((url,init)=>{assert.equal(url,'https://api.openai.com/v1/alpha/search');assert.equal(new Headers(init.headers).get('authorization'),'Bearer provider-secret');return new Response('provider-secret',{status:403});});
- const response=await value.request('/v1/alpha/search',body);assert.equal(response.status,403);assert.doesNotMatch(await response.text(),/provider-secret/);assert.equal(value.finishes[0].p_outcome,'failed');
+ const response=await value.request('/v1/alpha/search',body);assert.equal(response.status,503);assert.doesNotMatch(await response.text(),/provider-secret/);assert.equal(value.finishes[0].p_outcome,'failed');
 });
 test('PAT search falls back through hosted web search and requires a successful terminal event',async()=>{
  for(const complete of [false,true]){
@@ -57,4 +58,23 @@ test('standalone search enforces model authentication and provider-specific rout
  assert.equal((await value.request('/v1/alpha/search',body,{})).status,401);
  assert.equal((await value.request('/v1/alpha/search',{commands:{}})).status,400);
  assert.equal((await value.request('/v1/alpha/search',body)).status,501);
+});
+test('search failover excludes rejected accounts, releases leases and leaves tool-only failures globally healthy',async()=>{
+ for(const status of [401,403,404,405,429,503]){
+  const stored=await encryptCredentials({api_key:'provider-secret'},config.encryptionKey),leases=[],finishes=[];let forwards=0;
+  const handler=createBackendHandler(config,async(url,init)=>{
+   if(String(url).endsWith('/s2a_personal_acquire')){const args=JSON.parse(init.body);leases.push(args);return Response.json({lease_id:'lease-'+leases.length,account:{...stored,id:String(leases.length),platform:'openai',type:'apikey',credential_version:1}});}
+   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+   if(String(url).includes('/rpc/'))return Response.json(null);
+   forwards++;return forwards===1?new Response('private-provider-error',{status}):Response.json({output:'Recovered'});
+  });
+  const response=await handler(new Request('https://gateway/v1/alpha/search',{method:'POST',headers:{authorization:'Bearer gateway-key','content-type':'application/json'},body:JSON.stringify(body)}));
+  assert.equal(response.status,200);assert.equal((await response.json()).output,'Recovered');assert.equal(forwards,2);
+  assert.deepEqual(leases.map(row=>row.p_excluded),[[],['1']]);assert.deepEqual(leases.map(row=>row.p_count_request),[true,false]);
+  assert.deepEqual(finishes.map(row=>row.p_outcome),['failed','completed']);assert.equal(finishes[0].p_cooldown_seconds,status===429?60:status>=500||status===403?15:0);
+ }
+});
+test('invalid search requests rejected by the provider are not retried on another account',async()=>{
+ let forwards=0;const value=await fixture(()=>{forwards++;return new Response('private-provider-error',{status:400});});
+ const response=await value.request('/v1/alpha/search',body);assert.equal(response.status,400);assert.equal(forwards,1);assert.equal(value.leases.length,1);assert.equal(value.finishes[0].p_cooldown_seconds,0);
 });

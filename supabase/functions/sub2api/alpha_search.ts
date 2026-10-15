@@ -7,6 +7,10 @@ import {buildHeaders,CODEX_RESPONSES_URL,type Platform} from './gateway.ts';
 import {responseEvents} from './openai_protocol.ts';
 
 type Item=Record<string,any>;
+export class SearchUpstreamError extends HttpError {
+  readonly upstreamStatus:number;
+  constructor(upstreamStatus:number){super(upstreamStatus>=400&&upstreamStatus<500?upstreamStatus:502,"upstream_request_failed");this.upstreamStatus=upstreamStatus;}
+}
 export function searchRequest(body:Item):Item{
   const value={...body};
   for(const field of ['prompt_cache_key','prompt_cache_retention','store'])delete value[field];
@@ -74,7 +78,7 @@ export async function alphaSearch(db:Database,account:Account&{platform?:Platfor
   if(!pat)new URL(request.url).searchParams.forEach((value,key)=>{const target=new URL(url);target.searchParams.append(key,value);url=target.href;});
   onDispatch();
   const response=await accountFetch(db,account,url,{method:'POST',redirect:'error',headers,body:JSON.stringify(payload),signal});onResponse();
-  if(!response.ok){await response.body?.cancel();throw new HttpError(response.status>=400&&response.status<500?response.status:502,'upstream_request_failed');}
+  if(!response.ok){await response.body?.cancel();throw new SearchUpstreamError(response.status);}
   let value:Item;
   if(pat)value=await searchFromResponses(response);
   else{

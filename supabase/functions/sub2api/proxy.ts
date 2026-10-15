@@ -1,4 +1,4 @@
-import {alphaSearch} from './alpha_search.ts';
+import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
 import {requestBodyLimit} from './request_limits.ts';
 import { currentCodexIdentity } from "./codex_identity.ts";
@@ -268,7 +268,17 @@ export async function proxy(
     try {
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if (search) {
-        const result=await alphaSearch(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});
+        let result:Awaited<ReturnType<typeof alphaSearch>>;
+        try{result=await alphaSearch(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});}
+        catch(error){
+          if(!(error instanceof SearchUpstreamError)||![401,403,404,405,429].includes(error.upstreamStatus)&&error.upstreamStatus<500)throw error;
+          const status=error.upstreamStatus;
+          await upstreamFailure(status);
+          // Tool access failures do not establish that generation credentials are invalid.
+          await finish(status,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:"failed"},status===429?60:status>=500||status===403?15:0);
+          excluded.push(account.id);
+          continue;
+        }
         const windows=quotaHeaderWindows(result.headers);
         if(windows && account.type!=="apikey")quotaSnapshot=db.rpc(db.config.dataModel === "native" ? "s2a_personal_windows_save" : "s2a_openai_windows_save",{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn("quota_window_save_failed"));
         await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:"completed"});
