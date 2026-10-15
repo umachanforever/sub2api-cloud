@@ -12,6 +12,7 @@ export type Config = {
   url: string;
   serviceKey: string;
   jobSigningKey?: string;
+  vertexBatch?: import("./batch_image_config.ts").VertexBatchConfig;
   encryptionKey: string;
   requestLimits?: import("./request_limits.ts").RequestLimits;
   adminIds: string[];

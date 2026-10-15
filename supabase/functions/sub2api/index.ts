@@ -1,3 +1,4 @@
+import {vertexBatchConfig} from './batch_image_config.ts';
 import {resolveRequestLimits} from './request_limits.ts';
 import {jobSigningKey} from './job_signing.ts';
 import { createHandler } from "./app.ts";
@@ -25,6 +26,7 @@ Deno.serve(
     serviceKey,
     encryptionKey,
     requestLimits: resolveRequestLimits(Deno.env.toObject()),
+    vertexBatch: vertexBatchConfig(Deno.env.toObject()),
     jobSigningKey: await jobSigningKey(encryptionKey),
     adminIds,
     googleOAuth: googleOAuthClients(Object.fromEntries(googleOAuthVariables.map(key => [key, Deno.env.get(key)]))),

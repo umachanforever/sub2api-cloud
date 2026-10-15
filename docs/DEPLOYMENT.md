@@ -51,3 +51,9 @@ Keep `.env.local` and `.local/` private. Preserve them when moving the local man
 After creating an agent key with `npm run agent:access`, run `npm run verify:cloud`. The command uses private `.local/agent-access.json` to verify health, rejected unauthenticated access, the configured model, ordinary and streaming Responses and Chat Completions, input-token preflight in both formats, and subscription usage. It sends four short inference requests and two preflight requests. The selected model must support these protocols. For OpenAI OAuth or personal-access-token accounts, run `npm run verify:cloud -- --codex` to also check the native Codex model manifest and one standalone web search with source URLs. These requests use the account's normal quota.
 
 Verification connects directly to the configured gateway; it does not require the local console, Go service, or Redis. To verify workstation independence, stop local management with `npm run down -- --cloud` and run the command again. Start management again with `npm run up -- --cloud` when needed.
+
+### Vertex batch image storage
+
+Set `SUB2API_VERTEX_BATCH_BUCKET` to an existing Google Cloud Storage bucket name, without the `gs://` prefix. Grant the configured Vertex service account access to upload input objects, list and read result objects, and delete task objects. The bucket must meet Vertex AI's regional storage requirements.
+
+`SUB2API_VERTEX_BATCH_LOCATION` selects the Vertex endpoint and defaults to `global`. `SUB2API_VERTEX_BATCH_ENVIRONMENT` defaults to `production` and separates managed objects under `batch-image/<environment>/<batch-id>/`. Keep these settings stable while jobs or retained outputs exist so polling and cleanup use the original storage location. Cloud deployment forwards these settings to the Edge Function. Leaving all three values empty clears the optional Vertex storage configuration.

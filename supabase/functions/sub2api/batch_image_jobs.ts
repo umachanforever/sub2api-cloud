@@ -4,7 +4,7 @@ import {runBatchImageJobs,type BatchRunnerOptions} from './batch_image_runner.ts
 import {cleanupBatchImages} from './batch_image_cleanup.ts';
 import {batchProviderCleanup} from './batch_image_provider_cleanup.ts';
 import {json} from './http.ts';
-export async function batchImageJobs(request:Request,db:Database,options:BatchRunnerOptions={}):Promise<Response>{
+export async function batchImageJobs(request:Request,db:Database,options:BatchRunnerOptions={vertex:db.config.vertexBatch}):Promise<Response>{
  await authorizeJob(request,db,'batch-images');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
  const dispatch=async()=>{
