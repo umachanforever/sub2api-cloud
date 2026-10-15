@@ -1,7 +1,7 @@
 import axios, { type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 
-// Keep list snapshots in this tab only; credentials and identity endpoints are excluded.
-export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAdapter {
+// Keep successful query snapshots in this tab for one minute.
+export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAdapter & { invalidate(): void } {
   const entries = new Map<string, { expires: number; response: AxiosResponse }>()
   const pending = new Map<string, Promise<AxiosResponse>>()
   let session: string | undefined
@@ -11,26 +11,27 @@ export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAda
   const copy = (response: AxiosResponse, config: InternalAxiosRequestConfig): AxiosResponse =>
     ({ ...response, data: structuredClone(response.data), config })
 
-  return async config => {
+  const cachedAdapter: AxiosAdapter = async config => {
     const identity = String(config.headers.get('Authorization') || '')
     if (session !== identity) { clear(); session = identity }
     const method = (config.method || 'get').toLowerCase()
-    if (!['get', 'head', 'options'].includes(method)) {
+    const path = (config.url || '').split('?')[0]
+    // These POST endpoints only read batch statistics; their bodies partition snapshots.
+    const batchQuery = method === 'post' && /^(?:\/admin\/accounts\/(?:usage|today-stats)\/batch|\/admin\/dashboard\/(?:users|api-keys)-usage|\/usage\/dashboard\/api-keys-usage)$/.test(path)
+    if (!['get', 'head', 'options'].includes(method) && !batchQuery) {
       clear(); mutations++
       try { return await adapter(config) } finally { mutations--; clear() }
     }
-    const path = (config.url || '').split('?')[0]
-    const ttl = /^\/(?:usage(?:\/|$)|admin\/dashboard\/)/.test(path) ? 5000 : 15000
+    const ttl = 60_000
     const bypass = /no-cache|no-store/i.test(String(config.headers.get('Cache-Control') || ''))
     if (bypass) clear()
-    const eligible = method === 'get' && !!identity && !mutations &&
-      (/^\/(?:admin\/accounts|admin\/groups|groups|keys)$/.test(path) ||
-       /^\/(?:usage(?:\/dashboard\/[\w-]+|\/stats)?|admin\/dashboard\/[\w-]+)$/.test(path)) &&
+    const eligible = (method === 'get' || batchQuery) && !!identity && !mutations &&
+      !/(?:^|\/)(?:auth|oauth|setup|credentials|authorize|authorization|callback|export|data|stream|events)(?:\/|$)/i.test(path) &&
       !config.headers.has('If-None-Match') && !config.responseType &&
       !bypass
     if (!eligible) return adapter(config)
     if (config.signal?.aborted) throw new axios.CanceledError()
-    const key = axios.getUri(config) + '\n' + String(config.headers.get('Accept-Language') || '')
+    const key = method + '\n' + axios.getUri(config) + '\n' + String(config.headers.get('Accept-Language') || '') + '\n' + (batchQuery ? JSON.stringify(config.data) : '')
     const cached = entries.get(key)
     if (cached && cached.expires > now()) return copy(cached.response, config)
     entries.delete(key)
@@ -55,4 +56,5 @@ export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAda
       if (pending.get(key) === request) pending.delete(key)
     }
   }
+  return Object.assign(cachedAdapter, { invalidate: clear })
 }

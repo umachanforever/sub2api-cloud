@@ -28,7 +28,9 @@ export const apiClient: AxiosInstance = axios.create({
   }
 })
 
-apiClient.defaults.adapter = createReadCache(axios.getAdapter(apiClient.defaults.adapter))
+const readCache = createReadCache(axios.getAdapter(apiClient.defaults.adapter))
+apiClient.defaults.adapter = readCache
+export const invalidateReadCache = () => readCache.invalidate()
 
 // ==================== Request Interceptor ====================
 

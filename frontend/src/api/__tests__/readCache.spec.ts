@@ -18,7 +18,7 @@ describe('management read cache', () => {
     expect((await client.get('/admin/accounts', { headers })).data.data).toEqual([1])
     expect(source).toHaveBeenCalledTimes(1)
   })
-  it('reuses snapshots, isolates callers, expires usage earlier, and partitions filters', async () => {
+  it('caches every query for a minute, isolates callers, and partitions filters', async () => {
     let now = 0
     const source = vi.fn(async c => response(c))
     const cached = createReadCache(source, () => now)
@@ -28,13 +28,36 @@ describe('management read cache', () => {
     expect(source).toHaveBeenCalledTimes(1)
     await cached(config('/admin/accounts', { params: { page: 2 } }))
     await cached(config('/usage'))
-    now = 5001
+    now = 59_999
     await cached(config('/usage'))
     await cached(config())
-    expect(source).toHaveBeenCalledTimes(4)
-    now = 15001
+    expect(source).toHaveBeenCalledTimes(3)
+    now = 60_001
     await cached(config())
+    await cached(config('/usage'))
     expect(source).toHaveBeenCalledTimes(5)
+  })
+
+  it('includes dashboard details, settings, users, and account usage', async () => {
+    const source = vi.fn(async c => response(c))
+    const cached = createReadCache(source)
+    for (const path of ['/admin/dashboard/snapshot-v2', '/admin/users', '/admin/settings', '/admin/accounts/42/usage', '/subscriptions']) {
+      await cached(config(path)); await cached(config(path))
+    }
+    expect(source).toHaveBeenCalledTimes(5)
+  })
+
+  it('caches POST batch queries by body without invalidating other reads', async () => {
+    const source = vi.fn(async c => response(c))
+    const cached = createReadCache(source)
+    await cached(config())
+    for (const path of ['/admin/accounts/usage/batch', '/admin/accounts/today-stats/batch', '/admin/dashboard/users-usage', '/admin/dashboard/api-keys-usage', '/usage/dashboard/api-keys-usage']) {
+      const c = config(path, { method: 'post', data: '{"ids":[1]}' })
+      await cached(c); await cached(c)
+      await cached(config(path, { method: 'post', data: '{"ids":[2]}' }))
+    }
+    await cached(config())
+    expect(source).toHaveBeenCalledTimes(11)
   })
 
   it('never caches auth, writes, failures, conditional requests, or explicit refreshes', async () => {
@@ -63,6 +86,15 @@ describe('management read cache', () => {
     await cached(config())
     await cached(config('/admin/accounts', { headers: new AxiosHeaders({ Authorization: 'Bearer second' }) }))
     expect(source).toHaveBeenCalledTimes(4)
+  })
+
+  it('invalidates snapshots on manual refresh', async () => {
+    const source = vi.fn(async c => response(c))
+    const cached = createReadCache(source)
+    await cached(config()); await cached(config())
+    cached.invalidate()
+    await cached(config())
+    expect(source).toHaveBeenCalledTimes(2)
   })
 
   it('coalesces reads but does not repopulate stale snapshots after a mutation', async () => {

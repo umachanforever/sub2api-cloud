@@ -279,7 +279,7 @@
                   @change="onDateRangeChange"
                 />
               </div>
-              <button @click="loadDashboardStats" :disabled="chartsLoading" class="btn btn-secondary">
+              <button @click="handleManualRefresh" :disabled="chartsLoading" class="btn btn-secondary">
                 {{ t('common.refresh') }}
               </button>
               <div class="ml-auto flex items-center gap-2">
@@ -382,6 +382,7 @@ import {
   Filler
 } from 'chart.js'
 import { Line } from 'vue-chartjs'
+import { invalidateReadCache } from '@/api/client'
 
 // Register Chart.js components
 ChartJS.register(
@@ -758,6 +759,11 @@ const loadDashboardStats = async () => {
     loadUsersTrend(),
     loadUserSpendingRanking()
   ])
+}
+
+const handleManualRefresh = async () => {
+  invalidateReadCache()
+  await loadDashboardStats()
 }
 
 const loadChartData = async () => {
