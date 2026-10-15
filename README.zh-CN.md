@@ -145,6 +145,8 @@ OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5
 其他 OAuth 图片模型通过 Responses 的 `image_generation` 工具桥接，支持输入图片、蒙版、渐进图片事件和完成用量记录。图片模型与 Responses 驱动模型分别选择。
 
 
+Grok 分组支持 `POST /v1/tts` 语音合成和 `/v1/stt` 语音转文字，可使用 API Key 或 OAuth 鉴权。网关保留合成参数、multipart 上传边界、转写 JSON 和二进制音频响应，使用官方 xAI 语音接口，并在请求完成或取消后释放账号。
+
 Grok 分组支持 `POST /v1/web_search`、`/v1/x_search` 及其根路径别名，可使用 API Key 或 OAuth 账号。支持 `query` 或 `input`，最多返回 20 条结果；X 搜索还支持账号、日期及图片和视频理解选项。返回的摘要须匹配上游真实搜索来源。
 
 Codex 独立网页搜索支持 `POST /v1/alpha/search`、`/alpha/search` 和 `/backend-api/codex/alpha/search`。OpenAI OAuth 与 API Key 账号使用各自原生接口，个人访问令牌通过 Responses 托管网页搜索工具兜底。成功搜索记录一次不扣费的调用，失败搜索不会写入成功用量。

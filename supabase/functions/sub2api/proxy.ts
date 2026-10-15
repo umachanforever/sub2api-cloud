@@ -1,3 +1,4 @@
+import {voiceUpload,voiceResponse} from './grok_voice.ts';
 import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from './grok_search.ts';
 import {imageResponses} from './image_responses.ts';
 import {oauthImageRequest,oauthImageOutput,directModels} from './oauth_images.ts';
@@ -88,6 +89,10 @@ export async function proxy(
     ) throw new HttpError(400, "invalid_model_id");
   }
   const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";
+  const voiceKind=/^\/v1\/(tts|stt)$/.exec(path)?.[1];
+  const voice=!!voiceKind&&request.method==='POST';
+  let voiceBytes:Uint8Array|undefined;
+  let voiceBody:Record<string,unknown>|undefined;
   const grokSearchKind=/^\/(?:v1\/)?(web_search|x_search)$/.exec(path)?.[1] as GrokSearch['kind']|undefined;
   const grokSearch=!!grokSearchKind&&request.method==='POST';
   let grokSearchOptions:GrokSearch|undefined;
@@ -105,7 +110,7 @@ export async function proxy(
     ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent)$/
       .exec(path)
     : null;
-  const protocol: NativeProtocol = embeddings
+  const protocol: NativeProtocol = voice ? "voice" : embeddings
     ? "embeddings"
     : images
     ? "images"
@@ -127,7 +132,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch && !voice) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -138,7 +143,8 @@ export async function proxy(
       const limit=requestBodyLimit(path, db.config.requestLimits);
       const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
       imageMultipart=parsed?.form;
-      const raw = parsed?.body ?? await readBody(request,limit);
+      if(voiceKind==='stt')voiceBytes=await voiceUpload(request,limit);
+      const raw = voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit);
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
@@ -149,10 +155,11 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = embeddings || inputTokens || messageTokens || search || grokSearch ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = embeddings || inputTokens || messageTokens || search || grokSearch || voice ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
+      if(voice){if(!voiceBytes)voiceBody={...raw};raw.model=voiceKind;raw.stream=false;}
       if(grokSearch){grokSearchOptions=grokSearchInput(raw,grokSearchKind!);raw.model='grok-4.6';raw.stream=false;}
       if(images && (raw.model===undefined || typeof raw.model==="string" && !raw.model.trim()))raw.model="gpt-image-2";
       const requestedModel = gemini ? gemini[1] : raw.model;
@@ -187,10 +194,10 @@ export async function proxy(
   const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
-  if(grokSearch){
+  if(grokSearch||voice){
     const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
     if(policy.error)throw new HttpError(policy.status??403,policy.error);
-    if(policy.platform!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
+    if(policy.platform!=='grok')throw new HttpError(400,voice?'grok_voice_requires_grok_group':'grok_search_requires_grok_group');
   }
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const excluded: string[] = [];
@@ -340,6 +347,12 @@ export async function proxy(
           request,
           signal,
         );
+        if(voice){
+          const headers=new Headers(native.init.headers);headers.set('accept','application/json, audio/*');
+          if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');native.init.body=voiceBytes as BodyInit;}
+          else native.init.body=JSON.stringify(voiceBody);
+          native.init.headers=headers;
+        }
         if(imageMultipart){
           imageMultipart.set("model",upstreamModel);
           const headers=new Headers(native.init.headers);headers.delete("content-type");
@@ -368,6 +381,12 @@ export async function proxy(
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
             : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
           native = outgoing;
+          if(voice){
+            const headers=new Headers(outgoing.init.headers);headers.set('accept','application/json, audio/*');
+            if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');outgoing.init.body=voiceBytes as BodyInit;}
+            else outgoing.init.body=JSON.stringify(voiceBody);
+            outgoing.init.headers=headers;
+          }
           if (platform === "gemini" && models) {
             const catalog = googleOAuthCatalog(credentials, forwardedPath, request);
             if (catalog) return catalog;
@@ -486,6 +505,7 @@ export async function proxy(
       }
       responseAccepted = native ? native.streaming : stream;
       if (native) {
+        if(voice)return voiceResponse(upstream,signal,finish);
         if(grokSearch){
           const value=await upstream.json();
           if(value?.status&&value.status!=='completed')throw new HttpError(502,'search_upstream_failed');

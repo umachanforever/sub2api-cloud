@@ -12,6 +12,7 @@ type Item = Record<string, any>;
 export type NativeProtocol =
   | "embeddings"
   | "images"
+  | "voice"
   | "chat"
   | "responses"
   | "messages"
@@ -47,7 +48,7 @@ export function apiKeyRequest(
   ) as ApiKeyCredentials;
   if (
     (["openai", "grok"].includes(platform) &&
-      !["chat", "responses", "models", ...(platform === "openai" ? ["images", "embeddings"] : [])].includes(protocol)) ||
+      !["chat", "responses", "models", ...(platform === "openai" ? ["images", "embeddings"] : ["voice"])].includes(protocol)) ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
     (path.startsWith("/v1beta/models") && protocol === "models" &&
@@ -57,6 +58,10 @@ export function apiKeyRequest(
     protocol === "models" &&
     new URL(request.url).searchParams.has("client_version")
   ) throw new HttpError(501, "codex_manifest_requires_oauth");
+  if(protocol==='voice'){
+    if(!/^\/v1\/(?:tts|stt)$/.test(path))throw new HttpError(400,'invalid_voice_endpoint');
+    if(validated.base_url==='https://cli-chat-proxy.grok.com')validated.base_url='https://api.x.ai';
+  }
   const streaming = protocol === "gemini"
     ? path.endsWith(":streamGenerateContent")
     : body?.stream === true;
@@ -87,7 +92,7 @@ export function apiKeyRequest(
   } else {
     headers.set("x-goog-api-key", validated.api_key);
   }
-  if (platform === "grok") grokHeaders(headers, validated.base_url || origins.grok);
+  if (platform === "grok" && protocol!=="voice") grokHeaders(headers, validated.base_url || origins.grok);
   const query = new URLSearchParams();
   if (protocol === "models") {
     const modelId = /\/models\/([^/]+)$/.exec(path)?.[1];
