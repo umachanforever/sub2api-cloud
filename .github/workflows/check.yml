@@ -22,6 +22,7 @@ jobs:
           version: 10
       - run: pnpm --dir frontend --ignore-workspace install --frozen-lockfile --registry=https://registry.npmjs.org
       - run: pnpm --dir frontend --ignore-workspace typecheck
+      - run: pnpm --dir frontend --ignore-workspace exec vitest run src/api/__tests__
       - run: pnpm --dir frontend --ignore-workspace build
       - run: docker build -t sub2api-supabase:check .
 
@@ -44,7 +45,8 @@ jobs:
           node-version: 24
       - run: go build ./cmd/server
       - run: go test -tags=unit ./internal/config ./internal/server/middleware
-      - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken)'
+      - run: go test -tags=unit ./internal/pkg/geminicli ./internal/pkg/antigravity
+      - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService)'
       - run: go test ./internal/repository -run 'Test(SupabaseMigrationRole|ApplyMigrations)'
       - run: go test ./cmd/server -run TestManagementMigrationURL
       - run: docker build -t sub2api-supabase-management:check .
