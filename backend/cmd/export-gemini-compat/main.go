@@ -73,7 +73,7 @@ func main() {
 			return true
 		})
 	}
-	for _, name := range []string{"convertClaudeMessagesToGeminiGenerateContent", "ensureGeminiFunctionCallThoughtSignatures", "normalizeGeminiRequestForAIStudio", "convertGeminiToClaudeMessage", "computeGeminiTextDelta"} {
+	for _, name := range []string{"convertClaudeMessagesToGeminiGenerateContent", "ensureGeminiFunctionCallThoughtSignatures", "normalizeGeminiRequestForAIStudio", "convertGeminiToClaudeMessage", "computeGeminiTextDelta", "extractGeminiParts"} {
 		if nodes[name] == nil {
 			panic("missing original Gemini converter: " + name)
 		}

@@ -242,6 +242,27 @@ func extractGeminiFinishReason(geminiResp map[string]any) string {
 	return ""
 }
 
+func extractGeminiParts(geminiResp map[string]any) []map[string]any {
+	if candidates, ok := geminiResp["candidates"].([]any); ok && len(candidates) > 0 {
+		if cand, ok := candidates[0].(map[string]any); ok {
+			if content, ok := cand["content"].(map[string]any); ok {
+				if partsAny, ok := content["parts"].([]any); ok && len(partsAny) > 0 {
+					out := make([]map[string]any, 0, len(partsAny))
+					for _, p := range partsAny {
+						pm, ok := p.(map[string]any)
+						if !ok {
+							continue
+						}
+						out = append(out, pm)
+					}
+					return out
+				}
+			}
+		}
+	}
+	return nil
+}
+
 func computeGeminiTextDelta(seen, incoming string) (delta, newSeen string) {
 	incoming = strings.TrimSuffix(incoming, "\u0000")
 	if incoming == "" {

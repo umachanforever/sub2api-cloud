@@ -3,6 +3,20 @@ import assert from 'node:assert/strict';
 import {vertexGeminiRequest} from '../supabase/functions/sub2api/vertex_gemini.ts';
 import {createBackendHandler} from './handler.mjs';
 const signal=()=>AbortSignal.timeout(5000),body={contents:[{parts:[{text:'hello'}]}]};
+for(const protocol of ['responses','chat/completions','messages'])for(const stream of [false,true])test(`Vertex Gemini compatibility ${protocol} stream=${stream}`,async()=>{
+ const finishes=[];
+ const app=createBackendHandler({url:'https://db.invalid',serviceKey:'private',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',upstream_model:'gemini-upstream',account:{id:'1',type:'service_account',platform:'gemini',credential_version:1,credential_storage:'vault',credentials:{auth_mode:'apikey',api_key:'provider-key'}}});
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(String(url).includes('/rpc/'))return Response.json(null);
+  assert.equal(url,'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-upstream:streamGenerateContent?alt=sse');
+  assert.equal(new Headers(init.headers).get('x-goog-api-key'),'provider-key');assert.equal(JSON.parse(init.body).contents[0].parts[0].text,'hello');
+  return new Response('data: '+JSON.stringify({candidates:[{content:{parts:[{text:'vertex answer'}]},finishReason:'STOP'}],usageMetadata:{promptTokenCount:3,candidatesTokenCount:2}})+'\n\n',{headers:{'content-type':'text/event-stream'}});
+ });
+ const response=await app(new Request('https://gateway/v1/'+protocol,{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'public',stream,...(protocol==='responses'?{input:'hello'}:{messages:[{role:'user',content:'hello'}],max_tokens:20})})}));
+ assert.equal(response.status,200);const text=await response.text();assert.match(text,/vertex answer/);if(!stream)JSON.parse(text);
+ assert.equal(finishes[0].p_input_tokens,3);assert.equal(finishes[0].p_output_tokens,2);
+});
 test('Vertex Gemini Express and project API keys use native actions and keep secrets in headers',async()=>{
  for(const action of ['generateContent','streamGenerateContent','countTokens'])for(const project of ['', 'project-1']){
   const request=await vertexGeminiRequest({auth_mode:'apikey',api_key:'private-key',project_id:project,location:'global'},'/v1beta/models/gemini-test:'+action,body,signal(),async()=>assert.fail('API key request exchanged a token'));

@@ -1,6 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
-import {originalChatBridge,originalAnthropicBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
+import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {invalidateVertexTokenContext} from './vertex_auth.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
@@ -471,6 +471,13 @@ async function proxyWithIdentity(
       let upstream: Response;
       const nativeAnthropicBridge=platform==='anthropic'&&!apiKey&&(chat||protocol==='responses');
       const vertexCache={scope:db,identity:JSON.stringify([account.id,account.credential_version,account.proxy_id??null])};
+      const nativeGeminiBridge=platform==='gemini'&&(chat||messages||protocol==='responses');
+      const geminiBridgePath='/v1beta/models/'+encodeURIComponent(upstreamModel)+':streamGenerateContent';
+      let geminiBody=forwardedBody;
+      if(nativeGeminiBridge){
+        let source;try{source=chat?chatToAPIResponses(forwardedBody!):messages?messagesToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+        chatBridge=await originalGeminiBridge(source,keyHash);geminiBody=chatBridge.body;
+      }
       let anthropicBody=forwardedBody;
       if(nativeAnthropicBridge){
         let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
@@ -492,8 +499,8 @@ async function proxyWithIdentity(
           native={url:'',init:{},streaming:false};
           upstream=await vertexGeminiCatalog(credentials,forwardedPath,(url,init)=>accountFetch(db,account,url,init),signal);
         } else {
-          if(!gemini)throw new HttpError(501,'provider_protocol_unsupported');
-          native=await vertexGeminiRequest(credentials,forwardedPath,forwardedBody!,signal,(url,init)=>accountFetch(db,account,url,init),vertexCache);
+          if(!gemini&&!nativeGeminiBridge)throw new HttpError(501,'provider_protocol_unsupported');
+          native=await vertexGeminiRequest(credentials,nativeGeminiBridge?geminiBridgePath:forwardedPath,geminiBody!,signal,(url,init)=>accountFetch(db,account,url,init),vertexCache);
           upstreamEndpoint=usageEndpoint(native.url);
           upstream=await accountFetch(db,account,native.url,native.init);
         }
@@ -509,7 +516,7 @@ async function proxyWithIdentity(
         const bridgeResponses = platform === "openai" && messages || (chat || messages) && upstreamProtocol==='responses';
         const bridgeChat=(messages||protocol==='responses')&&upstreamProtocol==='chat_completions';
         const bridgeAnthropic=(chat||protocol==='responses')&&upstreamProtocol==='anthropic';
-        let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
+        let outgoingBody = nativeGeminiBridge?geminiBody:platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeResponses) {
           try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
           catch { throw new HttpError(400, "invalid_request"); }
@@ -525,8 +532,8 @@ async function proxyWithIdentity(
         native = apiKeyRequest(
           platform,
           credentials,
-          bridgeAnthropic?'messages':bridgeChat?'chat':bridgeResponses ? "responses" : protocol,
-          bridgeAnthropic?'/v1/messages':bridgeChat?'/v1/chat/completions':bridgeResponses ? "/v1/responses" : forwardedPath,
+          nativeGeminiBridge?'gemini':bridgeAnthropic?'messages':bridgeChat?'chat':bridgeResponses ? "responses" : protocol,
+          nativeGeminiBridge?geminiBridgePath:bridgeAnthropic?'/v1/messages':bridgeChat?'/v1/chat/completions':bridgeResponses ? "/v1/responses" : forwardedPath,
           outgoingBody,
           request,
           signal,
@@ -570,7 +577,7 @@ async function proxyWithIdentity(
           const outgoing = platform === "grok"
             ? grokOAuthRequest(credentials, protocol, forwardedPath, imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody, request, signal)
             : platform === "gemini"
-            ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
+            ? googleOAuthRequest(credentials, nativeGeminiBridge?'gemini':protocol, nativeGeminiBridge?geminiBridgePath:forwardedPath, geminiBody, request, signal)
             : anthropicOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, anthropicBody, request, signal);
           native = outgoing;
             upstreamEndpoint=usageEndpoint(outgoing.url);

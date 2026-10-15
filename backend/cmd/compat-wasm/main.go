@@ -25,12 +25,33 @@ type anthropicState struct {
 	stream   *apicompat.AnthropicEventToResponsesState
 	mapping  apicompat.ResponsesClientToolMapping
 	restorer *apicompat.ResponsesClientToolStreamRestorer
+	gemini   *geminiStreamState
 }
 
 var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "open_gemini" {
+		opened, err := handle(request{Operation: "open_anthropic", Body: input.Body})
+		if err != nil {
+			return nil, err
+		}
+		result := opened.(map[string]any)
+		id := result["id"].(string)
+		body, err := json.Marshal(result["body"])
+		if err != nil {
+			delete(anthropicStates, id)
+			return nil, err
+		}
+		converted, err := convertClaudeMessagesToGeminiGenerateContent(body)
+		if err != nil {
+			delete(anthropicStates, id)
+			return nil, err
+		}
+		anthropicStates[id].gemini = &geminiStreamState{}
+		return map[string]any{"id": id, "body": json.RawMessage(ensureGeminiFunctionCallThoughtSignatures(converted))}, nil
+	}
 	if input.Operation == "gemini_response" {
 		var body map[string]any
 		if err := json.Unmarshal(input.Body, &body); err != nil {
@@ -77,7 +98,7 @@ func handle(input request) (any, error) {
 		stream.Model = body.Model
 		serial++
 		id := strconv.FormatUint(serial, 10)
-		anthropicStates[id] = &anthropicState{stream, mapping, apicompat.NewResponsesClientToolStreamRestorer(mapping)}
+		anthropicStates[id] = &anthropicState{stream: stream, mapping: mapping, restorer: apicompat.NewResponsesClientToolStreamRestorer(mapping)}
 		return map[string]any{"id": id, "body": converted}, nil
 	}
 	if input.Operation == "open_chat" {
@@ -118,6 +139,24 @@ func handle(input request) (any, error) {
 		return len(states) + len(anthropicStates), nil
 	}
 	if state := anthropicStates[input.ID]; state != nil {
+		if state.gemini != nil {
+			switch input.Operation {
+			case "chunk_gemini", "finish_gemini":
+				return geminiEvents(state, input.Body, input.Operation == "finish_gemini")
+			case "failure_gemini":
+				input.Operation = "failure_anthropic"
+			case "json_gemini":
+				message, err := handle(request{Operation: "gemini_response", Body: input.Body, ID: state.stream.Model})
+				if err != nil {
+					return nil, err
+				}
+				encoded, err := json.Marshal(message)
+				if err != nil {
+					return nil, err
+				}
+				return handle(request{Operation: "json_anthropic", Body: encoded, ID: input.ID})
+			}
+		}
 		switch input.Operation {
 		case "failure_anthropic":
 			stream := state.stream

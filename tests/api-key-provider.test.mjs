@@ -243,6 +243,20 @@ test('Command Code explicit rules override discovery and failed discovery falls 
   }
 });
 
+for(const protocol of ['responses','chat/completions','messages'])for(const stream of [false,true])test(`Gemini API-key compatibility serves ${protocol} with stream=${stream}`,async()=>{
+ const value=await fixture('gemini',(url,init)=>{
+  assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:streamGenerateContent?alt=sse');
+  assert.equal(init.headers.get('x-goog-api-key'),'provider-secret');
+  const body=JSON.parse(init.body);assert.equal(body.contents[0].parts[0].text,'hello');assert.equal(body.generationConfig.maxOutputTokens,20);
+  return sse([{candidates:[{finishReason:'STOP',content:{parts:[{text:'gemini answer'}]}}],usageMetadata:{promptTokenCount:8,cachedContentTokenCount:3,candidatesTokenCount:2,thoughtsTokenCount:1}}]);
+ });
+ const response=await value.request('/v1/'+protocol,{model:'gemini-test',stream,...(protocol==='responses'?{input:'hello',max_output_tokens:20}:{messages:[{role:'user',content:'hello'}],max_tokens:20})});
+ assert.equal(response.status,200);
+ if(stream)assert.match(await response.text(),/gemini answer/);
+ else{const result=await response.json();assert.equal(protocol==='responses'?result.output.find(item=>item.type==='message').content[0].text:protocol==='messages'?result.content[0].text:result.choices[0].message.content,'gemini answer');}
+ assert.equal(value.finishes[0].p_input_tokens,8);assert.equal(value.finishes[0].p_output_tokens,3);assert.equal(value.finishes[0].p_cache_read_tokens,3);assert.equal(await originalChatBridgeCount(),0);
+});
+
 for(const platform of ['opencode_go','anthropic'])for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`${platform} original Anthropic upstream conversion serves ${protocol} with stream=${stream}`,async()=>{
   const value=await fixture(platform,(url,init)=>{
     assert.match(url,/\/messages$/);
@@ -635,11 +649,6 @@ test("missing or invalid native token counts remain unknown instead of invented 
 test("mismatched protocols and decrypted custom origins fail explicitly before provider fetch", async () => {
   for (
     const [platform, path, body, credentials] of [
-      ["gemini", "/v1/messages", {
-        model: "test",
-        messages: [{ role: "user", content: "hi" }],
-        max_tokens: 10,
-      }, { api_key: "secret" }],
       ["openai", "/v1/responses", { model: "test", input: "hi" }, {
         api_key: "secret",
         base_url: "https://hostile.example",

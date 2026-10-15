@@ -1,6 +1,35 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+import {originalChatBridgeCount,originalGeminiBridge} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+
+test('Gemini streaming bridge handles cumulative text, split custom tool arguments, usage and truncation',async()=>{
+ for(const truncated of [false,true]){
+  const bridge=await originalGeminiBridge({model:'gemini-test',input:'hello',tools:[{type:'custom',name:'exec'}]},'scope');
+  assert.equal(bridge.body.contents[0].parts[0].text,'hello');
+  const chunks=[
+   {candidates:[{content:{parts:[{text:'hel'}]}}]},
+   {candidates:[{content:{parts:[{text:'hello'}]}}]},
+   {candidates:[{content:{parts:[{text:'hello'}]}}]},
+   {candidates:[{content:{parts:[{functionCall:{name:'exec',args:'{"input":"echo'}}]}}]},
+   ...(!truncated?[{candidates:[{finishReason:'STOP',content:{parts:[{functionCall:{name:'exec',args:'{"input":"echo hello"}'}}]}}]}]:[]),
+   {usageMetadata:{promptTokenCount:8,cachedContentTokenCount:3,candidatesTokenCount:2,thoughtsTokenCount:1}},
+  ];
+  const source=chunks.map(value=>'data: '+JSON.stringify(value)+'\n\n').join('');
+  const result=await bridge.response(new Response(source,{headers:{'content-type':'text/event-stream'}})).text();
+  const events=result.split('\n').filter(line=>line.startsWith('data:')).map(line=>JSON.parse(line.slice(5)));
+  const terminal=events.at(-1);assert.equal(terminal.type,truncated?'response.failed':'response.completed');
+  assert.equal(terminal.response.usage.input_tokens,8);assert.equal(terminal.response.usage.output_tokens,3);assert.equal(terminal.response.usage.input_tokens_details.cached_tokens,3);
+  if(!truncated){assert.equal(terminal.response.output.find(item=>item.type==='message').content[0].text,'hello');assert.equal(terminal.response.output.find(item=>item.type==='custom_tool_call').input,'echo hello');}
+  assert.equal(await originalChatBridgeCount(),0);
+ }
+});
+
+test('Gemini bridge accepts JSON fallback and preserves output token limits',async()=>{
+ const bridge=await originalGeminiBridge({model:'gemini-test',input:'hello'},'scope');
+ const result=await bridge.response(Response.json({candidates:[{finishReason:'MAX_TOKENS',content:{parts:[{text:'partial'}]}}],usageMetadata:{promptTokenCount:4,candidatesTokenCount:2}})).text();
+ const terminal=JSON.parse(result.split('\n').find(line=>line.startsWith('data:')).slice(5));
+ assert.equal(terminal.response.status,'incomplete');assert.equal(terminal.response.output[0].content[0].text,'partial');assert.equal(await originalChatBridgeCount(),0);
+});
 
 test('original Gemini response converter preserves tools, inline images and cached/thinking token usage',async()=>{
  await originalChatBridgeCount();

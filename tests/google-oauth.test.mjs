@@ -13,7 +13,7 @@ function sse(values,wrap=false){
  let offset=0;
  return new Response(new ReadableStream({pull(controller){if(offset===bytes.length)controller.close();else controller.enqueue(bytes.slice(offset,++offset));}}),{headers:{'content-type':'text/event-stream','set-cookie':'private'}});
 }
-async function fixture({codeAssist=false,stream=false,expired=false,reject=false,catalog=false}={}){
+async function fixture({codeAssist=false,stream=false,expired=false,reject=false,catalog=false,protocol='native'}={}){
  let credentials={access_token:'old-provider-token',refresh_token:'private-refresh',expires_at:Date.now()+(expired?-1000:3600000),oauth_type:codeAssist?'code_assist':'ai_studio',...(codeAssist?{project_id:'private-project'}:{}),provider_metadata:{preserved:true}};
  let version=1,dispatched=0,refreshes=0;
  const finished=[],saved=[];
@@ -35,12 +35,12 @@ async function fixture({codeAssist=false,stream=false,expired=false,reject=false
   if(reject&&dispatched===1)return new Response('private-provider-error',{status:401});
   if(catalog){assert.equal(new URL(url).pathname,'/v1beta/models');return Response.json({models:[{name:'models/gemini-test'}]});}
   const body=JSON.parse(init.body);
-  if(codeAssist){assert.equal(url,'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse');assert.equal(body.model,'gemini-test');assert.equal(body.project,'private-project');assert.deepEqual(body.request.contents,[{parts:[{text:'hello'}]}]);return sse(events,true);}
-  assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:'+(stream?'streamGenerateContent?alt=sse':'generateContent'));
-  return stream?sse(events):Response.json({candidates:[{content:{parts:[{text:'你好'}]},finishReason:'STOP'}],usageMetadata:events[1].usageMetadata});
+  if(codeAssist){assert.equal(url,'https://cloudcode-pa.googleapis.com/v1internal:streamGenerateContent?alt=sse');assert.equal(body.model,'gemini-test');assert.equal(body.project,'private-project');if(protocol==='native')assert.deepEqual(body.request.contents,[{parts:[{text:'hello'}]}]);else assert.equal(body.request.contents[0].parts[0].text,'hello');return sse(events,true);}
+  assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models/gemini-test:'+(stream||protocol!=='native'?'streamGenerateContent?alt=sse':'generateContent'));
+  return stream||protocol!=='native'?sse(events):Response.json({candidates:[{content:{parts:[{text:'你好'}]},finishReason:'STOP'}],usageMetadata:events[1].usageMetadata});
  }};
- const path=catalog?'/v1/models':'/v1beta/models/alias:'+(stream?'streamGenerateContent':'generateContent');
- const request=new Request('https://gateway.invalid'+path,{method:catalog?'GET':'POST',headers:{'content-type':'application/json'},...(catalog?{}:{body:JSON.stringify({contents:[{parts:[{text:'hello'}]}]})})});
+ const path=protocol!=='native'?'/v1/'+protocol:catalog?'/v1/models':'/v1beta/models/alias:'+(stream?'streamGenerateContent':'generateContent');
+ const request=new Request('https://gateway.invalid'+path,{method:catalog?'GET':'POST',headers:{'content-type':'application/json'},...(catalog?{}:{body:JSON.stringify(protocol==='native'?{contents:[{parts:[{text:'hello'}]}]}:{model:'gemini-test',stream,...(protocol==='responses'?{input:'hello'}:{messages:[{role:'user',content:'hello'}],max_tokens:20})})})});
  const response=await proxy(request,path,'existing-app-key',db,{requestId:crypto.randomUUID(),started:Date.now()});
  const text=await response.text();return {response,text,finished,saved,refreshes,dispatched};
 }
@@ -73,4 +73,8 @@ test('Google clients are private paired configuration and refresh failures do no
  assert.throws(()=>googleOAuthClients({GEMINI_CLI_OAUTH_CLIENT_ID:'id',GEMINI_CLI_OAUTH_CLIENT_SECRET:'secret\nINJECTED=x'}),/together/);
  assert.equal(oauthSecrets({GEMINI_OAUTH_CLIENT_ID:'test-id',GEMINI_OAUTH_CLIENT_SECRET:'test-secret'}),'GEMINI_OAUTH_CLIENT_ID=test-id\nGEMINI_OAUTH_CLIENT_SECRET=test-secret\n');
  await assert.rejects(refreshGoogleCredentials({access_token:'private',refresh_token:'private-refresh'},async()=>new Response('private-provider-detail',{status:400}),clients),error=>error.message==='google_oauth_refresh_failed');
+});
+
+for(const codeAssist of [false,true])for(const protocol of ['responses','chat/completions','messages'])for(const stream of [false,true])test(`Google OAuth bridge ${protocol} codeAssist=${codeAssist} stream=${stream}`,async()=>{
+ const result=await fixture({codeAssist,protocol,stream});assert.equal(result.response.status,200);assert.match(result.text,/你/);assert.match(result.text,/好/);assert.doesNotMatch(result.text,/private-project|private-trace|provider-token/);assert.equal(result.finished[0].p_input_tokens,7);assert.equal(result.finished[0].p_output_tokens,2);if(!stream)JSON.parse(result.text);
 });
