@@ -1,4 +1,4 @@
-import {compositeModelCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
+import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -301,7 +301,14 @@ async function proxyWithIdentity(
       throw new HttpError(reservation.status, reservation.error);
     }
     if('composite_catalog' in reservation){
-      if(!models||nativeGeminiModels||codexModels||clientVersion!==null)throw new HttpError(503,'composite_manifest_unavailable');
+      if(!models||nativeGeminiModels)throw new HttpError(503,'composite_manifest_unavailable');
+      if(!modelId&&(codexModels||clientVersion!==null)){
+        const manifest=compositeCodexCatalog(reservation.composite_catalog,reservation.model_allowlist);
+        const serialized=JSON.stringify(manifest),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(serialized));
+        const etag='"'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')+'"';
+        const matched=request.headers.get('if-none-match')?.split(',').some(value=>value.trim()==='*'||value.trim().replace(/^W\//,'')===etag);
+        return new Response(matched?null:serialized,{status:matched?304:200,headers:{etag,'cache-control':'no-store',...(matched?{}:{'content-type':'application/json'})}});
+      }
       return json(200,compositeModelCatalog(reservation.composite_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));
     }
     const { account, lease_id, model_allowlist, upstream_model, model_sources } = reservation as {

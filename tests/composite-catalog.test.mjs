@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {compositeModelCatalog} from '../supabase/functions/sub2api/composite_catalog.ts';
+import {compositeModelCatalog,compositeCodexCatalog} from '../supabase/functions/sub2api/composite_catalog.ts';
 const source=(platform,mapping={},passthrough=false)=>({platform,mapping,passthrough});
 const route=(model,match_type='exact')=>({model,match_type,platform:'openai',endpoint:'any',upstream_model:'gpt-6-sol'});
 const ids=(sources,routes=[],allowlist)=>compositeModelCatalog({sources,routes},allowlist).data.map(entry=>entry.id);
@@ -53,4 +53,33 @@ test('provider-prefixed model detail supports encoded separators and rejects uns
  const response=await get('xai%2Fgrok-4.6');assert.equal(response.status,200);assert.equal((await response.json()).id,'xai/grok-4.6');assert.equal(acquisitions,1);
  for(const id of ['xai%2F..%2Fsecret','xai%2F.%2Fsecret','xai%2F%2Fsecret','xai%2Fgrok%3Fkey=secret','xai%2Fgrok%23secret','xai%252Fgrok','%E0%A4%A'])assert.equal((await get(id)).status,400,id);
  assert.equal(acquisitions,1);
+});
+
+test('Composite Codex catalog uses original target metadata, excludes media aliases and TypeSafe routes',()=>{
+ const input={sources:[source('openai',{'public-sol':'gpt-6.1-sol','public-image':'gpt-image-1','family*':'gpt-6-sol'}),source('typesafe',{'typesafe-alias':'jev-latest'})],routes:[
+ {...route('chat-only'),endpoint:'chat_completions'},
+ {...route('public-sol'),endpoint:'responses',upstream_model:'gpt-6.1-sol'},
+ {...route('public-image'),endpoint:'responses',upstream_model:'gpt-image-1'},
+ {...route('typesafe-alias'),endpoint:'responses',platform:'typesafe'},
+ ]};
+ const value=compositeCodexCatalog(input);assert.deepEqual(value.models.map(model=>model.slug),['public-sol']);
+ assert.ok(value.models[0].supported_reasoning_levels.some(level=>level.effort==='max'));assert.ok(!value.models[0].supported_reasoning_levels.some(level=>level.effort==='none'));
+ assert.ok(value.models[0].model_messages.instructions_template.length>1000);
+});
+test('Composite Codex route precedence excludes endpoint-specific TypeSafe and retains known explicit overrides',()=>{
+ const input={sources:[source('openai',{'public-a':'gpt-6-sol','public-b':'gpt-6-sol'})],routes:[
+ {...route('public-a'),platform:'openai',endpoint:'any'},
+ {...route('public-a'),platform:'typesafe',endpoint:'responses'},
+ {...route('public-b'),platform:'typesafe',endpoint:'any'},
+ {...route('public-b'),platform:'openai',endpoint:'responses',upstream_model:'gpt-6.1-sol'}
+ ]};
+ const value=compositeCodexCatalog(input);assert.deepEqual(value.models.map(model=>model.slug),['public-b']);assert.ok(!value.models[0].supported_reasoning_levels.some(level=>level.effort==='none'));
+});
+test('Composite Codex route returns original metadata with conditional ETag and preserves detail shape',async()=>{
+ const app=createHandler({url:'https://db.invalid',serviceKey:'service',encryptionKey:'',adminIds:[],dataModel:'native'},async()=>Response.json({composite_catalog:{sources:[source('openai',{'public':'gpt-6.1-sol'})],routes:[]}}));
+ const get=(path,headers={})=>app(new Request('https://gateway'+path,{headers:{authorization:'Bearer sk-client',...headers}}));
+ const first=await get('/backend-api/codex/models');assert.equal(first.status,200);const etag=first.headers.get('etag');assert.match(etag,/^"[a-f0-9]{64}"$/);assert.equal((await first.json()).models[0].slug,'public');
+ const cached=await get('/backend-api/codex/models',{'if-none-match':'W/'+etag});assert.equal(cached.status,304);assert.equal(await cached.text(),'');
+ assert.equal((await get('/v1/models?client_version=0.150.0')).status,200);
+ const detail=await get('/v1/models/public?client_version=0.150.0');assert.equal((await detail.json()).id,'public');
 });

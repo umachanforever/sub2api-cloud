@@ -20,6 +20,8 @@ BEGIN
  (g,'alias-','prefix','openai','gpt-6','chat_completions',100);
  acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
  IF NOT acquired ? 'composite_catalog' OR acquired ? 'account' OR acquired ? 'lease_id' THEN RAISE EXCEPTION 'Composite catalog acquisition requires provider lease'; END IF;
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/backend-api/codex/models"}');
+ IF NOT acquired ? 'composite_catalog' OR acquired ? 'account' OR acquired ? 'lease_id' THEN RAISE EXCEPTION 'Composite Codex catalog unavailable'; END IF;
  UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]'::jsonb WHERE s2a_key_hash=h;
  acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
  IF acquired->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'Composite catalog bypassed IP policy'; END IF;

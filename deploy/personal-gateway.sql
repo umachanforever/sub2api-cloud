@@ -155,7 +155,7 @@ BEGIN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
     END IF;
     IF p_model='__models__' AND g.platform='composite' THEN
-        IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^/v1/models(/[^/]+)?$'
+        IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$'
             THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
         RETURN jsonb_build_object('composite_catalog',s2a_private.composite_catalog_sources(g.id),'model_allowlist',g.model_allowlist);
     END IF;
