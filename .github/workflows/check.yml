@@ -57,6 +57,10 @@ jobs:
       - run: npm ci --ignore-scripts
         working-directory: ${{ github.workspace }}
       - run: go build ./cmd/server
+      - run: go test ./cmd/export-codex-catalog
+      - name: Verify original Codex catalog templates
+        working-directory: ${{ github.workspace }}
+        run: node scripts/generate-codex-catalog.mjs --check
 
       - name: Verify native management and cloud gateway integration
         working-directory: ${{ github.workspace }}
