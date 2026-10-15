@@ -340,3 +340,37 @@ BEGIN
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"websocket_account":"bad"}'::jsonb)->>'error' IS DISTINCT FROM 'invalid_websocket_account' THEN RAISE EXCEPTION 'WebSocket invalid account accepted'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint; other_user bigint; g bigint; a bigint; b bigint; k bigint; h text; h2 text; other_hash text; r jsonb; second jsonb; request uuid:=gen_random_uuid();
+BEGIN
+ INSERT INTO public.users(email,password_hash,concurrency) VALUES('concurrency-'||gen_random_uuid()||'@example.invalid','!fixture',1) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('User concurrency fixture','openai') RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'First') RETURNING id,s2a_key_hash INTO k,h;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Second') RETURNING s2a_key_hash INTO h2;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Concurrency A','openai','apikey','{"api_key":"synthetic"}',3) RETURNING id INTO a;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Concurrency B','openai','apikey','{"api_key":"synthetic"}',3) RETURNING id INTO b;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
+ r:=public.s2a_personal_acquire(h,'gpt-test',request);
+ IF r ? 'error' THEN RAISE EXCEPTION 'initial admission failed: %',r; END IF;
+ IF public.s2a_personal_acquire(h,'gpt-test',request) IS DISTINCT FROM r THEN RAISE EXCEPTION 'replay consumed a user slot'; END IF;
+ second:=public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid(),ARRAY[a]);
+ IF second->>'error' IS DISTINCT FROM 'user_concurrency_exceeded' OR second->>'status'<>'429' THEN RAISE EXCEPTION 'another key/account bypassed user limit: %',second; END IF;
+ INSERT INTO public.users(email,password_hash,concurrency) VALUES('other-concurrency-'||gen_random_uuid()||'@example.invalid','!fixture',1) RETURNING id INTO other_user;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(other_user,g,'synthetic-'||gen_random_uuid(),'Other user') RETURNING s2a_key_hash INTO other_hash;
+ second:=public.s2a_personal_acquire(other_hash,'gpt-test',gen_random_uuid());
+ IF second ? 'error' THEN RAISE EXCEPTION 'one user blocked another user'; END IF;
+ PERFORM public.s2a_personal_finish((second->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(second->'account'->>'credential_version')::bigint);
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ r:=public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid());
+ IF r ? 'error' THEN RAISE EXCEPTION 'released user slot unavailable'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET expires_at=clock_timestamp()-interval '1 second' WHERE id=(r->>'lease_id')::uuid;
+ r:=public.s2a_personal_acquire(h,'gpt-test',gen_random_uuid());
+ IF r ? 'error' THEN RAISE EXCEPTION 'expired lease retained user slot'; END IF;
+ UPDATE public.users SET concurrency=0 WHERE id=u;
+ second:=public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid());
+ IF second ? 'error' THEN RAISE EXCEPTION 'zero user concurrency should be unlimited'; END IF;
+END $$;
+ROLLBACK;

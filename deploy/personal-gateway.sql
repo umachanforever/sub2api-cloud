@@ -19,6 +19,7 @@ ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
 ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
 CREATE INDEX IF NOT EXISTS personal_gateway_account_slots ON s2a_private.personal_gateway_leases(account_id,expires_at) WHERE finished_at IS NULL;
+CREATE INDEX IF NOT EXISTS personal_gateway_user_slots ON s2a_private.personal_gateway_leases(user_id,expires_at) WHERE finished_at IS NULL;
 CREATE INDEX IF NOT EXISTS personal_gateway_request ON s2a_private.personal_gateway_leases(request_id);
 ALTER FUNCTION public.invalidate_group_usage_rollup_state() SET search_path=pg_catalog,public,pg_temp;
 ALTER FUNCTION public.invalidate_group_usage_rollup_state_after_insert() SET search_path=pg_catalog,public,pg_temp;
@@ -136,6 +137,11 @@ BEGIN
         IF lease.finished_at IS NULL AND lease.expires_at<=clock_timestamp() THEN RETURN jsonb_build_object('error','request_expired','status',409); END IF;
     END IF;
     IF lease.id IS NULL OR lease.finished_at IS NOT NULL THEN
+        -- The user row lock serializes admissions across every key and account.
+        IF EXISTS (SELECT 1 FROM public.users u WHERE u.id=k.user_id AND u.concurrency>0
+            AND (SELECT count(*) FROM s2a_private.personal_gateway_leases l
+                WHERE l.user_id=k.user_id AND l.finished_at IS NULL AND l.expires_at>clock_timestamp())>=u.concurrency)
+            THEN RETURN jsonb_build_object('error','user_concurrency_exceeded','status',429); END IF;
         lease:=NULL;
         FOR a IN SELECT accounts.* FROM s2a_private.accounts accounts
             JOIN public.account_groups ag ON ag.account_id=accounts.id AND ag.group_id=g.id
