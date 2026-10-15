@@ -11,7 +11,7 @@ test('Grok voice preserves request JSON, multipart bytes and audio responses for
   const payload={text:'Hello',voice_id:'sample',model:'client-voice',custom_option:2};let calls=0;
   const handler=createBackendHandler(config,async(url,init)=>{
    if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'grok'});
-   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'1',platform:'grok',type,credential_version:1}});
+   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_sources:{mapping:{'*':'grok-text-only'},include_upstream:true},account:{...stored,id:'1',platform:'grok',type,credential_version:1}});
    if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
    if(String(url).includes('/rpc/'))return Response.json(null);
    calls++;assert.equal(url,'https://api.x.ai/v1/'+endpoint);const headers=new Headers(init.headers);assert.equal(headers.get('authorization'),'Bearer '+(type==='apikey'?'provider-private':'oauth-private'));assert.equal(headers.get('x-grok-client-version'),null);assert.equal(headers.get('x-xai-token-auth'),null);
@@ -21,7 +21,7 @@ test('Grok voice preserves request JSON, multipart bytes and audio responses for
   });
   const response=await handler(new Request('https://gateway/v1/'+endpoint,{method:'POST',headers:{authorization:'Bearer sk-client','content-type':endpoint==='tts'?'application/json':'multipart/form-data; boundary=original'},body:endpoint==='tts'?JSON.stringify(payload):wire}));
   assert.equal(response.status,200);assert.equal(calls,1);if(endpoint==='tts'){assert.equal(response.headers.get('content-type'),'audio/wav');assert.deepEqual(new Uint8Array(await response.arrayBuffer()),audio);}else assert.deepEqual(await response.json(),{text:'transcript',duration:1.25});
-  assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
+  assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);assert.equal(finishes[0].p_upstream_model,endpoint);
  }
 });
 test('voice upload limits use actual bytes and reject empty bodies',async()=>{
@@ -62,7 +62,7 @@ test('custom voice lifecycle preserves methods, multipart uploads, audio and emp
   const bytes=Uint8Array.of(0,255,1,13,10,128),finishes=[];let calls=0;
   const handler=createBackendHandler(config,async(url,init)=>{
    if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'grok'});
-   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'1',platform:'grok',type,credential_version:1}});
+   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_sources:{mapping:{'*':'grok-text-only'},include_upstream:true},account:{...stored,id:'1',platform:'grok',type,credential_version:1}});
    if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
    if(String(url).includes('/rpc/'))return Response.json(null);
    calls++;assert.equal(url,'https://api.x.ai/v1/'+path+'?limit=5');assert.equal(init.method,method);
@@ -70,6 +70,6 @@ test('custom voice lifecycle preserves methods, multipart uploads, audio and emp
    return status===204?new Response(null,{status}):path.endsWith('/audio')&&path!=='custom-voices/audio'?new Response(bytes,{headers:{'content-type':'audio/wav'}}):Response.json({id:'voice_1'},{status});
   });
   const response=await handler(new Request('https://gateway/'+(type==='apikey'?'v1/':'')+path+'?limit=5',{method,headers:{authorization:'Bearer sk-client','content-type':'multipart/form-data; boundary=original'},...(['POST','PATCH'].includes(method)?{body:bytes}:{})}));
-  assert.equal(response.status,status);await response.arrayBuffer();assert.equal(calls,1);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');
+  assert.equal(response.status,status);await response.arrayBuffer();assert.equal(calls,1);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_upstream_model,'custom-voices');
  }
 });

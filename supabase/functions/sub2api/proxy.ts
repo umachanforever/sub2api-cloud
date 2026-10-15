@@ -1,4 +1,3 @@
-import {relayGrokRealtime} from './grok_realtime.ts';
 import {resolveProxy} from './account_proxy.ts';
 import {imageGenerationIntent} from './image_policy.ts';
 import {countGeminiTokens} from './gemini_count_tokens.ts';
@@ -297,7 +296,7 @@ async function proxyWithIdentity(
       upstream_model?:string;
       model_sources?:ModelSources;
     };
-    const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
+    const mappedModel=voice?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
     let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
@@ -397,6 +396,7 @@ async function proxyWithIdentity(
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
       if(realtime){
+        const {relayGrokRealtime}=await import('./grok_realtime.ts');
         if(platform!=='grok')throw new HttpError(400,'grok_voice_requires_grok_group');
         const outbound=account.type==='apikey'?apiKeyRequest('grok',await decryptApiKeyCredentials(account,db.config.encryptionKey),'voice','/v1/realtime',undefined,request,signal):grokOAuthRequest(await credentialsFor(db,account),'voice','/v1/realtime',undefined,request,signal);
         const target=new URL(outbound.url);target.searchParams.set('model',upstreamModel);
