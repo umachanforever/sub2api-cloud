@@ -56,6 +56,7 @@ export async function proxy(
   token: string,
   db: Database,
   errorContext: ErrorContext,
+  requiredPlatform?: Platform,
 ): Promise<Response> {
   const requestId = errorContext.requestId;
   const keyHash = await hashKey(token);
@@ -237,6 +238,7 @@ export async function proxy(
       return finishing;
     };
     try {
+      if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
       let native: ReturnType<typeof apiKeyRequest> | undefined;
@@ -262,7 +264,7 @@ export async function proxy(
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
           if (platform === 'antigravity') {
-            const outgoing = antigravityOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
+            const outgoing = antigravityOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal, protocol === "messages" ? body?.model as string : undefined);
             native = outgoing;
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }

@@ -37,7 +37,7 @@ npm run up -- --cloud
 
 使用 Gemini CLI 或 Antigravity OAuth 授权前，请在 `.env.local` 配置对应的 `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` 或 `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`。Google OAuth 客户端信息由部署者提供。Gemini 支持 AI Studio 和 Code Assist，可通过 `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` 配置自定义 AI Studio 客户端。一键部署会同步云端刷新所需配置，Code Assist 的项目信息保存在加密账号凭据中。
 
-Antigravity OAuth 账号提供供应商模型目录，以及 Gemini 原生 `generateContent` / `streamGenerateContent` 接口。配置 `ANTIGRAVITY_OAUTH_CLIENT_ID` 和 `ANTIGRAVITY_OAUTH_CLIENT_SECRET` 后，由云端刷新凭据。网关保留加密的项目 ID，在保留调用方指令的同时注入上游身份提示，解包内部响应，并在供应商固定的 daily 和 production 地址间执行故障切换。
+Antigravity OAuth 账号提供供应商模型目录，以及 Gemini 原生 `generateContent` / `streamGenerateContent` 和 Claude Messages 接口，支持普通 JSON 与 SSE 流式响应。Claude 客户端可使用 `/antigravity` 基础路径和同一分组的调用密钥。配置 `ANTIGRAVITY_OAUTH_CLIENT_ID` 和 `ANTIGRAVITY_OAUTH_CLIENT_SECRET` 后，由云端刷新凭据。网关保留加密的项目 ID，在保留调用方指令的同时注入上游身份提示，解包内部响应，并在供应商固定的 daily 和 production 地址间执行故障切换。
 
 ## 本地 Supabase
 

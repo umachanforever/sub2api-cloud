@@ -209,7 +209,7 @@ export function nativeUsage(
         ? "incomplete"
         : "completed";
     }
-  } else if (platform === "anthropic") {
+  } else if (platform === "anthropic" || platform === "antigravity" && protocol === "messages") {
     const totals = value.message?.usage ?? value.usage;
     const input = tokens(totals?.input_tokens),
       output = tokens(totals?.output_tokens);

@@ -5,14 +5,22 @@ import type { Account } from './accounts.ts';
 import { Database, HttpError } from './db.ts';
 import { normalizeCodeAssist, type GoogleCredentials } from './google_oauth.ts';
 import { cleanAntigravityTools } from './antigravity_schema.ts';
+import { claudeToAntigravity, antigravityToClaude } from './antigravity_claude.ts';
 import { antigravityIdentity } from './antigravity_identity.ts';
 
 const PROD = 'https://cloudcode-pa.googleapis.com';
 const DAILY = 'https://daily-cloudcode-pa.googleapis.com';
-type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string };
+type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string };
 
 export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol: NativeProtocol, path: string,
-  body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal): Outgoing {
+  body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal, responseModel?: string): Outgoing {
+  const claudeModel = protocol === 'messages' && typeof body?.model === 'string' ? body.model : undefined;
+  const claudeStreaming = body?.stream === true;
+  if (claudeModel) {
+    body = claudeToAntigravity(body!);
+    protocol = 'gemini';
+    path = `/v1beta/models/${encodeURIComponent(claudeModel)}:${claudeStreaming ? 'streamGenerateContent' : 'generateContent'}`;
+  }
   const validated = apiKeyRequest('gemini', { api_key: credentials.access_token }, protocol, path, body, request, signal);
   const project = typeof credentials.project_id === 'string' ? credentials.project_id.trim() : undefined;
   if (!project || project.length > 512 || /[\x00-\x1f\x7f]/.test(project)) throw new HttpError(400, 'antigravity_project_required');
@@ -36,7 +44,7 @@ export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol
   }
   return {
     url: DAILY + '/v1internal:streamGenerateContent?alt=sse', fallbackURL: PROD + '/v1internal:streamGenerateContent?alt=sse',
-    catalog: false, streaming: validated.streaming,
+    catalog: false, streaming: validated.streaming, ...(claudeModel ? { claudeModel: responseModel ?? claudeModel } : {}),
     init: { method: 'POST', headers, redirect: 'error', signal, body: JSON.stringify({
       project, requestId: 'agent-' + crypto.randomUUID(), userAgent: 'antigravity', requestType: 'agent',
       model: decodeURIComponent(match[1]), request: inner,
@@ -66,6 +74,15 @@ async function modelCatalog(response: Response, path: string, request: Request):
 }
 
 export async function forwardAntigravity(db: Database, account: Account, outgoing: Outgoing, path: string, request: Request): Promise<Response> {
+  if (outgoing.claudeModel) {
+    const envelope = JSON.parse(String(outgoing.init.body));
+    if (!envelope.request.sessionId) {
+      const text = envelope.request.contents.find((content: { role: string; parts: { text?: string }[] }) => content.role === 'user' && content.parts[0]?.text)?.parts[0].text;
+      const bytes = text ? new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))) : crypto.getRandomValues(new Uint8Array(8));
+      envelope.request.sessionId = '-' + (new DataView(bytes.buffer).getBigUint64(0) & 0x7fffffffffffffffn).toString();
+      outgoing.init = { ...outgoing.init, body: JSON.stringify(envelope) };
+    }
+  }
   for (const [index, url] of [outgoing.url, outgoing.fallbackURL].entries()) {
     let response: Response;
     try { response = await accountFetch(db, account, url, outgoing.init); }
@@ -77,7 +94,9 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
     }
     if (index === 0 && ([404, 408, 429].includes(response.status) || response.status >= 500)) { await response.body?.cancel(); continue; }
     if (!response.ok) return response;
-    return outgoing.catalog ? modelCatalog(response, path, request) : normalizeCodeAssist(response, outgoing.streaming);
+    if (outgoing.catalog) return modelCatalog(response, path, request);
+    const normalized = await normalizeCodeAssist(response, outgoing.streaming);
+    return outgoing.claudeModel ? antigravityToClaude(normalized, outgoing.streaming, outgoing.claudeModel) : normalized;
   }
   throw new HttpError(502, 'upstream_request_failed');
 }

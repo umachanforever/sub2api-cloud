@@ -48,3 +48,5 @@ Antigravity's Gemini-native transport wraps requests in its internal project env
 The original Go and Vue sources remain pinned and attributed as described in [NOTICE](../NOTICE).
 
 Antigravity tool declarations normalize local schema definitions, object intersections, union branches, tuples, nullable types, and constants before forwarding. Unsupported constraints are retained as description hints. Expansion is bounded; unresolved, external, and recursive references return an explicit client error. Caller schemas, tool names, content, and thought signatures remain intact.
+
+Claude Messages for Antigravity translate system instructions, base64 images/documents, signed thinking, tool calls/results, generation options, and custom tool declarations into the native request envelope. Stable sessions derive from the first user text unless caller metadata provides a session. Response conversion preserves thinking/tool signatures, emits ordered Claude SSE blocks, and maps cached input and reasoning output back into canonical usage. The `/antigravity` route enforces the selected account platform before provider dispatch.
