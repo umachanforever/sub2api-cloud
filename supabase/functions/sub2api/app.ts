@@ -1,3 +1,4 @@
+import {antigravityDiscovery} from './antigravity_discovery.ts';
 import { codexJobs } from './codex_jobs.ts';
 import { type Config, Database, HttpError } from "./db.ts";
 import { json } from "./http.ts";
@@ -28,8 +29,8 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
-      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
+      if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);
@@ -43,7 +44,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^Bearer\s+(\S+)$/i,
       )?.[1];
       if (authorization !== null && !bearer) throw new HttpError(401, "unauthorized");
-      const nativeKeys = ["/v1/messages", "/v1/messages/count_tokens", "/messages/count_tokens"].includes(pathname) || /^\/v1\/models(?:\/[^/]+)?$/.test(pathname)
+      const nativeKeys = ["/antigravity/models", "/v1/messages", "/v1/messages/count_tokens", "/messages/count_tokens"].includes(pathname) || /^\/v1\/models(?:\/[^/]+)?$/.test(pathname)
         ? [request.headers.get("x-api-key")]
         : pathname.startsWith("/v1beta/")
         ? [request.headers.get("x-goog-api-key"), new URL(request.url).searchParams.get("key")]
@@ -55,6 +56,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (new Set(supplied).size > 1) throw new HttpError(400, "conflicting_credentials");
       const token = supplied[0];
       if (!token) throw new HttpError(401, "unauthorized");
+      if (pathname === "/antigravity/models" && request.method === "GET") return await antigravityDiscovery(request,token,db);
       if (pathname === "/v1/usage" && request.method === "GET") return await usageAccess(request, token, db);
       return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);
     } catch (error) {

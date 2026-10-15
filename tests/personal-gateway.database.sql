@@ -5,7 +5,10 @@ DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::big
     k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
     g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid;
 BEGIN
-    IF has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
+    IF has_function_privilege('anon','public.s2a_personal_key_policy(text,text)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_key_policy(text,text)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_key_policy(text,text)','EXECUTE')
+        OR has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text)','EXECUTE')
         OR has_table_privilege('service_role','s2a_private.personal_gateway_leases','SELECT') THEN RAISE EXCEPTION 'personal gateway ACL mismatch'; END IF;
@@ -17,6 +20,10 @@ BEGIN
     INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority)
         VALUES('Personal cloud account','openai','apikey','{"api_key":"synthetic-private-token","model_mapping":{"alias":"gpt-5.4"}}',1,0) RETURNING id INTO a;
     INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+    result:=public.s2a_personal_key_policy(h);
+    IF result ? 'error' OR result->>'platform'<>'openai' OR result ? 'key_id' THEN RAISE EXCEPTION 'read-only key discovery failed or leaked identity'; END IF;
+    IF public.s2a_personal_key_policy(repeat('0',64))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'discovery accepted invalid key'; END IF;
+    IF public.s2a_personal_key_policy(h,'127.0.0.1/8')->>'error' IS DISTINCT FROM 'invalid_client_ip' THEN RAISE EXCEPTION 'discovery accepted subnet'; END IF;
     acquired:=public.s2a_personal_acquire(h,'alias',request);
     IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM a::text
         OR acquired->'account'->>'credential_storage' IS DISTINCT FROM 'vault'
@@ -72,7 +79,12 @@ BEGIN
     IF acquired ? 'error' THEN RAISE EXCEPTION 'failed search admission failed'; END IF;
     result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,403,'failed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
     IF EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text) THEN RAISE EXCEPTION 'failed search counted as success'; END IF;
+    UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE id=k;
+    IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'ip_forbidden' OR public.s2a_personal_key_policy(h,'192.0.2.5') ? 'error' THEN RAISE EXCEPTION 'discovery ignored IP allowlist'; END IF;
+    UPDATE public.api_keys SET ip_whitelist='[]',ip_blacklist='["192.0.2.0/24"]' WHERE id=k;
+    IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'client_ip_required' OR public.s2a_personal_key_policy(h,'192.0.2.5')->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'discovery ignored IP denylist'; END IF;
     UPDATE public.api_keys SET status='inactive' WHERE id=k;
+    IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'discovery accepted revoked key'; END IF;
     IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
 END $$;
 ROLLBACK;

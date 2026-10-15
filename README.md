@@ -134,6 +134,8 @@ Anthropic-format clients can use `POST /v1/messages/count_tokens` or `/messages/
 
 Codex clients can discover the native model manifest at `GET /backend-api/codex/models`; OpenAI OAuth accounts return the Codex model metadata even without a `client_version` query.
 
+`GET /antigravity/models` returns the pinned upstream Antigravity catalog with the API key group's model allowlist applied. It validates key and IP access without reserving an account or contacting a provider.
+
 Codex standalone web search is available at `POST /v1/alpha/search`, `/alpha/search`, and `/backend-api/codex/alpha/search`. OpenAI OAuth and API-key accounts use their native endpoints; personal access tokens use the hosted Responses web-search fallback. Successful searches record one uncharged search call, while failed searches do not create successful usage records.
 
 
