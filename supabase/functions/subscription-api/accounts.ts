@@ -1,3 +1,4 @@
+import { refreshGrokCredentials } from './grok_oauth.ts';
 import { proxyFetcher } from "./account_proxy.ts";
 import { refreshAnthropicCredentials } from "./anthropic_oauth.ts";
 import { refreshGoogleCredentials } from "./google_oauth.ts";
@@ -70,6 +71,7 @@ export async function credentialsFor(
     rejectedToken === undefined ? account : await currentAccount(db, account);
   let current = await decryptCredentials(latest, db.config.encryptionKey);
   if (
+    !(account.platform === "grok" && current.refresh_token && expiresAtMillis(current.expires_at) === undefined) &&
     !shouldRefresh(current) &&
     (rejectedToken === undefined || rejectedToken !== current.access_token)
   ) {
@@ -94,7 +96,7 @@ export async function credentialsFor(
       const fetcher = proxyFetcher(db, account.proxy_id, isVaultCredentials(account));
       const refreshed = account.platform === "gemini" || account.platform === "antigravity"
         ? await refreshGoogleCredentials(current, fetcher, db.config.googleOAuth, account.platform === "antigravity" ? "antigravity" : undefined)
-        : await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(current, fetcher);
+        : await (account.platform === "grok" ? refreshGrokCredentials : account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(current, fetcher);
       if (isVaultCredentials(account) && refreshed.expires_at !== undefined) {
         const expiry = expiresAtMillis(refreshed.expires_at);
         if (expiry === undefined) throw new HttpError(502, "invalid_oauth_refresh_response");

@@ -1,3 +1,4 @@
+import { grokOrigin } from './grok_config.ts';
 import { quotaDisplaySnapshot, quotaWindowMetadata } from "./openai_quota_values.ts";
 import { autoResetThreshold } from "./openai_auto_reset_values.ts";
 import { pauseThreshold } from "./openai_quota_pause.ts";
@@ -200,7 +201,7 @@ export function parseAccountCredentials(
   platform: unknown = "openai",
   type: unknown = "oauth",
 ): AccountCredentials {
-  if (!["openai", "anthropic", "gemini"].includes(platform as string)) {
+  if (!["openai", "anthropic", "gemini", "grok"].includes(platform as string)) {
     throw new HttpError(501, "unsupported_platform");
   }
   if (type === "oauth" && platform === "openai") {
@@ -232,6 +233,10 @@ export function parseAccountCredentials(
   const credentials: { api_key: string; base_url?: string } = {
     api_key: input.api_key.trim(),
   };
+  if (platform === "grok") {
+    credentials.base_url = grokOrigin(input.base_url);
+    return credentials;
+  }
   if (input.base_url !== undefined && input.base_url !== "") {
     if (typeof input.base_url !== "string") {
       throw new HttpError(400, "invalid_base_url");

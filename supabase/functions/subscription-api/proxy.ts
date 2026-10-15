@@ -1,3 +1,4 @@
+import { grokOAuthRequest } from './grok_oauth.ts';
 import { accountFetch } from "./account_proxy.ts";
 import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
 import { antigravityOAuthRequest, forwardAntigravity } from "./antigravity_oauth.ts";
@@ -261,7 +262,7 @@ export async function proxy(
         );
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
-      } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity") {
+      } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity" || platform === "grok") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
           if (platform === 'antigravity') {
@@ -274,7 +275,9 @@ export async function proxy(
             native = outgoing;
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }
-          const outgoing = platform === "gemini"
+          const outgoing = platform === "grok"
+            ? grokOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
+            : platform === "gemini"
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
             : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
           native = outgoing;

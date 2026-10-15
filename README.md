@@ -41,6 +41,8 @@ For Gemini CLI or Antigravity OAuth authorization, configure the corresponding `
 
 Gemini OAuth supports AI Studio and Code Assist. Use `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` for a custom AI Studio client. The deployment command installs the Gemini client configuration in the cloud gateway as well as local management, so token refresh continues with the local services stopped. Code Assist accounts retain their project information in encrypted account credentials.
 
+Grok API-key and OAuth accounts support native Chat Completions, Responses, and model discovery with JSON or SSE output. OAuth requests use the official Grok CLI identity and refresh credentials in the cloud. Official xAI regional endpoints can be selected in account credentials.
+
 Antigravity OAuth accounts expose their provider model catalog and Gemini-native `generateContent` / `streamGenerateContent` routes, plus Claude Messages with JSON or SSE output. Claude clients can use the `/antigravity` base path with the same group-bound API key. Configure `ANTIGRAVITY_OAUTH_CLIENT_ID` and `ANTIGRAVITY_OAUTH_CLIENT_SECRET` for cloud refresh. The gateway retains the encrypted project ID, injects the upstream identity prompt while preserving caller instructions, unwraps internal response envelopes, and uses the provider's fixed daily and production endpoints for fallback.
 
 ## Local Supabase

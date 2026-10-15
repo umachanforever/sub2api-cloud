@@ -1,3 +1,4 @@
+import { grokHeaders } from './grok_config.ts';
 import { mappedCatalog, type ModelSources } from "./model_mapping.ts";
 import { filterModelCatalog, type ModelAllowlist } from "./model_policy.ts";
 import type { ApiKeyCredentials, Platform } from "./gateway.ts";
@@ -18,6 +19,7 @@ const origins: Record<Platform, string> = {
   anthropic: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com",
   antigravity: "https://cloudcode-pa.googleapis.com",
+  grok: "https://api.x.ai",
 };
 
 export function apiKeyRequest(
@@ -37,7 +39,7 @@ export function apiKeyRequest(
     "apikey",
   ) as ApiKeyCredentials;
   if (
-    (platform === "openai" &&
+    (["openai", "grok"].includes(platform) &&
       !["chat", "responses", "models"].includes(protocol)) ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
@@ -56,7 +58,7 @@ export function apiKeyRequest(
     accept: streaming ? "text/event-stream" : "application/json",
   });
   let providerPath = path;
-  if (platform === "openai") {
+  if (platform === "openai" || platform === "grok") {
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
   } else if (platform === "anthropic") {
@@ -76,6 +78,7 @@ export function apiKeyRequest(
   } else {
     headers.set("x-goog-api-key", validated.api_key);
   }
+  if (platform === "grok") grokHeaders(headers, validated.base_url || origins.grok);
   const query = new URLSearchParams();
   if (protocol === "models") {
     const modelId = /\/models\/([^/]+)$/.exec(path)?.[1];
@@ -102,7 +105,7 @@ export function apiKeyRequest(
   } else if (platform === "gemini" && streaming) query.set("alt", "sse");
   const outbound = body ? structuredClone(body) : undefined;
   return {
-    url: origins[platform] + providerPath +
+    url: (validated.base_url || origins[platform]) + providerPath +
       (query.size ? `?${query}` : ""),
     init: {
       method: body ? "POST" : "GET",
@@ -171,7 +174,7 @@ export function nativeUsage(
   },
 ): Usage {
   const usage = { ...prior };
-  if (platform === "openai") {
+  if (platform === "openai" || platform === "grok") {
     const totals = protocol === "responses"
       ? (value.response?.usage ?? value.usage)
       : value.usage;
