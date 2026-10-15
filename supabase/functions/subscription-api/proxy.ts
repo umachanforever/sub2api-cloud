@@ -38,6 +38,7 @@ import {
 
 import {
   messagesToResponses,
+  messagesToAPIResponses,
   responseToMessages,
   streamMessages,
 } from "./anthropic_protocol.ts";
@@ -253,17 +254,25 @@ export async function proxy(
           db.config.encryptionKey,
         );
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
+        const bridgeMessages = platform === "openai" && messages;
+        let outgoingBody = forwardedBody;
+        if (bridgeMessages) {
+          try { outgoingBody = messagesToAPIResponses(forwardedBody!); }
+          catch { throw new HttpError(400, "invalid_request"); }
+        }
         native = apiKeyRequest(
           platform,
           credentials,
-          protocol,
-          forwardedPath,
-          forwardedBody,
+          bridgeMessages ? "responses" : protocol,
+          bridgeMessages ? "/v1/responses" : forwardedPath,
+          outgoingBody,
           request,
           signal,
         );
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
+        // Reuse the Responses-to-Messages stream and usage pipeline below.
+        if (bridgeMessages) native = undefined;
       } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity" || platform === "grok") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {

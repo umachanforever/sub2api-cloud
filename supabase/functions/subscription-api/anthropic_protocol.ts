@@ -200,6 +200,24 @@ export function messagesToResponses(body: Item): Item {
   return result;
 }
 
+// API-key accounts use the public Responses API rather than Codex-only defaults.
+export function messagesToAPIResponses(body: Item): Item {
+  const result = messagesToResponses(body);
+  result.stream = true;
+  result.store = false;
+  result.max_output_tokens = body.max_tokens;
+  if (!modernCodexModel(body.model ?? '') && body.thinking === undefined && body.output_config?.effort === undefined) {
+    delete result.reasoning;
+    delete result.include;
+  }
+  for (const [field, maximum] of [['temperature', 2], ['top_p', 1]] as const) {
+    if (body[field] === undefined) continue;
+    if (typeof body[field] !== 'number' || !Number.isFinite(body[field]) || body[field] < 0 || body[field] > maximum) throw Error('Invalid sampling parameter');
+    result[field] = body[field];
+  }
+  return result;
+}
+
 function usage(response: Item): Item {
   const cached = response.usage?.input_tokens_details?.cached_tokens ?? 0;
   return {

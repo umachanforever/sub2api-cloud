@@ -759,3 +759,58 @@ test('a transient settlement failure retries identical usage without another pro
   assert.equal(forwards,1);assert.equal(settlements.length,2);assert.deepEqual(settlements[0],settlements[1]);
   assert.equal(settlements[1].p_cache_read_tokens,20);
 });
+
+for (const stream of [false, true]) test(`OpenAI API-key Messages bridge preserves tools, limits and usage (stream=${stream})`, async () => {
+  const call = { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'weather', arguments: '{"city":"Shanghai"}' };
+  const completed = { object: 'response', model: 'gpt-test', status: 'completed', output: [call], usage: { input_tokens: 12, output_tokens: 4, input_tokens_details: { cached_tokens: 3 } } };
+  const value = await fixture('openai', (url, init) => {
+    assert.equal(url, 'https://api.openai.com/v1/responses');
+    assert.equal(init.headers.get('authorization'), 'Bearer provider-secret');
+    const outgoing = JSON.parse(init.body);
+    assert.equal(outgoing.stream, true);
+    assert.equal(outgoing.store, false);
+    assert.equal(outgoing.max_output_tokens, 100);
+    assert.equal(outgoing.temperature, 0.5);
+    assert.equal(outgoing.reasoning, undefined);
+    assert.equal(outgoing.tools[0].name, 'weather');
+    assert.equal(outgoing.tool_choice, 'required');
+    assert.equal(outgoing.input[0].role, 'developer');
+    return sse([
+      { type: 'response.created', response: { model: 'gpt-test' } },
+      { type: 'response.output_item.added', output_index: 0, item: { ...call, arguments: '' } },
+      { type: 'response.function_call_arguments.delta', item_id: 'fc_1', output_index: 0, delta: call.arguments },
+      { type: 'response.output_item.done', output_index: 0, item: call },
+      { type: 'response.completed', response: completed },
+    ]);
+  });
+  const response = await value.request('/v1/messages', { model: 'gpt-test', max_tokens: 100, temperature: 0.5, stream, system: 'Be helpful.', messages: [{ role: 'user', content: 'Weather?' }], tools: [{ name: 'weather', input_schema: { type: 'object', properties: { city: { type: 'string' } } } }], tool_choice: { type: 'any' } });
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('set-cookie'), null);
+  if (stream) {
+    const text = await response.text();
+    assert.match(text, /event: message_stop/);
+    assert.match(text, /"type":"tool_use"/);
+    assert.match(text, /"stop_reason":"tool_use"/);
+    assert.match(text, /Shanghai/);
+  } else {
+    const result = await response.json();
+    assert.equal(result.type, 'message');
+    assert.equal(result.stop_reason, 'tool_use');
+    assert.deepEqual(result.content[0], { type: 'tool_use', id: 'call_1', name: 'weather', input: { city: 'Shanghai' } });
+    assert.equal(result.usage.cache_read_input_tokens, 3);
+  }
+  assert.equal(value.finishes.length, 1);
+  assert.equal(value.finishes[0].p_input_tokens, 12);
+  assert.equal(value.finishes[0].p_output_tokens, 4);
+  assert.equal(value.finishes[0].p_outcome, 'completed');
+});
+
+test('OpenAI API-key Messages bridge rejects invalid requests before dispatch and records truncated streams', async () => {
+  let dispatched = 0;
+  const value = await fixture('openai', () => { dispatched++; return sse([{ type: 'response.output_text.delta', delta: 'partial' }]); });
+  const body = { model: 'gpt-test', max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] };
+  assert.equal((await value.request('/v1/messages', { ...body, temperature: 9 })).status, 400);
+  assert.equal(dispatched, 0);
+  assert.equal((await value.request('/v1/messages', body)).status, 502);
+  assert.equal(value.finishes.at(-1).p_outcome, 'incomplete');
+});
