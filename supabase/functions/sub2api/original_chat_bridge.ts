@@ -49,14 +49,14 @@ function rememberReasoning(scope:string,event:Item){
   }
 }
 
-async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>):AsyncGenerator<Item>{
+async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>,anthropic=false):AsyncGenerator<Item>{
   const decoder=new TextDecoder();let pending='';
   const parse=(frame:string)=>{
     const data=frame.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
     if(!data)return;
     if(data==='[DONE]')return {done:true};
     let value;try{value=JSON.parse(data);}catch{throw new HttpError(502,'invalid_upstream_stream');}
-    if(!value||typeof value!=='object'||Array.isArray(value)||value.error||!Array.isArray(value.choices))throw new HttpError(502,'invalid_upstream_stream');
+    if(!value||typeof value!=='object'||Array.isArray(value)||value.error||(anthropic?typeof value.type!=='string':!Array.isArray(value.choices)))throw new HttpError(502,'invalid_upstream_stream');
     return {value};
   };
   while(true){
@@ -73,13 +73,16 @@ async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>):Async
 }
 
 export type OriginalChatBridge={body:Item;close():void;response(upstream:Response):Response};
-export async function originalChatBridge(body:Item,scope:string):Promise<OriginalChatBridge>{
+export async function originalChatBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,false);}
+export async function originalAnthropicBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,true);}
+async function originalBridge(body:Item,scope:string,anthropic:boolean):Promise<OriginalChatBridge>{
+  const protocol=anthropic?'anthropic':'chat';
   if(Array.isArray(body.input))rememberReasoning(scope,{response:{output:body.input}});
-  const call=await converter(),opened=call('open_chat',body,undefined,rememberedReasoning(scope,body.input));
+  const call=await converter(),opened=call(`open_${protocol}`,body,undefined,rememberedReasoning(scope,body.input));
   let closed=false;
   const close=()=>{if(!closed){closed=true;try{call('close',undefined,opened.id);}catch{/* An unavailable runtime is discarded with its worker. */}}};
   return {
-    body:{...opened.body,stream:true,stream_options:{include_usage:true}},close,
+    body:anthropic?opened.body:{...opened.body,stream:true,stream_options:{include_usage:true}},close,
     response(upstream){
       if(!upstream.body){close();throw new HttpError(502,'invalid_upstream_response');}
       const reader=upstream.body.getReader(),encoder=new TextEncoder();
@@ -90,17 +93,17 @@ export async function originalChatBridge(body:Item,scope:string):Promise<Origina
             while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>32*1024*1024)throw new HttpError(502,'upstream_response_too_large');chunks.push(value);}
             const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
             const value=JSON.parse(new TextDecoder().decode(bytes));
-            if(!value||value.error||!Array.isArray(value.choices)||!value.choices.length||!value.choices[0]?.message)throw new HttpError(502,'invalid_upstream_response');
-            const event={type:'response.completed',response:call('json_chat',value,opened.id)};
+            if(!value||value.error||(anthropic?value.type!=='message'||!Array.isArray(value.content)||!value.stop_reason:!Array.isArray(value.choices)||!value.choices.length||!value.choices[0]?.message))throw new HttpError(502,'invalid_upstream_response');
+            const event={type:'response.completed',response:call(`json_${protocol}`,value,opened.id)};
             rememberReasoning(scope,event);yield event;
           }else{
             const contentType=upstream.headers.get('content-type');
             if(contentType&&!contentType.includes('text/event-stream'))throw new HttpError(502,'invalid_upstream_stream');
-            for await(const chunk of chatChunks(reader))for(const event of call('chunk_chat',chunk,opened.id)??[]){rememberReasoning(scope,event);yield event;}
-            for(const event of call('finish_chat',undefined,opened.id)??[]){rememberReasoning(scope,event);yield event;}
+            for await(const chunk of chatChunks(reader,anthropic))for(const event of call(`chunk_${protocol}`,chunk,opened.id)??[]){rememberReasoning(scope,event);yield event;}
+            for(const event of call(`finish_${protocol}`,undefined,opened.id)??[]){rememberReasoning(scope,event);yield event;}
           }
         }catch{
-          let response;try{response=call('failure_chat',undefined,opened.id);}catch{response={object:'response',status:'failed',output:[],error:{code:'upstream_error',message:'Upstream generation failed'}};}
+          let response;try{response=call(`failure_${protocol}`,undefined,opened.id);}catch{response={object:'response',status:'failed',output:[],error:{code:'upstream_error',message:'Upstream generation failed'}};}
           yield {type:'response.failed',response};
         }
         finally{await reader.cancel().catch(()=>{});reader.releaseLock();close();}

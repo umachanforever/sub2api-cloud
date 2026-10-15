@@ -1,6 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
-import {originalChatBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
+import {originalChatBridge,originalAnthropicBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
@@ -500,6 +500,7 @@ async function proxyWithIdentity(
         const upstreamProtocol=multiProtocolProvider(platform)?providerProtocol(platform,credentials,messages?'anthropic':protocol==='responses'?'responses':'chat_completions',upstreamModel,providerCatalog):undefined;
         const bridgeResponses = platform === "openai" && messages || (chat || messages) && upstreamProtocol==='responses';
         const bridgeChat=(messages||protocol==='responses')&&upstreamProtocol==='chat_completions';
+        const bridgeAnthropic=(chat||protocol==='responses')&&upstreamProtocol==='anthropic';
         let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeResponses) {
           try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
@@ -509,11 +510,15 @@ async function proxyWithIdentity(
           let source;try{source=messages?messagesToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
           chatBridge=await originalChatBridge(source,keyHash);outgoingBody=chatBridge.body;
         }
+        if(bridgeAnthropic){
+          let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+          chatBridge=await originalAnthropicBridge(source,keyHash);outgoingBody=chatBridge.body;
+        }
         native = apiKeyRequest(
           platform,
           credentials,
-          bridgeChat?'chat':bridgeResponses ? "responses" : protocol,
-          bridgeChat?'/v1/chat/completions':bridgeResponses ? "/v1/responses" : forwardedPath,
+          bridgeAnthropic?'messages':bridgeChat?'chat':bridgeResponses ? "responses" : protocol,
+          bridgeAnthropic?'/v1/messages':bridgeChat?'/v1/chat/completions':bridgeResponses ? "/v1/responses" : forwardedPath,
           outgoingBody,
           request,
           signal,
@@ -539,7 +544,7 @@ async function proxyWithIdentity(
         upstreamEndpoint=usageEndpoint(native.url);
         upstream = await accountFetch(db, account, native.url, native.init);
         // Reuse the Responses-to-Messages stream and usage pipeline below.
-        if (bridgeResponses||bridgeChat) native = undefined;
+        if (bridgeResponses||bridgeChat||bridgeAnthropic) native = undefined;
       } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity" || platform === "grok") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {

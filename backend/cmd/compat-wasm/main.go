@@ -102,6 +102,10 @@ func handle(input request) (any, error) {
 	}
 	if state := anthropicStates[input.ID]; state != nil {
 		switch input.Operation {
+		case "failure_anthropic":
+			stream := state.stream
+			inputTokens := stream.InputTokens + stream.CacheReadInputTokens + stream.CacheCreationInputTokens
+			return map[string]any{"id": stream.ResponseID, "object": "response", "model": stream.Model, "status": "failed", "output": []any{}, "usage": map[string]any{"input_tokens": inputTokens, "output_tokens": stream.OutputTokens, "total_tokens": inputTokens + stream.OutputTokens, "cache_creation_input_tokens": stream.CacheCreationInputTokens, "input_tokens_details": map[string]int{"cached_tokens": stream.CacheReadInputTokens}}, "error": map[string]string{"code": "upstream_error", "message": "Upstream generation failed"}}, nil
 		case "chunk_anthropic":
 			var event apicompat.AnthropicStreamEvent
 			if err := json.Unmarshal(input.Body, &event); err != nil {

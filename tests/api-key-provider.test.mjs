@@ -243,6 +243,42 @@ test('Command Code explicit rules override discovery and failed discovery falls 
   }
 });
 
+for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`original Anthropic upstream conversion serves ${protocol} with stream=${stream}`,async()=>{
+  const value=await fixture('opencode_go',(url,init)=>{
+    assert.match(url,/\/messages$/);
+    assert.equal(init.headers.get('x-api-key'),'provider-secret');
+    const sent=JSON.parse(init.body);assert.equal(sent.stream,true);assert.equal(sent.max_tokens,20);
+    return sse([
+      {type:'message_start',message:{id:'msg-original',model:'claude-test',role:'assistant',content:[],usage:{input_tokens:2,cache_read_input_tokens:3}}},
+      {type:'content_block_start',index:0,content_block:{type:'text',text:''}},
+      {type:'content_block_delta',index:0,delta:{type:'text_delta',text:'original anthropic'}},
+      {type:'content_block_stop',index:0},
+      {type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:4}},
+      {type:'message_stop'},
+    ]);
+  },{api_key:'provider-secret',api_protocol:'anthropic'});
+  const response=await value.request('/v1/'+protocol,{model:'claude-test',stream,...(protocol==='responses'?{input:'hello',max_output_tokens:20}:{messages:[{role:'user',content:'hello'}],max_tokens:20})});
+  assert.equal(response.status,200);
+  if(stream)assert.match(await response.text(),/original anthropic/);
+  else{const result=await response.json();assert.equal(protocol==='responses'?result.output.find(item=>item.type==='message').content[0].text:result.choices[0].message.content,'original anthropic');}
+  assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_input_tokens,5);assert.equal(value.finishes[0].p_output_tokens,4);assert.equal(value.finishes[0].p_cache_read_tokens,3);assert.equal(await originalChatBridgeCount(),0);
+});
+
+test('Anthropic conversion retains known usage on upstream errors and closes cancelled streams',async()=>{
+  const credentials={api_key:'provider-secret',api_protocol:'anthropic'};
+  const failed=await fixture('opencode_go',()=>sse([
+    {type:'message_start',message:{id:'msg-error',model:'claude-test',role:'assistant',content:[],usage:{input_tokens:2,cache_read_input_tokens:3}}},
+    {type:'error',error:{message:'private credential detail'}},
+  ]),credentials);
+  const response=await failed.request('/v1/responses',{model:'claude-test',input:'hello',stream:true});
+  const text=await response.text();assert.match(text,/response.failed/);assert.doesNotMatch(text,/private credential detail/);
+  assert.equal(failed.finishes[0].p_input_tokens,5);assert.equal(failed.finishes[0].p_outcome,'failed');
+  let cancelled=false;
+  const pending=await fixture('opencode_go',()=>new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{'content-type':'text/event-stream'}}),credentials);
+  const active=await pending.request('/v1/responses',{model:'claude-test',input:'hello',stream:true});
+  await active.body.cancel();assert.equal(cancelled,true);assert.equal(await originalChatBridgeCount(),0);
+});
+
 for(const platform of ['deepseek','cline'])for(const protocol of ['responses','messages'])for(const stream of [false,true])test(`${platform} uses original Go conversion from ${protocol} to Chat with client stream=${stream}`,async()=>{
   const value=await fixture(platform,(url,init)=>{
     assert.equal(url,providerEndpoint(platform,{},'chat_completions'));
