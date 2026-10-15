@@ -1,3 +1,4 @@
+import {batchImageJobs} from './batch_image_jobs.ts';
 import {imageJobs,kickImageJobs} from './image_jobs.ts';
 import {imageTaskSubmit,ImageTaskSubmitError} from './image_task_submit.ts';
 import {imageTaskRead} from './image_task_read.ts';
@@ -42,6 +43,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (/^\/v1\/images\/(?:generations|edits)\/async$/.test(pathname)) errorContext.endpoint=pathname;
       if (/^\/v1\/images\/tasks\/[^/]+$/.test(pathname)) errorContext.endpoint='/v1/images/tasks/:task_id';
+      if (pathname === "/internal/jobs/batch-images") return await batchImageJobs(request,db);
       if (pathname === "/internal/jobs/images") return await imageJobs(request,db);
       if (pathname === "/internal/jobs/gemini-cache") return await geminiCacheJobs(request,db);
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);

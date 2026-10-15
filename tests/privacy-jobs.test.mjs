@@ -66,6 +66,6 @@ test('scheduler signatures are bound to the privacy scope and expire within nine
 
 test('canonical gateway does not reactivate retired-table scheduled jobs',async()=>{
  const schedulers=[];
- await configureJobScheduler({SUB2API_DATA_MODEL:'native',GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64:Buffer.alloc(32,7).toString('base64'),SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key'},undefined,async(url,init)=>{schedulers.push(url.split('/').at(-1));assert.match(url,/\/(?:s2a_codex|s2a_gemini_cache|s2a_image)_scheduler_configure$/);assert.equal(JSON.parse(init.body).p_enabled,true);return Response.json({enabled:true});});
- assert.deepEqual(schedulers,['s2a_codex_scheduler_configure','s2a_gemini_cache_scheduler_configure','s2a_image_scheduler_configure']);
+ await configureJobScheduler({SUB2API_DATA_MODEL:'native',GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64:Buffer.alloc(32,7).toString('base64'),SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key'},undefined,async(url,init)=>{schedulers.push(url.split('/').at(-1));assert.match(url,/\/(?:s2a_codex|s2a_gemini_cache|s2a_image|s2a_batch_image)_scheduler_configure$/);assert.equal(JSON.parse(init.body).p_enabled,true);return Response.json({enabled:true});});
+ assert.deepEqual(schedulers,['s2a_codex_scheduler_configure','s2a_gemini_cache_scheduler_configure','s2a_image_scheduler_configure','s2a_batch_image_scheduler_configure']);
 });
