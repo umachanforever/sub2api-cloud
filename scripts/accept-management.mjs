@@ -708,6 +708,9 @@ try {
   sql(readFileSync(root + "/deploy/gateway-pricing.sql", "utf8"));
   if (process.env.S2A_ACCOUNT_VAULT === "1") {
     sql(readFileSync(root + "/deploy/composite-routing.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
+    sql(readFileSync(root + "/tests/pinned-models.database.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gateway-maintenance.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
