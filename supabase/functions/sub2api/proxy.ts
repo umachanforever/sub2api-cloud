@@ -755,13 +755,14 @@ async function proxyWithIdentity(
           )
           : undefined;
         if (modelId && !model) throw new HttpError(404, "model_not_found");
-        await finish(200, { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "completed" });
         // Codex clients need the full model metadata, including model instructions.
-        return json(
-          200,
-          model ??
-            (clientVersion !== null || codexModels ? { models: manifest.models } : catalog),
+        const result = model ? json(200, model) : await codexManifestResponse(
+          clientVersion !== null || codexModels ? { models: manifest.models } : catalog,
+          request,
         );
+        // Discovery succeeded upstream even when the client's cached body is current.
+        await finish(200, { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "completed" });
+        return result;
       }
       // Codex can omit Content-Type on a successful SSE response.
       const contentType = upstream.headers.get("content-type");

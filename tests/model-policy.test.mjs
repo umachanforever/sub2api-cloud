@@ -97,3 +97,21 @@ test('Codex direct model discovery returns its manifest without requiring a clie
  const response=await handler(request('/backend-api/codex/models'));assert.equal(response.status,200);
  const body=await response.json();assert.equal(body.data,undefined);assert.deepEqual(body.models.map(m=>m.slug),['gpt-6.1-sol']);assert.equal(body.models[0].instructions,'preserved');assert.equal(finished,1);
 });
+
+test('OAuth catalog ETags describe the final filtered representation and never suppress details',async()=>{
+ const encrypted=await encryptCredentials({access_token:'token',refresh_token:'refresh',chatgpt_account_id:'account'},config.encryptionKey);
+ let allowed=['gpt-6.1-sol'],finishes=[];
+ const handler=app((url,init)=>{
+  if(url.pathname.endsWith('/s2a_acquire'))return Response.json({lease_id:id,account:{id,...encrypted,type:'oauth',platform:'openai',credential_version:1},model_allowlist:{enabled:true,models:allowed}});
+  if(url.pathname.endsWith('/s2a_finish')){finishes.push(JSON.parse(init.body).p_status);return Response.json(null);}
+  assert.equal(init.headers.get('if-none-match'),null);
+  return Response.json({models:[{slug:'gpt-6.1-sol',instructions:'preserved'},{slug:'gpt-6-sol'}]});
+ });
+ const get=(path,tag)=>{const r=request(path);if(tag)r.headers.set('if-none-match',tag);return handler(r);};
+ const manifest=await get('/backend-api/codex/models');const tag=manifest.headers.get('etag');assert.match(tag,/^"[a-f0-9]{64}"$/);
+ const cached=await get('/backend-api/codex/models','"unrelated", W/'+tag);assert.equal(cached.status,304);assert.equal(await cached.text(),'');assert.equal(cached.headers.get('etag'),tag);
+ const list=await get('/v1/models',tag);assert.equal(list.status,200);assert.notEqual(list.headers.get('etag'),tag);
+ const detail=await get('/v1/models/gpt-6.1-sol','*');assert.equal(detail.status,200);assert.equal(detail.headers.get('etag'),null);
+ allowed=['gpt-6-sol'];const changed=await get('/backend-api/codex/models',tag);assert.equal(changed.status,200);assert.notEqual(changed.headers.get('etag'),tag);assert.deepEqual((await changed.json()).models.map(m=>m.slug),allowed);
+ assert.deepEqual(finishes,[200,200,200,200,200]);
+});
