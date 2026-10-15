@@ -111,6 +111,8 @@ For full agent API access, run `npm run agent:access` while the local console is
 
 Run `npm run verify:cloud` to check the deployed gateway using `.local/agent-access.json`. It verifies authentication, model discovery, ordinary and streaming Responses and Chat Completions, returned model identity, Responses and Messages input-token preflight, and usage without the local management services. The check makes four short AI requests and two preflight requests. Add `-- --codex` to also verify the native Codex model manifest and a source-backed standalone web search.
 
+Run `npm run verify:attachments` to verify PDF and image reading through Responses, Chat Completions, and Messages using `.local/agent-access.json`. It makes six AI requests, checks a random code embedded only in the PDF and the colors in a generated PNG, and requires reported input-token usage. Use a model and account with vision and PDF support.
+
 Run `npm run verify:storage` to verify the private Supabase artifact bucket using `.env.local`. It uploads a small temporary object, checks authenticated reads, denied public access, and a short-lived signed download, then deletes the object and verifies removal. It does not make AI requests.
 
 Run `npm run verify:independence` to temporarily stop this project's local console, management service, and Redis, run the cloud checks, and restore the containers that were running. It checks container ownership first and restores services after a failed or interrupted verification. Other Docker projects are left running.

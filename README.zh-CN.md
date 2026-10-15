@@ -107,6 +107,8 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性、Responses 与 Messages 输入 Token 预估及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求和两次预估请求。使用 `npm run verify:cloud -- --codex` 可额外验收 Codex 原生模型清单和一次带来源的独立网页搜索。
 
+执行 `npm run verify:attachments`，可使用 `.local/agent-access.json` 验收 Responses、Chat Completions、Messages 的 PDF 和图片读取。命令会发送六次 AI 请求，检查仅写在 PDF 内的随机验证码和生成 PNG 中的颜色，并要求返回输入 Token 用量。请使用支持视觉和 PDF 的模型与账户。
+
 执行 `npm run verify:storage`，可使用 `.env.local` 验收 Supabase 私有文件存储。命令上传一个小型临时文件，检查授权读取、公开访问被拒绝和短期签名下载，然后删除文件并确认清理完成，不会发送 AI 请求。
 
 执行 `npm run verify:independence`，可暂时停止本项目的本地控制台、管理服务和 Redis，再运行云端验收，最后恢复原本运行的容器。命令会先确认容器归属，验收失败或中断时也会恢复服务，其他 Docker 项目继续运行。
