@@ -30,11 +30,19 @@ export async function verifyCloud(config, fetcher = fetch) {
     const value = await json(response);
     if (!Array.isArray(value.data) || !value.data.some(row => row.id === config.model)) throw Error('Configured model is absent from the catalog');
   });
+  const expectedModel = config.expected_model || config.model;
+  const inspectModel = value => { if (value.model !== expectedModel) throw Error('Returned model does not match the configured model'); };
+  await check('responses', api + '/responses', post({ model: config.model, input: 'Reply with OK.', stream: false }), async response => {
+    const value = await json(response);
+    inspectModel(value);
+    if (value.status !== 'completed' || !value.output?.some(item => item.content?.some(part => part.type === 'output_text' && part.text?.trim()))) throw Error('Responses returned no completed text');
+  });
   await check('chat', api + '/chat/completions', post({ model: config.model, messages: [{ role: 'user', content: 'Reply with OK.' }], stream: false }), async response => {
     const value = await json(response);
+    inspectModel(value);
     if (!value.choices?.some(choice => typeof choice.message?.content === 'string' && choice.message.content.trim())) throw Error('Chat returned no text');
   });
-  await check('stream', api + '/chat/completions', post({ model: config.model, messages: [{ role: 'user', content: 'Reply with OK.' }], stream: true }), async response => {
+  for (const responses of [false, true]) await check(responses ? 'responses-stream' : 'stream', api + (responses ? '/responses' : '/chat/completions'), post({ model: config.model, ...(responses ? { input: 'Reply with OK.' } : { messages: [{ role: 'user', content: 'Reply with OK.' }] }), stream: true }), async response => {
     ok(response);
     if (!response.headers.get('content-type')?.includes('text/event-stream')) { await response.body?.cancel(); throw Error('Expected an SSE response'); }
     const reader = response.body.getReader(), decoder = new TextDecoder();
@@ -53,7 +61,15 @@ export async function verifyCloud(config, fetcher = fetch) {
           const data = line.slice(5).trim();
           if (data === '[DONE]') { done = true; continue; }
           const value = JSON.parse(data);
-          if (value.error) throw Error('Stream returned an error event');
+          if (value.error || ['error', 'response.failed', 'response.incomplete'].includes(value.type)) throw Error('Stream returned an error event');
+          if (responses) {
+            if (value.type === 'response.output_text.delta' && value.delta?.trim()) text = true;
+            if (value.type === 'response.completed') {
+              inspectModel(value.response);
+              if (value.response.status !== 'completed') throw Error('Responses stream did not complete');
+              done = true; finish = true;
+            }
+          } else if (value.model) inspectModel(value);
           for (const choice of value.choices ?? []) {
             if (choice.delta?.content) text = true;
             if (choice.finish_reason) finish = true;
