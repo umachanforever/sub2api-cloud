@@ -146,6 +146,7 @@ export function parseCredentials(source: unknown): OAuthCredentials {
 export async function readBody(
   request: Request,
   maxBytes = DEFAULT_REQUEST_LIMITS.gateway,
+  validateSource?: (source:string)=>void,
 ): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, "invalid_request");
@@ -169,7 +170,9 @@ export async function readBody(
       chunks.push(decoder.decode(value, { stream: true }));
     }
     chunks.push(decoder.decode());
-    const body = JSON.parse(chunks.join(''));
+    const source=chunks.join('');
+    validateSource?.(source);
+    const body = JSON.parse(source);
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new HttpError(400, "invalid_request");
     }

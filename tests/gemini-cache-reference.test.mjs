@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createBackendHandler} from './handler.mjs';
 import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
-import {geminiCacheName,rewriteGeminiCache} from '../supabase/functions/sub2api/gemini_cache_reference.ts';
+import {validateGeminiCacheJson,geminiCacheName,rewriteGeminiCache} from '../supabase/functions/sub2api/gemini_cache_reference.ts';
 const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
 const binding={account_id:'1',upstream_name:'cachedContents/provider-private',upstream_model:'gemini-upstream'};
 const input={cachedContent:'cachedContents/public-cache',contents:[{role:'user',parts:[{text:'hello'}]}]};
@@ -38,4 +38,21 @@ test('Gemini cache requests never dispatch to a different reserved account',asyn
   if(String(url).includes('/rpc/'))return Response.json(null);forwards++;return Response.json({});
  });
  const response=await handler(new Request('https://gateway/v1beta/models/gemini-cache:generateContent',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify(input)}));assert.equal(response.status,503);assert.equal(forwards,0);assert.equal(finishes[0].p_outcome,'failed');
+});
+
+test('raw Gemini cache references reject duplicate escaped and nested member names',()=>{
+ for(const source of [
+  '{"cachedContent":"cachedContents/a","cachedContent":"cachedContents/b"}',
+  '{"cachedContent":"cachedContents/a","cached\\u0043ontent":"cachedContents/b"}',
+  '{"generateContentRequest":{"cachedContent":"cachedContents/a","cachedContent":"cachedContents/b"}}',
+  '{"generateContentRequest":{},"generateContentRequest":{"cachedContent":"cachedContents/a"}}',
+ ])assert.throws(()=>validateGeminiCacheJson(source),/duplicate_cached_content_field/);
+ for(const source of ['{"contents":[{"parts":[{"text":"cachedContent"}]}]}','{"other":{"cachedContent":"a","cachedContent":"b"}}','{"generateContentRequest":{"cachedContent":"cachedContents/a"}}'])validateGeminiCacheJson(source);
+ assert.throws(()=>geminiCacheName({generate_content_request:{cachedContent:'cachedContents/a'}}));
+});
+test('duplicate cache references fail before cache lookup and account admission',async()=>{
+ let admissions=0;
+ const handler=createBackendHandler(config,async(url)=>{if(String(url).endsWith('/s2a_personal_acquire')||String(url).endsWith('/s2a_personal_cache_resolve'))admissions++;return Response.json(null);});
+ const response=await handler(new Request('https://gateway/v1beta/models/gemini-cache:generateContent',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:'{"cachedContent":"cachedContents/a","cachedContent":"cachedContents/b","contents":[]}'}));
+ assert.equal(response.status,400);assert.equal(admissions,0);
 });

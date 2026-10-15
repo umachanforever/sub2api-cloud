@@ -1,4 +1,4 @@
-import {geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
+import {validateGeminiCacheJson,geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
 import {voiceUpload,voiceResponse} from './grok_voice.ts';
 import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from './grok_search.ts';
 import {imageResponses} from './image_responses.ts';
@@ -159,7 +159,7 @@ export async function proxy(
       const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
       imageMultipart=parsed?.form;
       if(voiceKind==='stt')voiceBytes=await voiceUpload(request,limit);
-      const raw = voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit);
+      const raw = voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
