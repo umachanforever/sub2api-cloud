@@ -1,3 +1,4 @@
+import {imageForm,validateImageEdit} from './image_input.ts';
 import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
 import {requestBodyLimit} from './request_limits.ts';
@@ -90,7 +91,8 @@ export async function proxy(
   const messageTokens = ["/v1/messages/count_tokens", "/messages/count_tokens"].includes(path) && request.method === "POST";
   const inputTokens = ["/v1/responses/input_tokens", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(path) && request.method === "POST";
   const embeddings = path === "/v1/embeddings" && request.method === "POST";
-  const images = ["/v1/images/generations", "/images/generations"].includes(path) && request.method === "POST";
+  const imageEdit = ["/v1/images/edits", "/images/edits"].includes(path);
+  const images = ["/v1/images/generations", "/images/generations", "/v1/images/edits", "/images/edits"].includes(path) && request.method === "POST";
   const chat = path === "/v1/chat/completions" && request.method === "POST";
   const messages = path === "/v1/messages" && request.method === "POST";
   const gemini = request.method === "POST"
@@ -123,10 +125,14 @@ export async function proxy(
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
+  let imageMultipart:FormData|undefined;
   let stream = true, includeUsage = false;
   if (!models) {
     try {
-      const raw = await readBody(request, requestBodyLimit(path, db.config.requestLimits));
+      const limit=requestBodyLimit(path, db.config.requestLimits);
+      const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
+      imageMultipart=parsed?.form;
+      const raw = parsed?.body ?? await readBody(request,limit);
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
@@ -141,6 +147,7 @@ export async function proxy(
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
+      if(images && (raw.model===undefined || typeof raw.model==="string" && !raw.model.trim()))raw.model="gpt-image-2";
       const requestedModel = gemini ? gemini[1] : raw.model;
       if (
         typeof requestedModel !== "string" || !requestedModel.trim() ||
@@ -157,6 +164,7 @@ export async function proxy(
         const validInput = typeof raw.input === "string" ? raw.input.length > 0 : tokenList(raw.input) || Array.isArray(raw.input) && raw.input.length > 0 && (raw.input.every(value => typeof value === "string" && value.length > 0) || raw.input.every(tokenList));
         if (!validInput || raw.stream === true || raw.encoding_format !== undefined && !["float", "base64"].includes(raw.encoding_format as string) || raw.dimensions !== undefined && (!Number.isSafeInteger(raw.dimensions) || (raw.dimensions as number) <= 0)) throw new HttpError(400, "invalid_request");
       }
+      if(imageEdit && !imageMultipart)validateImageEdit(raw);
       if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
       if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
         throw new HttpError(400, "invalid_request");
@@ -318,6 +326,11 @@ export async function proxy(
           request,
           signal,
         );
+        if(imageMultipart){
+          imageMultipart.set("model",upstreamModel);
+          const headers=new Headers(native.init.headers);headers.delete("content-type");
+          native={...native,init:{...native.init,headers,body:imageMultipart}};
+        }
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
         // Reuse the Responses-to-Messages stream and usage pipeline below.

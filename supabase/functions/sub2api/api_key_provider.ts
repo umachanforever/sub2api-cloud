@@ -69,7 +69,7 @@ export function apiKeyRequest(
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
     if (protocol === "embeddings") providerPath = "/v1/embeddings";
-    if (protocol === "images") providerPath = "/v1/images/generations";
+    if (protocol === "images") providerPath = path.endsWith("/edits") ? "/v1/images/edits" : "/v1/images/generations";
   } else if (platform === "anthropic") {
     headers.set("x-api-key", validated.api_key);
     const version = request.headers.get("anthropic-version") ?? "2023-06-01";
