@@ -117,8 +117,8 @@ async function proxyWithIdentity(
       throw new HttpError(400, "invalid_model_id");
     }
     if (
-      !/^[a-zA-Z0-9._:-]{1,200}$/.test(decoded) || decoded === "." ||
-      decoded === ".."
+      decoded.length > 200 || !/^[a-zA-Z0-9._:-]+(?:\/[a-zA-Z0-9._:-]+)*$/.test(decoded) ||
+      decoded.split("/").some(segment=>segment === "." || segment === "..")
     ) throw new HttpError(400, "invalid_model_id");
   }
   const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";

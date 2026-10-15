@@ -3,7 +3,7 @@ import {COMPOSITE_DEFAULT_IDS} from './composite_defaults.ts';
 import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
 export type CompositeCatalogSources={sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
-const precedence=['anthropic','gemini','openai','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go','typesafe','commandcode','cline'];
+const precedence=['anthropic','gemini','openai','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go','typesafe','command_code','cline'];
 function defaults(platform:string):string[]{return DEFAULT_PROVIDER_CATALOGS[platform]?.map(entry=>String(entry.id))??COMPOSITE_DEFAULT_IDS[platform]??[];}
 // A standard catalog is aggregated from every eligible platform, without acquiring
 // one provider's credentials or consuming an inference concurrency slot.

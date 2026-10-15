@@ -39,3 +39,18 @@ test('native standard Composite catalog dispatch needs neither provider fetch no
  const detail=await app(new Request('https://gateway/v1/models/public',{headers:{authorization:'Bearer sk-client'}}));assert.equal(detail.status,200);assert.equal((await detail.json()).id,'public');
  const missing=await app(new Request('https://gateway/v1/models/route-public',{headers:{authorization:'Bearer sk-client'}}));assert.equal(missing.status,404);
 });
+
+test('Composite catalogs retain Command Code and Cline configured model ownership',()=>{
+ assert.deepEqual(ids([source('command_code',{'command/custom':'model'}),source('cline',{'cline/custom':'model'})]),['command/custom','cline/custom']);
+});
+test('provider-prefixed model detail supports encoded separators and rejects unsafe paths before acquisition',async()=>{
+ let acquisitions=0;
+ const app=createHandler({url:'https://db.invalid',serviceKey:'service',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_acquire')){acquisitions++;return Response.json({composite_catalog:{sources:[source('grok',{'xai/grok-4.6':'grok-4.6'})],routes:[]}});}
+  return Response.json(true);
+ });
+ const get=id=>app(new Request('https://gateway/v1/models/'+id,{headers:{authorization:'Bearer sk-client'}}));
+ const response=await get('xai%2Fgrok-4.6');assert.equal(response.status,200);assert.equal((await response.json()).id,'xai/grok-4.6');assert.equal(acquisitions,1);
+ for(const id of ['xai%2F..%2Fsecret','xai%2F.%2Fsecret','xai%2F%2Fsecret','xai%2Fgrok%3Fkey=secret','xai%2Fgrok%23secret','xai%252Fgrok','%E0%A4%A'])assert.equal((await get(id)).status,400,id);
+ assert.equal(acquisitions,1);
+});
