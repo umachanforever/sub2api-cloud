@@ -10,7 +10,7 @@ export async function issueUsageAccess(env = process.env) {
   const project = new URL(env.SUPABASE_URL);
   if (project.protocol !== 'https:' || !/^[a-z0-9]+\.supabase\.co$/.test(project.hostname)) throw Error('A cloud Supabase project is required');
   const digest = value => createHash('sha256').update(value).digest('hex');
-  const token = 's2a_usage_' + randomBytes(32).toString('hex');
+  const token = 'sk-usage-' + randomBytes(32).toString('hex');
   const keyHash = digest(env.GPT_SUBSCRIPTION_GATEWAY_KEY);
   const response = await fetch(`https://api.supabase.com/v1/projects/${project.hostname.split('.')[0]}/database/query`, {
     method: 'POST',
