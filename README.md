@@ -115,6 +115,8 @@ Run `npm run verify:attachments` to verify PDF and image reading through Respons
 
 Run `npm run verify:websocket` to verify two real Responses WebSocket turns, input-token usage, and context reuse through `previous_response_id`. The second turn must recover a random code from the first turn without receiving that code again. Add `-- --websocket` to `npm run verify:independence` to include this check while the local services are stopped. These checks use `.local/agent-access.json`; WebSocket verification makes two AI requests.
 
+Run `npm run verify:schedulers` with `.env.local` to check the four cloud schedules and their actual signed HTTP delivery through `pg_net`. It requires `SUPABASE_ACCESS_TOKEN` and checks response status without reading request headers, secrets, or response bodies. The check triggers the existing workers, so queued work may be processed; HTTP acceptance does not establish provider inference success.
+
 Run `npm run verify:storage` to verify the private Supabase artifact bucket using `.env.local`. It uploads a small temporary object, checks authenticated reads, denied public access, and a short-lived signed download, then deletes the object and verifies removal. It does not make AI requests.
 
 Run `npm run verify:independence` to temporarily stop this project's local console, management service, and Redis, run the cloud checks, and restore the containers that were running. It checks container ownership first and restores services after a failed or interrupted verification. Other Docker projects are left running.

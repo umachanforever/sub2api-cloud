@@ -26,7 +26,8 @@
     "agent:access": "node --env-file=.env.local scripts/agent-access.mjs",
     "verify:independence": "node scripts/verify-independence.mjs",
     "verify:attachments": "node scripts/verify-attachments.mjs",
-    "verify:websocket": "node scripts/verify-websocket.mjs"
+    "verify:websocket": "node scripts/verify-websocket.mjs",
+    "verify:schedulers": "node --env-file=.env.local scripts/verify-schedulers.mjs"
   },
   "dependencies": {
     "gpt-tokenizer": "4.0.3",
