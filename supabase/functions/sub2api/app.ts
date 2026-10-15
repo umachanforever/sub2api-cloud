@@ -28,8 +28,8 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
-      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/responses", "/backend-api/codex/responses"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/responses", "/backend-api/codex/responses"].includes(pathname) ? pathname : /^\/v1\/(?:responses|messages|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
+      if (gatewayRequest) errorContext.endpoint = ["/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);

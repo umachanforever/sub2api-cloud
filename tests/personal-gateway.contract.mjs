@@ -21,6 +21,7 @@ const db={
  },
  async fetchImpl(url,init){
   if(url==='https://api.openai.com/v1/models')return Response.json({object:'list',data:[{id:'gpt-5.4',object:'model',owned_by:'openai'}]});
+  if(url==='https://api.openai.com/v1/responses/input_tokens'){assert.equal(new Headers(init.headers).get('authorization'),'Bearer synthetic-personal-token');return Response.json({object:'response.input_tokens',input_tokens:17});}
   assert.equal(url,'https://api.openai.com/v1/responses');
   assert.equal(new Headers(init.headers).get('authorization'),'Bearer synthetic-personal-token');
   const body=JSON.parse(init.body);assert.equal(body.model,'gpt-5.4');dispatched++;
@@ -35,5 +36,7 @@ for(const stream of [false,true]){
 }
 const catalog=await proxy(new Request('https://gateway.example.invalid/v1/models'),'/v1/models',fixture.key,db,{requestId:crypto.randomUUID(),started:Date.now()});
 assert.equal(catalog.status,200);assert.ok((await catalog.json()).data.some(x=>x.id==='gpt-5.4'));
+const preflight=await proxy(new Request('https://gateway.example.invalid/v1/responses/input_tokens',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'personal-alias',input:'synthetic request'})}),'/v1/responses/input_tokens',fixture.key,db,{requestId:crypto.randomUUID(),started:Date.now()});
+assert.equal(preflight.status,200);assert.deepEqual(await preflight.json(),{object:'response.input_tokens',input_tokens:17});
 assert.equal(dispatched,2);
 console.log('Personal gateway HTTP acceptance passed: native credentials, model mapping, JSON, SSE, and raw usage');

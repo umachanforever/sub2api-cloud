@@ -51,6 +51,14 @@ BEGIN
     result:=public.s2a_personal_finish(lease,200,'interrupted',10,2,NULL,NULL,0,1,NULL,'gpt-5.4');
     IF result->>'applied' IS DISTINCT FROM 'true' OR NOT EXISTS(SELECT FROM s2a_private.personal_gateway_leases WHERE id=lease AND finished_at IS NOT NULL)
         OR NOT EXISTS(SELECT FROM public.usage_logs WHERE id=(result->>'usage_log_id')::bigint AND output_tokens=2 AND s2a_personal_details->>'outcome'='interrupted') THEN RAISE EXCEPTION 'interrupted usage did not release the lease and retain tokens'; END IF;
+    request:=gen_random_uuid();
+    acquired:=public.s2a_personal_acquire(h,'alias',request,'{}',true,NULL,'{"count_only":true}');
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'token preflight admission failed'; END IF;
+    lease:=(acquired->>'lease_id')::uuid;
+    IF public.s2a_personal_acquire(h,'alias',request,'{}',true,NULL,'{"count_only":false}')->>'error' IS DISTINCT FROM 'request_conflict' THEN RAISE EXCEPTION 'preflight replay changed request kind'; END IF;
+    result:=public.s2a_personal_finish(lease,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
+    IF result->>'applied' IS DISTINCT FROM 'true' OR EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text)
+        OR NOT EXISTS(SELECT FROM s2a_private.personal_gateway_leases WHERE id=lease AND finished_at IS NOT NULL AND count_only) THEN RAISE EXCEPTION 'preflight counted as generation or leaked account slot'; END IF;
     UPDATE public.api_keys SET status='inactive' WHERE id=k;
     IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
 END $$;

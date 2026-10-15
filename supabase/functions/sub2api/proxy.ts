@@ -1,3 +1,4 @@
+import {inputTokenRequest,countInputTokens} from './input_tokens.ts';
 import {requestBodyLimit} from './request_limits.ts';
 import { currentCodexIdentity } from "./codex_identity.ts";
 import { upstreamErrorCode } from "./upstream_errors.ts";
@@ -83,6 +84,7 @@ export async function proxy(
   }
   const models = (path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
+  const inputTokens = ["/v1/responses/input_tokens", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(path) && request.method === "POST";
   const embeddings = path === "/v1/embeddings" && request.method === "POST";
   const images = ["/v1/images/generations", "/images/generations"].includes(path) && request.method === "POST";
   const chat = path === "/v1/chat/completions" && request.method === "POST";
@@ -113,7 +115,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -131,7 +133,7 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = embeddings ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = embeddings || inputTokens ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -155,7 +157,7 @@ export async function proxy(
       if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
         throw new HttpError(400, "invalid_request");
       }
-      body = raw;
+      body = inputTokens ? inputTokenRequest(raw) : raw;
     } catch (error) {
       if (error instanceof HttpError) throw error;
       throw new HttpError(400, "invalid_request");
@@ -183,6 +185,7 @@ export async function proxy(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(policyModel),
+        ...(inputTokens ? {count_only:true} : {}),
         service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
         stream: models ? false : stream,
         native_stream: gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true,
@@ -257,6 +260,11 @@ export async function proxy(
       return finishing;
     };
     try {
+      if (inputTokens) {
+        const input_tokens=await countInputTokens(db,account,forwardedBody!,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});
+        await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:"completed"});
+        return json(200,{object:"response.input_tokens",input_tokens});
+      }
       if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (images && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");

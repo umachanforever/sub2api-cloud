@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS s2a_private.personal_gateway_leases (
     expires_at timestamptz NOT NULL, finished_at timestamptz,
     completion_hash text, completion jsonb
 );
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS count_only boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
 ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
@@ -96,8 +97,8 @@ BEGIN
             FOR UPDATE OF accounts LOOP
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
-            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at)
-                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds') RETURNING * INTO lease;
+            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only)
+                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false)) RETURNING * INTO lease;
             UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
             EXIT;
         END LOOP;
@@ -139,7 +140,7 @@ BEGIN
         RETURN jsonb_build_object('applied',false);
     END IF;
     now_at:=clock_timestamp();
-    IF lease.model<>'__models__' AND (p_outcome='completed' OR coalesce(p_input_tokens,0)+coalesce(p_output_tokens,0)::bigint+coalesce(p_cache_creation_tokens,0)::bigint+coalesce(p_cache_read_tokens,0)::bigint>0) THEN
+    IF NOT lease.count_only AND lease.model<>'__models__' AND (p_outcome='completed' OR coalesce(p_input_tokens,0)+coalesce(p_output_tokens,0)::bigint+coalesce(p_cache_creation_tokens,0)::bigint+coalesce(p_cache_read_tokens,0)::bigint>0) THEN
         INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,upstream_model,
             input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,stream,request_type,duration_ms,first_token_ms,
             billing_mode,s2a_personal_details)
