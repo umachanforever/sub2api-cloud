@@ -29,3 +29,15 @@ test('cleanup shares one deadline with provider and storage and stops after canc
   assert.equal(result,0);assert.equal(calls.length,abortAt==='provider'?1:abortAt==='listing'?2:3);
  }
 });
+test('upstream cleanup failure still removes expired private files and retries remote deletion',async()=>{
+ let entries=[{name:'request.json'},{name:'created.json'}],attempts=0,finished=0;
+ const db=new Database({url:'https://db.invalid',serviceKey:'service'},async(url,init)=>{
+  if(String(url).endsWith('_claim'))return Response.json([{batch_id:id,cleanup_lease:lease,provider:'gemini_api',account_id:'1'}]);
+  if(String(url).endsWith('_finish')){finished++;return Response.json({applied:true});}
+  if(String(url).includes('/object/list/'))return Response.json(entries);
+  assert.deepEqual(JSON.parse(init.body).prefixes,[`batches/${id}/request.json`,`batches/${id}/created.json`]);entries=[];return Response.json({});
+ });
+ const provider=async()=>{attempts++;if(attempts===1)throw Error('account unavailable');};
+ assert.equal(await cleanupBatchImages(db,provider),0);assert.deepEqual(entries,[]);assert.equal(finished,0);
+ assert.equal(await cleanupBatchImages(db,provider),1);assert.equal(attempts,2);assert.equal(finished,1);
+});

@@ -10,11 +10,15 @@ export async function cleanupBatchImages(db:Database,cleanupProvider:(job:BatchC
   if(!job||!/^imgbatch_[a-f0-9]{32}$/.test(job.batch_id)||! /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(job.cleanup_lease)||!['gemini_api','vertex'].includes(job.provider))throw new HttpError(503,'invalid_batch_cleanup_jobs');
   const signal=AbortSignal.any([AbortSignal.timeout(125000),...(options.signal?[options.signal]:[])]);
   try{
-   signal.throwIfAborted();await cleanupProvider(job,signal);signal.throwIfAborted();
+   signal.throwIfAborted();
+   let providerFailed=false;
+   try{await cleanupProvider(job,AbortSignal.any([signal,AbortSignal.timeout(90000)]));}catch{providerFailed=true;}
+   signal.throwIfAborted();
    const paths=await listBatchArtifacts(db,job.batch_id,signal);
    for(let offset=0;offset<paths.length;offset+=100)await deleteArtifacts(db,paths.slice(offset,offset+100),signal);
    if((await listBatchArtifacts(db,job.batch_id,signal)).length)throw new HttpError(503,'batch_cleanup_incomplete');
    signal.throwIfAborted();
+   if(providerFailed)throw new HttpError(503,'batch_provider_cleanup_pending');
    const result=await db.rpc<Record<string,unknown>>('s2a_batch_image_cleanup_finish',{p_id:job.batch_id,p_lease:job.cleanup_lease});
    if(result?.applied!==true)throw new HttpError(503,'batch_cleanup_completion_pending');finished++;
   }catch{console.warn('batch_image_cleanup_pending');}
