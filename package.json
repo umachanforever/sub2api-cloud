@@ -15,6 +15,7 @@
     "credentials:import": "node --env-file=.env.local scripts/import-credentials.mjs",
     "frontend": "pnpm --dir frontend --ignore-workspace dev",
     "deploy": "node --env-file=.env.local scripts/deploy.mjs",
+    "verify:cloud": "node scripts/verify-cloud.mjs",
     "up": "node --env-file-if-exists=.env.local scripts/up.mjs",
     "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down",
     "management:setup": "node --env-file=.env.local scripts/management.mjs",

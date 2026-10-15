@@ -45,3 +45,9 @@ Keep `.env.local` and `.local/` private. Preserve them when moving the local man
 ## Image configuration
 
 `GO_IMAGE` and `RUNTIME_IMAGE` select the management build and runtime images. Their defaults are `golang:1.27.2-alpine` and `postgres:18-alpine`. A reachable container registry mirror may be configured without changing the source.
+
+## Cloud verification
+
+After creating an agent key with `npm run agent:access`, run `npm run verify:cloud`. The command uses private `.local/agent-access.json` to verify health, rejected unauthenticated access, the configured model, Chat Completions, complete SSE output, and subscription usage. It sends two short inference requests and uses the account's normal quota. The selected model must support Chat Completions.
+
+Verification connects directly to the configured gateway; it does not require the local console, Go service, or Redis. To verify workstation independence, stop local management with `npm run down -- --cloud` and run the command again. Start management again with `npm run up -- --cloud` when needed.
