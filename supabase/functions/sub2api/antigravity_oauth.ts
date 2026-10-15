@@ -61,7 +61,7 @@ async function modelCatalog(response: Response, path: string, request: Request):
     if (!/^[a-zA-Z0-9._-]{1,200}$/.test(id) || !metadata || typeof metadata !== 'object' || Array.isArray(metadata)) throw new HttpError(502, 'invalid_upstream_model_catalog');
     const row = metadata as Record<string, unknown>;
     return { name: 'models/' + id, displayName: typeof row.displayName === 'string' ? row.displayName.slice(0, 512) : id,
-      supportedGenerationMethods: ['generateContent', 'streamGenerateContent'] };
+      supportedGenerationMethods: ['generateContent', 'streamGenerateContent', 'countTokens'] };
   });
   const id = /\/models\/([^/]+)$/.exec(path)?.[1];
   if (id) {

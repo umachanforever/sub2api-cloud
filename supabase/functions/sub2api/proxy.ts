@@ -1,3 +1,4 @@
+import {countGeminiTokens} from './gemini_count_tokens.ts';
 import {validateGeminiCacheJson,geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
 import {voiceUpload,voiceResponse} from './grok_voice.ts';
 import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from './grok_search.ts';
@@ -118,9 +119,10 @@ export async function proxy(
   const chat = path === "/v1/chat/completions" && request.method === "POST";
   const messages = path === "/v1/messages" && request.method === "POST";
   const gemini = request.method === "POST"
-    ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent)$/
+    ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent|countTokens)$/
       .exec(path)
     : null;
+  const geminiTokens=gemini?.[2]==='countTokens';
   const protocol: NativeProtocol = voice ? "voice" : embeddings
     ? "embeddings"
     : images
@@ -146,6 +148,14 @@ export async function proxy(
   if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch && !voice) {
     throw new HttpError(404, "not_found");
   }
+  if(geminiTokens&&db.config.dataModel==='native'){
+    try{
+      const policy=await db.rpc<{platform?:string;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
+      if(!policy)throw new HttpError(503,'database_unavailable');
+      if(policy.error)throw new HttpError(policy.status??403,policy.error);
+      if(!['gemini','antigravity'].includes(policy.platform??''))throw new HttpError(400,'gemini_group_required');
+    }catch(error){await request.body?.cancel().catch(()=>{});throw error;}
+  }
   if(voice){
     try{await requireGrokPlatform('grok_voice_requires_grok_group');}
     catch(error){await request.body?.cancel().catch(()=>{});throw error;}
@@ -170,7 +180,7 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = embeddings || inputTokens || messageTokens || search || grokSearch || voice ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = geminiTokens || embeddings || inputTokens || messageTokens || search || grokSearch || voice ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -195,7 +205,14 @@ export async function proxy(
       }
       if(imageEdit && !imageMultipart)validateImageEdit(raw);
       if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
-      if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
+      if(geminiTokens){
+        const nested=raw.generateContentRequest as Record<string,unknown>|undefined;
+        if(raw.stream===true||nested!==undefined&&(!nested||typeof nested!=='object'||Array.isArray(nested))||nested&&raw.contents!==undefined)throw new HttpError(400,'invalid_request');
+        const content=nested??raw;
+        if((!Array.isArray(content.contents)||!content.contents.length)&&!geminiCacheName(raw))throw new HttpError(400,'invalid_request');
+        if(nested?.model!==undefined&&(typeof nested.model!=='string'||nested.model.replace(/^models\//,'')!==gemini![1]))throw new HttpError(400,'invalid_count_model');
+      }
+      if (gemini && !geminiTokens && (!Array.isArray(raw.contents) || !raw.contents.length)) {
         throw new HttpError(400, "invalid_request");
       }
       if (messageTokens && raw.stream === true) throw new HttpError(400, "invalid_request");
@@ -228,7 +245,7 @@ export async function proxy(
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(policyModel),
         ...(cacheName?{cached_content:cacheName}:{}),
-        ...(inputTokens || messageTokens ? {count_only:true} : {}),
+        ...(inputTokens || messageTokens || geminiTokens ? {count_only:true} : {}),
         ...(search || grokSearch ? {web_search:true,search_operation:grokSearch?grokSearchKind:'alpha_search'} : {}),
         service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
         stream: models ? false : stream,
@@ -248,7 +265,8 @@ export async function proxy(
     const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
-    let forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    if(geminiTokens&&forwardedBody?.generateContentRequest?.model)forwardedBody.generateContentRequest={...forwardedBody.generateContentRequest,model:'models/'+upstreamModel.replace(/^models\//,'')};
     if(cacheBinding)forwardedBody=rewriteGeminiCache(forwardedBody!,cacheBinding);
     if(grokSearch)forwardedBody=grokSearchBody(grokSearchOptions!,upstreamModel);
     const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
@@ -324,6 +342,11 @@ export async function proxy(
         if(windows && account.type!=="apikey")quotaSnapshot=db.rpc(db.config.dataModel === "native" ? "s2a_personal_windows_save" : "s2a_openai_windows_save",{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn("quota_window_save_failed"));
         await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:"completed"});
         return json(200,result.value);
+      }
+      if(geminiTokens){
+        const counted=await countGeminiTokens(db,account,forwardedPath,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});
+        await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});
+        return json(200,counted);
       }
       if (inputTokens || messageTokens) {
         const input_tokens=messageTokens

@@ -140,6 +140,8 @@ OpenAI 账户支持 `POST /v1/responses/input_tokens`，以及 `/responses/input
 
 Anthropic 格式客户端可通过 `POST /v1/messages/count_tokens` 或 `/messages/count_tokens` 预估输入 Token，支持 Bearer 和 `x-api-key` 鉴权。OpenAI 账号通过 Responses 预估接口转换，Grok 账号使用本地估算，Anthropic 账号使用原生计数接口。这些请求不会写入生成用量。
 
+Gemini 客户端可通过 `POST /v1beta/models/{model}:countTokens` 计数，支持 Bearer、`x-goog-api-key` 或查询参数密钥。接口支持原生 contents 和嵌套生成请求，缓存引用固定使用所属账号；网络故障、限流、服务端错误或 OAuth 权限不足时使用原版文本估算。这些请求不会写入生成用量。
+
 Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清单；OpenAI OAuth 账号无需传入 `client_version` 即可返回 Codex 模型元数据。
 
 `GET /antigravity/models` 返回与原版一致的 Antigravity 内置模型目录，并按 API Key 分组的模型白名单过滤。接口校验密钥和 IP 访问限制，不占用账号，也不请求上游服务。

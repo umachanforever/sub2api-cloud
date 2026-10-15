@@ -141,6 +141,8 @@ Chat Completions accepts inline file data and provider file IDs. The Messages-to
 OpenAI accounts support `POST /v1/responses/input_tokens`, including `/responses/input_tokens` and `/backend-api/codex/responses/input_tokens` aliases. The gateway uses the provider preflight endpoint when available and falls back to the upstream tiktoken estimation approach inside the Edge Function when the endpoint is unsupported. Preflight counts do not create generation usage records or charge a balance. The fallback is an estimate, including for multimodal inputs.
 Anthropic-format clients can use `POST /v1/messages/count_tokens` or `/messages/count_tokens` with Bearer or `x-api-key` authentication. OpenAI accounts use the Responses preflight bridge, Grok accounts use the local estimator, and Anthropic accounts use the native provider endpoint. These requests do not create generation usage records.
 
+Gemini clients can use `POST /v1beta/models/{model}:countTokens` with Bearer, `x-goog-api-key`, or query-key authentication. The gateway supports native contents and nested generation requests, pins cached references to their owning account, and falls back to the native text estimator for transport failures, rate limits, server errors, or missing OAuth scopes. These counts do not create generation usage records.
+
 Codex clients can discover the native model manifest at `GET /backend-api/codex/models`; OpenAI OAuth accounts return the Codex model metadata even without a `client_version` query.
 
 `GET /antigravity/models` returns the pinned upstream Antigravity catalog with the API key group's model allowlist applied. It validates key and IP access without reserving an account or contacting a provider.

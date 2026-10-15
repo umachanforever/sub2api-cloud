@@ -17,7 +17,7 @@ export function googleOAuthCatalog(credentials: GoogleCredentials, path: string,
   const model = /\/models\/([^/]+)$/.exec(path)?.[1];
   const models = DEFAULT_PROVIDER_CATALOGS.gemini.map(entry => ({
     name: 'models/' + entry.id, displayName: entry.display_name,
-    supportedGenerationMethods: ['generateContent', 'streamGenerateContent'],
+    supportedGenerationMethods: ['generateContent', 'streamGenerateContent', 'countTokens'],
   }));
   if (model) {
     const found = models.find(entry => entry.name === 'models/' + decodeURIComponent(model));
