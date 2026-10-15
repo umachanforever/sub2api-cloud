@@ -87,6 +87,13 @@ BEGIN
  IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_account_changed' THEN RAISE EXCEPTION 'worker followed rotated credential'; END IF;
  UPDATE public.groups SET model_allowlist='{"enabled":true,"models":["allowed-*"]}' WHERE id=g;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'allowlist bypass'; END IF;
+ UPDATE public.batch_image_jobs SET status='completed' WHERE batch_id=ident;
+ IF public.s2a_batch_image_mark_downloaded(other_hash,ident)->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key download marking'; END IF;
+ IF public.s2a_batch_image_mark_downloaded(h,ident)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'download marking failed'; END IF;
+ IF public.s2a_batch_image_read(h,ident)->>'downloaded_at' IS NULL THEN RAISE EXCEPTION 'download timestamp hidden'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":true}'::jsonb)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'downloaded filter mismatch'; END IF;
+ IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":false}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'undownloaded filter mismatch'; END IF;
+
 END $$;
 ROLLBACK;
 BEGIN;

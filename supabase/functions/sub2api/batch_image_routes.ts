@@ -1,3 +1,4 @@
+import {trackBatchDownload} from './batch_image_downloaded.ts';
 import {batchImageModels} from './batch_image_models.ts';
 import {Database,HttpError} from './db.ts';
 import {hashKey,readBody} from './validation.ts';
@@ -56,11 +57,11 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
  if(!operation&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:true}));
  if(operation==='cancel'&&!match[3]&&request.method==='POST')return json(200,await call(db,'s2a_batch_image_cancel',{...args,p_id:id}));
  if(operation==='outputs'&&!match[3]&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:false}));
- if(operation==='download'&&!match[3]&&request.method==='GET')return downloadBatchImages(db,keyHash,id,clientIP);
+ if(operation==='download'&&!match[3]&&request.method==='GET')return trackBatchDownload(await downloadBatchImages(db,keyHash,id,clientIP),db,keyHash,id,clientIP);
  if(operation==='items'&&request.method==='GET'){
   if(match[3]){
    let customID:string;try{customID=decodeURIComponent(match[3]);}catch{throw new HttpError(400,'invalid_batch_custom_id');}
-   return batchImageContent(db,keyHash,id,customID,number(url.searchParams.get('image_index'),0,0,1000000),clientIP);
+   return trackBatchDownload(await batchImageContent(db,keyHash,id,customID,number(url.searchParams.get('image_index'),0,0,1000000),clientIP),db,keyHash,id,clientIP);
   }
   const snapshot=await call(db,'s2a_batch_image_read',{...args,p_id:id});
   if(!Array.isArray(snapshot.items))throw new HttpError(503,'invalid_batch_response');

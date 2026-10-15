@@ -303,7 +303,7 @@ BEGIN
     RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
         'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
-        'output_expires_at',native.output_expires_at,'output_deletion_pending',task.cleanup_requested AND task.cleaned_at IS NULL,'error_code',native.last_error_code,'items',items));
+        'output_expires_at',native.output_expires_at,'downloaded_at',native.downloaded_at,'output_deletion_pending',task.cleanup_requested AND task.cleaned_at IS NULL,'error_code',native.last_error_code,'items',items));
 END $$;
 DROP FUNCTION IF EXISTS public.s2a_batch_image_list(text,integer,integer,text);
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_list(p_key_hash text,p_limit integer DEFAULT 20,p_offset integer DEFAULT 0,p_client_ip text DEFAULT NULL,p_filters jsonb DEFAULT '{}'::jsonb)
@@ -332,6 +332,16 @@ BEGIN
             AND (NOT p_filters ? 'to' OR j.created_at<=(p_filters->>'to')::timestamptz)
             ORDER BY j.created_at DESC,r.batch_id DESC LIMIT p_limit OFFSET p_offset) q;
     RETURN jsonb_build_object('object','list','data',entries,'has_more',p_offset+jsonb_array_length(entries)<total,'items',entries,'total',total,'limit',p_limit,'offset',p_offset);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_mark_downloaded(p_key_hash text,p_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE snapshot jsonb;
+BEGIN
+    snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+    IF snapshot ? 'error' THEN RETURN snapshot; END IF;
+    UPDATE public.batch_image_jobs SET downloaded_at=coalesce(downloaded_at,clock_timestamp()),updated_at=clock_timestamp()
+        WHERE batch_id=p_id AND status='completed' AND user_deleted_at IS NULL;
+    RETURN jsonb_build_object('applied',FOUND);
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_content_resolve(p_key_hash text,p_id text,p_custom_id text,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -403,7 +413,7 @@ BEGIN
     RETURN jsonb_build_object('applied',true);
 END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_mark_downloaded','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);
