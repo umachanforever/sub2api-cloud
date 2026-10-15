@@ -204,6 +204,7 @@ BEGIN
             OR coalesce(a.overload_until,'-infinity')>clock_timestamp() OR coalesce(a.rate_limit_reset_at,'-infinity')>clock_timestamp()
             OR coalesce(a.temp_unschedulable_until,'-infinity')>clock_timestamp()
             OR NOT EXISTS(SELECT 1 FROM public.account_groups WHERE account_id=a.id AND group_id=task.group_id)
+            OR EXISTS(SELECT 1 FROM public.groups WHERE id=task.group_id AND require_oauth_only AND a.type='apikey')
             OR a.s2a_credential_version IS DISTINCT FROM task.credential_version
             THEN RETURN jsonb_build_object('error','batch_image_account_changed','status',409); END IF;
         IF coalesce((policy->'model_allowlist'->>'enabled')::boolean,false) THEN

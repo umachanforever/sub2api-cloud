@@ -80,6 +80,9 @@ BEGIN
  UPDATE public.groups SET allow_batch_image_generation=false WHERE id=g;
  IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_identity_changed' THEN RAISE EXCEPTION 'worker ignored permission revocation'; END IF;
  UPDATE public.groups SET allow_batch_image_generation=true WHERE id=g;
+ UPDATE public.groups SET require_oauth_only=true WHERE id=g;
+ IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_account_changed' THEN RAISE EXCEPTION 'worker ignored OAuth-only policy'; END IF;
+ UPDATE public.groups SET require_oauth_only=false WHERE id=g;
  UPDATE public.accounts SET credentials='{"api_key":"rotated"}' WHERE id=a;
  IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_account_changed' THEN RAISE EXCEPTION 'worker followed rotated credential'; END IF;
  UPDATE public.groups SET model_allowlist='{"enabled":true,"models":["allowed-*"]}' WHERE id=g;
