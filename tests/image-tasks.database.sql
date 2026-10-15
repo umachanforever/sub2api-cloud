@@ -76,5 +76,17 @@ BEGIN
     UPDATE public.groups SET platform='grok',model_allowlist='{"enabled":true,"models":["grok-imagine-image-quality"]}' WHERE id=g;
     IF public.s2a_personal_image_task_prepare(h,'imgtask_'||repeat('6',32),'not-allowed','generations','application/json',repeat('1',64),100)->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'image task model allowlist ignored'; END IF;
     IF public.s2a_personal_image_task_prepare(h,'imgtask_'||repeat('6',32),'grok-imagine','generations','application/json',repeat('1',64),100)->>'id' IS NULL THEN RAISE EXCEPTION 'canonical Grok alias not admitted'; END IF;
+    IF has_function_privilege('anon','public.s2a_personal_image_cleanup_claim()','EXECUTE') OR has_function_privilege('authenticated','public.s2a_personal_image_cleanup_finish(text,uuid)','EXECUTE') THEN RAISE EXCEPTION 'cleanup privileges leaked'; END IF;
+    IF public.s2a_personal_image_cleanup_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleanup claimed live or recently expired task'; END IF;
+    UPDATE s2a_private.image_tasks SET expires_at=clock_timestamp()-interval '10 minutes' WHERE id=task;
+    job:=public.s2a_personal_image_cleanup_claim()->0;first_lease:=(job->>'lease_id')::uuid;
+    IF job->>'id' IS DISTINCT FROM task THEN RAISE EXCEPTION 'expired cleanup task not claimed'; END IF;
+    IF public.s2a_personal_image_cleanup_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleanup task double claimed'; END IF;
+    IF public.s2a_personal_image_cleanup_finish(task,gen_random_uuid()) THEN RAISE EXCEPTION 'wrong cleanup lease deleted task'; END IF;
+    UPDATE s2a_private.image_tasks SET cleanup_lease_until=clock_timestamp()-interval '1 second' WHERE id=task;
+    job:=public.s2a_personal_image_cleanup_claim()->0;second_lease:=(job->>'lease_id')::uuid;
+    IF first_lease=second_lease OR public.s2a_personal_image_cleanup_finish(task,first_lease) THEN RAISE EXCEPTION 'stale cleanup worker deleted task'; END IF;
+    IF NOT public.s2a_personal_image_cleanup_finish(task,second_lease) THEN RAISE EXCEPTION 'cleanup completion failed'; END IF;
+    IF EXISTS(SELECT 1 FROM s2a_private.image_tasks WHERE id=task) THEN RAISE EXCEPTION 'cleanup completion retained task'; END IF;
 END $$;
 ROLLBACK;

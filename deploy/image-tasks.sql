@@ -9,6 +9,8 @@ CREATE TABLE IF NOT EXISTS s2a_private.image_tasks (
     lease_id uuid,lease_until timestamptz,dispatched_at timestamptz,completed_at timestamptz,
     http_status integer,result_hash text,error_code text,completion_hash text
 );
+ALTER TABLE s2a_private.image_tasks ADD COLUMN IF NOT EXISTS cleanup_lease_id uuid;
+ALTER TABLE s2a_private.image_tasks ADD COLUMN IF NOT EXISTS cleanup_lease_until timestamptz;
 ALTER TABLE s2a_private.image_tasks OWNER TO s2a_management;
 ALTER TABLE s2a_private.image_tasks ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.image_tasks FROM PUBLIC,anon,authenticated,service_role;
@@ -168,5 +170,30 @@ ALTER FUNCTION public.s2a_personal_image_job_start(text,uuid) OWNER TO s2a_manag
 ALTER FUNCTION public.s2a_personal_image_job_finish(text,uuid,integer,text,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_image_task_prepare(text,text,text,text,text,text,bigint,text),public.s2a_personal_image_task_read(text,text,text),public.s2a_personal_image_task_ready(text,text,text),public.s2a_personal_image_jobs_claim(),public.s2a_personal_image_job_start(text,uuid),public.s2a_personal_image_job_finish(text,uuid,integer,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_image_task_prepare(text,text,text,text,text,text,bigint,text),public.s2a_personal_image_task_read(text,text,text),public.s2a_personal_image_task_ready(text,text,text),public.s2a_personal_image_jobs_claim(),public.s2a_personal_image_job_start(text,uuid),public.s2a_personal_image_job_finish(text,uuid,integer,text,text) TO service_role;
+CREATE OR REPLACE FUNCTION public.s2a_personal_image_cleanup_claim()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE tasks jsonb;
+BEGIN
+    WITH candidates AS (
+        SELECT id FROM s2a_private.image_tasks WHERE expires_at<clock_timestamp()-interval '5 minutes'
+            AND (cleanup_lease_until IS NULL OR cleanup_lease_until<clock_timestamp())
+        ORDER BY expires_at,id LIMIT 2 FOR UPDATE SKIP LOCKED
+    ), claimed AS (
+        UPDATE s2a_private.image_tasks t SET cleanup_lease_id=gen_random_uuid(),cleanup_lease_until=clock_timestamp()+interval '180 seconds'
+        FROM candidates c WHERE t.id=c.id RETURNING t.id,t.cleanup_lease_id
+    ) SELECT coalesce(jsonb_agg(jsonb_build_object('id',id,'lease_id',cleanup_lease_id)),'[]'::jsonb) INTO tasks FROM claimed;
+    RETURN tasks;
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_personal_image_cleanup_finish(p_id text,p_lease_id uuid)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    DELETE FROM s2a_private.image_tasks WHERE id=p_id AND cleanup_lease_id=p_lease_id
+        AND cleanup_lease_until>clock_timestamp() AND expires_at<clock_timestamp()-interval '5 minutes';
+    RETURN FOUND;
+END $$;
+ALTER FUNCTION public.s2a_personal_image_cleanup_claim() OWNER TO s2a_management;
+ALTER FUNCTION public.s2a_personal_image_cleanup_finish(text,uuid) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_image_cleanup_claim(),public.s2a_personal_image_cleanup_finish(text,uuid) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_image_cleanup_claim(),public.s2a_personal_image_cleanup_finish(text,uuid) TO service_role;
 NOTIFY pgrst,'reload schema';
 COMMIT;
