@@ -100,6 +100,8 @@ Run `npm run verify:independence` to temporarily stop this project's local conso
 
 For optional usage-only access, run `npm run usage:access`. This saves a private `.local/agent-usage.json`. The generated `sk-usage-` token can read usage but cannot make AI requests or access management APIs. It inherits the linked inference key's group, expiration, status, and IP restrictions. Revoke it by setting its `revoked_at` in `s2a_private.usage_tokens`; disabling or deleting the linked inference key also blocks it.
 
+Common data pages also retain their loaded UI state for 60 seconds when switching sections. Filters are isolated, inactive snapshots are invalidated after writes, and signing out clears retained pages. Live monitors and payment flows keep their normal lifecycle.
+
 The console caches successful authenticated data queries in tab memory for 60 seconds, including dashboard, usage, account details, and settings. Writes and session changes invalidate snapshots. Authentication, OAuth flows, exports, and streams bypass this cache; a request with `Cache-Control: no-cache` forces a fresh read.
 
 ## Project layout

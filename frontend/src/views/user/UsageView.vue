@@ -219,7 +219,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onActivated, onDeactivated, onUnmounted, reactive, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
@@ -905,6 +905,9 @@ onMounted(() => {
   void loadFilterOptions()
   refreshData()
 })
+
+onActivated(() => document.addEventListener('click', handleColumnClickOutside))
+onDeactivated(() => document.removeEventListener('click', handleColumnClickOutside))
 
 onUnmounted(() => {
   abortController?.abort()

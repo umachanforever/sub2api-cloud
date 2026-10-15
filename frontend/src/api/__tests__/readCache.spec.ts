@@ -88,6 +88,18 @@ describe('management read cache', () => {
     expect(source).toHaveBeenCalledTimes(4)
   })
 
+  it('notifies page caches of invalidations and releases subscriptions', async () => {
+    const cached = createReadCache(async c => response(c))
+    await cached(config())
+    const listener = vi.fn()
+    const unsubscribe = cached.subscribe(listener)
+    await cached(config('/keys', { method: 'post' }))
+    expect(listener).toHaveBeenCalledTimes(2)
+    unsubscribe()
+    cached.invalidate()
+    expect(listener).toHaveBeenCalledTimes(2)
+  })
+
   it('invalidates snapshots on manual refresh', async () => {
     const source = vi.fn(async c => response(c))
     const cached = createReadCache(source)

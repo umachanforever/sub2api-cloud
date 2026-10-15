@@ -1,13 +1,14 @@
 import axios, { type AxiosAdapter, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 
 // Keep successful query snapshots in this tab for one minute.
-export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAdapter & { invalidate(): void } {
+export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAdapter & { invalidate(): void; subscribe(listener: () => void): () => void } {
   const entries = new Map<string, { expires: number; response: AxiosResponse }>()
   const pending = new Map<string, Promise<AxiosResponse>>()
   let session: string | undefined
   let generation = 0
   let mutations = 0
-  const clear = () => { entries.clear(); pending.clear(); generation++ }
+  const listeners = new Set<() => void>()
+  const clear = () => { entries.clear(); pending.clear(); generation++; listeners.forEach(listener => listener()) }
   const copy = (response: AxiosResponse, config: InternalAxiosRequestConfig): AxiosResponse =>
     ({ ...response, data: structuredClone(response.data), config })
 
@@ -56,5 +57,5 @@ export function createReadCache(adapter: AxiosAdapter, now = Date.now): AxiosAda
       if (pending.get(key) === request) pending.delete(key)
     }
   }
-  return Object.assign(cachedAdapter, { invalidate: clear })
+  return Object.assign(cachedAdapter, { invalidate: clear, subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } } })
 }

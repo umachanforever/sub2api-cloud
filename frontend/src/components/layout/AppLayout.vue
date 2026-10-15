@@ -24,7 +24,7 @@
 
 <script setup lang="ts">
 import '@/styles/onboarding.css'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onActivated } from 'vue'
 import { useAppStore } from '@/stores'
 import { useAuthStore } from '@/stores/auth'
 import { useOnboardingTour } from '@/composables/useOnboardingTour'
@@ -47,6 +47,7 @@ const onboardingStore = useOnboardingStore()
 onMounted(() => {
   onboardingStore.setReplayCallback(replayTour)
 })
+onActivated(() => onboardingStore.setReplayCallback(replayTour))
 
 defineExpose({ replayTour })
 </script>

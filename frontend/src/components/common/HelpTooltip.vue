@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, useTemplateRef, nextTick } from 'vue'
+import { onBeforeUnmount, onDeactivated, onMounted, ref, useTemplateRef, nextTick } from 'vue'
 
 const props = withDefaults(defineProps<{
   content?: string
@@ -92,6 +92,8 @@ onMounted(() => {
   window.addEventListener('resize', onViewportChange)
   window.addEventListener('scroll', onViewportChange, true)
 })
+
+onDeactivated(closeTooltip)
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocumentClick, true)

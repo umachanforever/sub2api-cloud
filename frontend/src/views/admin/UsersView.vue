@@ -792,7 +792,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated, onDeactivated, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
 import { getPersistedPageSize } from '@/composables/usePersistedPageSize'
@@ -1902,6 +1902,9 @@ onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
   window.addEventListener('scroll', handleScroll, true)
 })
+
+onActivated(() => { document.addEventListener('click', handleClickOutside); window.addEventListener('scroll', handleScroll, true) })
+onDeactivated(() => { activeMenuId.value = null; document.removeEventListener('click', handleClickOutside); window.removeEventListener('scroll', handleScroll, true) })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)

@@ -2,7 +2,7 @@
   <Teleport to="body">
     <Transition name="modal">
       <div
-        v-if="show"
+        v-if="show && active"
         class="modal-overlay"
         :style="zIndexStyle"
         :aria-labelledby="dialogId"
@@ -48,7 +48,7 @@ const openDialogs = new Set<string>()
 </script>
 
 <script setup lang="ts">
-import { computed, watch, onMounted, onUnmounted, ref, nextTick } from 'vue'
+import { computed, watch, onMounted, onActivated, onDeactivated, onUnmounted, ref, nextTick } from 'vue'
 import Icon from '@/components/icons/Icon.vue'
 
 // Generate a unique ID to avoid ID conflicts with multiple dialogs
@@ -84,6 +84,7 @@ const props = withDefaults(defineProps<Props>(), {
 })
 
 const emit = defineEmits<Emits>()
+const active = ref(true)
 
 // Custom z-index style (overrides the default z-50 from CSS)
 const zIndexStyle = computed(() => {
@@ -124,7 +125,7 @@ const updateScrollLock = (isOpen: boolean) => {
 
 // Prevent body scroll when modal is open and manage focus
 watch(
-  () => props.show,
+  () => props.show && active.value,
   async (isOpen) => {
     if (isOpen) {
       // Save the currently focused element
@@ -157,6 +158,14 @@ watch(
 
 onMounted(() => {
   document.addEventListener('keydown', handleEscape)
+})
+
+onActivated(() => { active.value = true; document.addEventListener('keydown', handleEscape) })
+onDeactivated(() => {
+  active.value = false
+  document.removeEventListener('keydown', handleEscape)
+  updateScrollLock(false)
+  if (props.show) emit('close')
 })
 
 onUnmounted(() => {

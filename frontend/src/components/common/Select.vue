@@ -122,7 +122,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onActivated, onDeactivated, onUnmounted, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/icons/Icon.vue'
 
@@ -505,6 +505,9 @@ const handleClickOutside = (event: MouseEvent) => {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
+
+onActivated(() => document.addEventListener('click', handleClickOutside))
+onDeactivated(() => { isOpen.value = false; document.removeEventListener('click', handleClickOutside) })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)

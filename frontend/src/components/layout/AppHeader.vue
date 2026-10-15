@@ -236,7 +236,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onActivated, onDeactivated, onBeforeUnmount } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useAppStore, useAuthStore, useOnboardingStore } from '@/stores'
@@ -372,6 +372,9 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 })
+
+onActivated(() => document.addEventListener('click', handleClickOutside))
+onDeactivated(() => { closeDropdown(); document.removeEventListener('click', handleClickOutside) })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', handleClickOutside)

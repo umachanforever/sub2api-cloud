@@ -491,7 +491,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, toRaw, watch } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, onActivated, onDeactivated, toRaw, watch } from 'vue'
 import { useIntervalFn } from '@vueuse/core'
 import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores/app'
@@ -2566,6 +2566,21 @@ onMounted(async () => {
   } else {
     pauseAutoRefresh()
   }
+})
+
+onActivated(() => {
+  window.addEventListener('scroll', handleScroll, true)
+  window.addEventListener('resize', handleViewportResize)
+  document.addEventListener('click', handleClickOutside)
+  if (autoRefreshEnabled.value) resumeAutoRefresh()
+})
+onDeactivated(() => {
+  pauseAutoRefresh()
+  menu.show = false
+  showAccountToolsDropdown.value = false
+  window.removeEventListener('scroll', handleScroll, true)
+  window.removeEventListener('resize', handleViewportResize)
+  document.removeEventListener('click', handleClickOutside)
 })
 
 onUnmounted(() => {

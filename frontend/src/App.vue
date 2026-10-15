@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { RouterView, useRouter, useRoute } from 'vue-router'
-import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import Toast from '@/components/common/Toast.vue'
 import NavigationProgress from '@/components/common/NavigationProgress.vue'
 import AdminComplianceDialog from '@/components/admin/AdminComplianceDialog.vue'
@@ -12,6 +12,12 @@ import { updateFavicon } from '@/utils/branding'
 import { FeatureFlags, isFeatureFlagEnabled } from '@/utils/featureFlags'
 import { resolveSiteBillingMode } from '@/utils/siteBillingMode'
 
+import CachedRouterView from '@/components/common/CachedRouterView.vue'
+import { subscribeReadCacheInvalidation } from '@/api/client'
+
+const pageCacheRevision = ref(0)
+const unsubscribePageCache = subscribeReadCacheInvalidation(() => { pageCacheRevision.value++ })
+onBeforeUnmount(unsubscribePageCache)
 const router = useRouter()
 const route = useRoute()
 const appStore = useAppStore()
@@ -163,7 +169,7 @@ onMounted(async () => {
 
 <template>
   <NavigationProgress />
-  <RouterView />
+  <CachedRouterView :identity="authStore.isAuthenticated ? `${authStore.user?.id}:${authStore.user?.role}` : ''" :revision="pageCacheRevision" />
   <Toast />
   <AnnouncementPopup />
   <AdminComplianceDialog />

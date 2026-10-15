@@ -312,7 +312,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onDeactivated, onBeforeUnmount, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { storeToRefs } from 'pinia'
 import { marked } from 'marked'
@@ -410,6 +410,8 @@ function handleEscape(e: KeyboardEvent) {
 onMounted(() => {
   document.addEventListener('keydown', handleEscape)
 })
+
+onDeactivated(() => { closeModal(); closeDetail() })
 
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', handleEscape)

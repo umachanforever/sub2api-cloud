@@ -1204,7 +1204,7 @@
 </template>
 
 <script setup lang="ts">
-	import { ref, reactive, computed, watch, onMounted, onUnmounted, type ComponentPublicInstance } from 'vue'
+	import { ref, reactive, computed, watch, onMounted, onUnmounted, onActivated, onDeactivated, type ComponentPublicInstance } from 'vue'
 	import { useI18n } from 'vue-i18n'
 	import { useAppStore } from '@/stores/app'
 	import { useOnboardingStore } from '@/stores/onboarding'
@@ -2100,6 +2100,17 @@ onMounted(() => {
   loadPublicSettings()
   document.addEventListener('click', closeGroupSelector)
   resetTimer = setInterval(() => { now.value = new Date() }, 60000)
+})
+
+onActivated(() => {
+  document.addEventListener('click', closeGroupSelector)
+  now.value = new Date()
+  if (!resetTimer) resetTimer = setInterval(() => { now.value = new Date() }, 60000)
+})
+onDeactivated(() => {
+  document.removeEventListener('click', closeGroupSelector)
+  if (resetTimer) clearInterval(resetTimer)
+  resetTimer = null
 })
 
 onUnmounted(() => {
