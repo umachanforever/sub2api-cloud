@@ -44,7 +44,7 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE u bigint;g bigint;k bigint;a bigint;h text;r jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
+DECLARE u bigint;g bigint;k bigint;a bigint;h text;r jsonb; leased jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
 BEGIN
  INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
  INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch fixture','gemini',false) RETURNING id INTO g;
@@ -62,7 +62,15 @@ BEGIN
  IF public.s2a_batch_image_prepare(h,ident,repeat('b',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'request overwritten'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
- IF public.s2a_batch_image_runtime_claim()->0->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'persisted request not claimable'; END IF;
+ leased:=public.s2a_batch_image_runtime_claim()->0;
+ IF leased->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'persisted request not claimable'; END IF;
+ r:=public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid);
+ IF r->'account'->>'id' IS DISTINCT FROM a::text OR r->'account'->'credentials'->>'api_key' IS DISTINCT FROM 'fixture-batch' THEN RAISE EXCEPTION 'worker credentials not bound: %',r->>'error'; END IF;
+ UPDATE public.groups SET allow_batch_image_generation=false WHERE id=g;
+ IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_identity_changed' THEN RAISE EXCEPTION 'worker ignored permission revocation'; END IF;
+ UPDATE public.groups SET allow_batch_image_generation=true WHERE id=g;
+ UPDATE public.accounts SET credentials='{"api_key":"rotated"}' WHERE id=a;
+ IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_account_changed' THEN RAISE EXCEPTION 'worker followed rotated credential'; END IF;
  UPDATE public.groups SET model_allowlist='{"enabled":true,"models":["allowed-*"]}' WHERE id=g;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'allowlist bypass'; END IF;
 END $$;

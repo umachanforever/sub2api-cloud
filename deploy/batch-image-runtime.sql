@@ -12,6 +12,8 @@ CREATE TABLE IF NOT EXISTS s2a_private.batch_image_runtime (
     CHECK(stage NOT IN ('poll','index','completed') OR provider_job_name IS NOT NULL),
     CHECK(stage='upload' OR stage='failed' OR input_ref IS NOT NULL)
 );
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS credential_version bigint;
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS client_ip text;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS ready boolean NOT NULL DEFAULT true;
 ALTER TABLE s2a_private.batch_image_runtime OWNER TO s2a_management;
 ALTER TABLE s2a_private.batch_image_runtime ENABLE ROW LEVEL SECURITY;
@@ -144,8 +146,8 @@ BEGIN
     IF NOT FOUND THEN RETURN jsonb_build_object('error','no_available_batch_account','status',503); END IF;
     INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count,task_name,request_hash)
         VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,p_provider,p_model,p_count,p_name,p_hash);
-    INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,ready)
-        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,(identity->>'group_id')::bigint,a.id,p_key_hash,p_hash,false);
+    INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,ready,credential_version,client_ip)
+        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,(identity->>'group_id')::bigint,a.id,p_key_hash,p_hash,false,a.s2a_credential_version,p_client_ip);
     RETURN jsonb_build_object('id',p_id,'ready',false);
 EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409);
 END $$;
@@ -165,8 +167,46 @@ BEGIN
     UPDATE s2a_private.batch_image_runtime SET ready=true,updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('id',p_id,'ready',true);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_admit(p_id text,p_lease uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; identity jsonb; policy jsonb; a s2a_private.accounts%ROWTYPE; pattern text; allowed boolean:=false; snapshot jsonb;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_lease_lost','status',409); END IF;
+    IF task.stage NOT IN ('upload','create','poll','index') OR NOT task.ready THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
+    SELECT * INTO native FROM public.batch_image_jobs WHERE batch_id=p_id;
+    IF NOT FOUND OR native.user_id<>task.user_id OR native.api_key_id IS DISTINCT FROM task.key_id OR native.account_id IS DISTINCT FROM task.account_id
+        THEN RETURN jsonb_build_object('error','batch_image_binding_changed','status',409); END IF;
+    SELECT * INTO a FROM s2a_private.accounts WHERE id=task.account_id AND deleted_at IS NULL AND status='active' AND platform='gemini'
+        AND type=CASE WHEN native.provider='vertex' THEN 'service_account' WHEN native.provider='gemini_api' THEN 'apikey' ELSE '' END;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_account_unavailable','status',503); END IF;
+    IF task.stage IN ('upload','create') AND task.create_dispatched_at IS NULL THEN
+        policy:=public.s2a_personal_key_policy(task.key_hash,task.client_ip);
+        IF policy ? 'error' THEN RETURN policy; END IF;
+        identity:=public.s2a_gateway_key_lookup(task.key_hash);
+        IF identity ? 'error' OR (identity->>'user_id')::bigint IS DISTINCT FROM task.user_id OR (identity->>'key_id')::bigint IS DISTINCT FROM task.key_id OR (identity->>'group_id')::bigint IS DISTINCT FROM task.group_id
+            OR policy->>'platform'<>'gemini' OR NOT coalesce((policy->>'allow_batch_image_generation')::boolean,false)
+            THEN RETURN jsonb_build_object('error','batch_image_identity_changed','status',403); END IF;
+        IF NOT a.schedulable OR coalesce(a.auto_pause_on_expired AND a.expires_at<=clock_timestamp(),false)
+            OR coalesce(a.overload_until,'-infinity')>clock_timestamp() OR coalesce(a.rate_limit_reset_at,'-infinity')>clock_timestamp()
+            OR coalesce(a.temp_unschedulable_until,'-infinity')>clock_timestamp()
+            OR NOT EXISTS(SELECT 1 FROM public.account_groups WHERE account_id=a.id AND group_id=task.group_id)
+            OR a.s2a_credential_version IS DISTINCT FROM task.credential_version
+            THEN RETURN jsonb_build_object('error','batch_image_account_changed','status',409); END IF;
+        IF coalesce((policy->'model_allowlist'->>'enabled')::boolean,false) THEN
+            FOR pattern IN SELECT jsonb_array_elements_text(coalesce(policy->'model_allowlist'->'models','[]'::jsonb)) LOOP
+                IF lower(native.model)=lower(pattern) OR (right(pattern,1)='*' AND starts_with(lower(native.model),lower(left(pattern,-1)))) THEN allowed:=true; END IF;
+            END LOOP;
+            IF NOT allowed THEN RETURN jsonb_build_object('error','model_not_allowed','status',403); END IF;
+        END IF;
+    END IF;
+    snapshot:=public.s2a_gateway_account_snapshot(a.id);
+    IF snapshot ? 'error' THEN RETURN snapshot||jsonb_build_object('status',503); END IF;
+    RETURN jsonb_build_object('account',snapshot||jsonb_build_object('proxy_id',a.proxy_id::text),'provider',native.provider,'model',native.model,'request_hash',task.request_hash);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);
