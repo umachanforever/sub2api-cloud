@@ -1,0 +1,6008 @@
+{
+  "upstream": "https://github.com/Wei-Shaw/sub2api",
+  "commit": "9c2cca9e627291bc719bada3d57de23b625a4180",
+  "scope": "All functions at this pinned upstream revision",
+  "routeCount": 662,
+  "note": "Paths are relative to the original Go route group. This source inventory is not a claim of compatibility. Every route needs contract and end-to-end acceptance before completion; existing partial routes are pending full acceptance too.",
+  "schemaFiles": [
+    "account.go",
+    "account_group.go",
+    "announcement.go",
+    "announcement_read.go",
+    "api_key.go",
+    "auth_identity.go",
+    "auth_identity_channel.go",
+    "batch_image_event.go",
+    "batch_image_item.go",
+    "batch_image_job.go",
+    "channel_monitor.go",
+    "channel_monitor_daily_rollup.go",
+    "channel_monitor_history.go",
+    "channel_monitor_request_template.go",
+    "composite_model_route.go",
+    "error_passthrough_rule.go",
+    "group.go",
+    "idempotency_record.go",
+    "identity_adoption_decision.go",
+    "payment_audit_log.go",
+    "payment_order.go",
+    "payment_provider_instance.go",
+    "pending_auth_session.go",
+    "promo_code.go",
+    "promo_code_usage.go",
+    "proxy.go",
+    "redeem_code.go",
+    "security_secret.go",
+    "setting.go",
+    "subscription_plan.go",
+    "tls_fingerprint_profile.go",
+    "usage_cleanup_task.go",
+    "usage_log.go",
+    "user.go",
+    "user_allowed_group.go",
+    "user_attribute_definition.go",
+    "user_attribute_value.go",
+    "user_platform_quota.go",
+    "user_subscription.go"
+  ],
+  "routes": [
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 24,
+      "group": "v1",
+      "method": "GET",
+      "relativePath": "/plugin-ui/:token/*path",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 139,
+      "group": "promptAudit",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 140,
+      "group": "promptAudit",
+      "method": "PUT",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 141,
+      "group": "promptAudit",
+      "method": "POST",
+      "relativePath": "/endpoints/probe",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 142,
+      "group": "promptAudit",
+      "method": "GET",
+      "relativePath": "/runtime",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 143,
+      "group": "promptAudit",
+      "method": "GET",
+      "relativePath": "/events",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 144,
+      "group": "promptAudit",
+      "method": "GET",
+      "relativePath": "/events/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 145,
+      "group": "promptAudit",
+      "method": "DELETE",
+      "relativePath": "/events/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 146,
+      "group": "promptAudit",
+      "method": "POST",
+      "relativePath": "/events/batch-delete",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 147,
+      "group": "promptAudit",
+      "method": "POST",
+      "relativePath": "/events/delete-preview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 148,
+      "group": "promptAudit",
+      "method": "POST",
+      "relativePath": "/events/delete-by-filter",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 155,
+      "group": "auditLogs",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 156,
+      "group": "auditLogs",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 158,
+      "group": "auditLogs",
+      "method": "POST",
+      "relativePath": "/clear",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 165,
+      "group": "compliance",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 166,
+      "group": "compliance",
+      "method": "POST",
+      "relativePath": "/accept",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 173,
+      "group": "risk",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 174,
+      "group": "risk",
+      "method": "PUT",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 175,
+      "group": "risk",
+      "method": "POST",
+      "relativePath": "/api-keys/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 176,
+      "group": "risk",
+      "method": "GET",
+      "relativePath": "/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 177,
+      "group": "risk",
+      "method": "GET",
+      "relativePath": "/logs",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 178,
+      "group": "risk",
+      "method": "POST",
+      "relativePath": "/users/:user_id/unban",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 179,
+      "group": "risk",
+      "method": "DELETE",
+      "relativePath": "/hashes",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 180,
+      "group": "risk",
+      "method": "DELETE",
+      "relativePath": "/hashes/all",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 187,
+      "group": "apiKeys",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 195,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/concurrency",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 196,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/user-concurrency",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 197,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/account-availability",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 198,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/realtime-traffic",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 201,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/alert-rules",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 202,
+      "group": "ops",
+      "method": "POST",
+      "relativePath": "/alert-rules",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 203,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/alert-rules/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 204,
+      "group": "ops",
+      "method": "DELETE",
+      "relativePath": "/alert-rules/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 205,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/alert-events",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 206,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/alert-events/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 207,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/alert-events/:id/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 208,
+      "group": "ops",
+      "method": "POST",
+      "relativePath": "/alert-silences",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 211,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/email-notification/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 212,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/email-notification/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 217,
+      "group": "runtime",
+      "method": "GET",
+      "relativePath": "/alert",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 218,
+      "group": "runtime",
+      "method": "PUT",
+      "relativePath": "/alert",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 219,
+      "group": "runtime",
+      "method": "GET",
+      "relativePath": "/logging",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 220,
+      "group": "runtime",
+      "method": "PUT",
+      "relativePath": "/logging",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 221,
+      "group": "runtime",
+      "method": "POST",
+      "relativePath": "/logging/reset",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 225,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/advanced-settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 226,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/advanced-settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 231,
+      "group": "settings",
+      "method": "GET",
+      "relativePath": "/metric-thresholds",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 232,
+      "group": "settings",
+      "method": "PUT",
+      "relativePath": "/metric-thresholds",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 238,
+      "group": "ws",
+      "method": "GET",
+      "relativePath": "/qps",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 242,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 243,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/errors/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 244,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/errors/:id/resolve",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 247,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/request-errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 248,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/request-errors/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 249,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/request-errors/:id/upstream-errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 250,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/request-errors/:id/resolve",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 253,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/ingress-rejections",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 254,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/ingress-rejections/health",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 255,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/auth-cache-invalidation/health",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 258,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/upstream-errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 259,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/upstream-errors/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 260,
+      "group": "ops",
+      "method": "PUT",
+      "relativePath": "/upstream-errors/:id/resolve",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 263,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/requests",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 266,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/system-logs",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 267,
+      "group": "ops",
+      "method": "POST",
+      "relativePath": "/system-logs/cleanup",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 268,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/system-logs/health",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 271,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/snapshot-v2",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 272,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/overview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 273,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/throughput-trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 274,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/latency-histogram",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 275,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/error-trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 276,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/error-distribution",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 277,
+      "group": "ops",
+      "method": "GET",
+      "relativePath": "/dashboard/openai-token-stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 284,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/snapshot-v2",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 285,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 286,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/realtime",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 287,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 288,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 289,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/groups",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 290,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/api-keys-trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 291,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/users-trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 292,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/users-ranking",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 293,
+      "group": "dashboard",
+      "method": "POST",
+      "relativePath": "/users-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 294,
+      "group": "dashboard",
+      "method": "POST",
+      "relativePath": "/api-keys-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 295,
+      "group": "dashboard",
+      "method": "GET",
+      "relativePath": "/user-breakdown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 296,
+      "group": "dashboard",
+      "method": "POST",
+      "relativePath": "/aggregation/backfill",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 303,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 304,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 305,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/:id/auth-identities",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 306,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 307,
+      "group": "users",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 308,
+      "group": "users",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 309,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/:id/balance",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 310,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/api-keys",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 311,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 312,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/balance-history",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 313,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/:id/replace-group",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 314,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/rpm-status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 315,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/batch-concurrency",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 316,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/batch-limits",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 317,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/platform-quotas",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 318,
+      "group": "users",
+      "method": "PUT",
+      "relativePath": "/:id/platform-quotas",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 319,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/:id/platform-quotas/reset",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 322,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:id/attributes",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 323,
+      "group": "users",
+      "method": "PUT",
+      "relativePath": "/:id/attributes",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 330,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 331,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/all",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 332,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/usage-summary",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 333,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/capacity-summary",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 334,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/live-capability",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 335,
+      "group": "groups",
+      "method": "PUT",
+      "relativePath": "/sort-order",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 336,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id/model-allowlist-candidates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 337,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id/composite-routes",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 338,
+      "group": "groups",
+      "method": "POST",
+      "relativePath": "/:id/composite-routes",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 339,
+      "group": "groups",
+      "method": "POST",
+      "relativePath": "/:id/composite-routes/preview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 340,
+      "group": "groups",
+      "method": "PUT",
+      "relativePath": "/:id/composite-routes/:route_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 341,
+      "group": "groups",
+      "method": "DELETE",
+      "relativePath": "/:id/composite-routes/:route_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 342,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 343,
+      "group": "groups",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 344,
+      "group": "groups",
+      "method": "POST",
+      "relativePath": "/:id/duplicate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 345,
+      "group": "groups",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 346,
+      "group": "groups",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 347,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 348,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id/rate-multipliers",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 349,
+      "group": "groups",
+      "method": "PUT",
+      "relativePath": "/:id/rate-multipliers",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 350,
+      "group": "groups",
+      "method": "DELETE",
+      "relativePath": "/:id/rate-multipliers",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 351,
+      "group": "groups",
+      "method": "PUT",
+      "relativePath": "/:id/rpm-overrides",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 352,
+      "group": "groups",
+      "method": "DELETE",
+      "relativePath": "/:id/rpm-overrides",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 353,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/:id/api-keys",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 360,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 361,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/upstream-billing-rates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 362,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/upstream-billing-probe/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 363,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/upstream-billing-probe/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 364,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/upstream-billing-probe/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 365,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/ollama-cloud-usage/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 366,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/ollama-cloud-usage/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 367,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/opencode-go-usage/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 368,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/opencode-go-usage/settings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 369,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 370,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/claude/reset-credits",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 372,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/claude/reset-credits/redeem",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 373,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 374,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/duplicate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 375,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/check-mixed-channel",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 376,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/import/codex-session",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 377,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/sync/crs",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 378,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/sync/crs/preview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 379,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 380,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/grok-media-eligibility",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 381,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id/grok-media-eligibility",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 382,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id/upstream-billing-probe",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 383,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/upstream-billing-probe",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 384,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/ollama-cloud-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 385,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id/ollama-cloud-usage/session",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 386,
+      "group": "accounts",
+      "method": "DELETE",
+      "relativePath": "/:id/ollama-cloud-usage/session",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 387,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id/ollama-cloud-usage/auto-refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 388,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/ollama-cloud-usage/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 389,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/opencode-go-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 390,
+      "group": "accounts",
+      "method": "PUT",
+      "relativePath": "/:id/opencode-go-usage/auto-refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 391,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/opencode-go-usage/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 392,
+      "group": "accounts",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 393,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 394,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/recover-state",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 395,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 396,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/apply-oauth-credentials",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 397,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/set-privacy",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 398,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/refresh-tier",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 399,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 400,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/clear-error",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 401,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/revert-proxy-fallback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 402,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 403,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/today-stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 404,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/usage/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 405,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/today-stats/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 406,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/clear-rate-limit",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 407,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/reset-quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 408,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/temp-unschedulable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 409,
+      "group": "accounts",
+      "method": "DELETE",
+      "relativePath": "/:id/temp-unschedulable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 410,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/schedulable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 411,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/models/sync-upstream-preview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 412,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/:id/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 413,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/models/sync-upstream",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 414,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 416,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/data",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 417,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/data",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 418,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch-update-credentials",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 419,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch-refresh-tier",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 420,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/bulk-update",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 421,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch-delete",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 422,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch-clear-error",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 423,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/batch-refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 426,
+      "group": "accounts",
+      "method": "GET",
+      "relativePath": "/antigravity/default-model-mapping",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 429,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/:id/shadow",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 432,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/generate-auth-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 433,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/generate-setup-token-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 434,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/exchange-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 435,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/exchange-setup-token-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 436,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/cookie-auth",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 437,
+      "group": "accounts",
+      "method": "POST",
+      "relativePath": "/setup-token-cookie-auth",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 444,
+      "group": "announcements",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 445,
+      "group": "announcements",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 446,
+      "group": "announcements",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 447,
+      "group": "announcements",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 448,
+      "group": "announcements",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 449,
+      "group": "announcements",
+      "method": "GET",
+      "relativePath": "/:id/read-status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 456,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/generate-auth-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 457,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/exchange-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 458,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/refresh-token",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 459,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/accounts/:id/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 460,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/create-from-oauth",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 461,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/create-from-codex-pat",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 462,
+      "group": "openai",
+      "method": "GET",
+      "relativePath": "/accounts/:id/quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 463,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/accounts/:id/quota/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 464,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/accounts/:id/reset-quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 465,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/accounts/:id/referrals/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 466,
+      "group": "openai",
+      "method": "POST",
+      "relativePath": "/accounts/:id/referrals/invite",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 473,
+      "group": "gemini",
+      "method": "POST",
+      "relativePath": "/oauth/auth-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 474,
+      "group": "gemini",
+      "method": "POST",
+      "relativePath": "/oauth/exchange-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 475,
+      "group": "gemini",
+      "method": "GET",
+      "relativePath": "/oauth/capabilities",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 482,
+      "group": "antigravity",
+      "method": "POST",
+      "relativePath": "/oauth/auth-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 483,
+      "group": "antigravity",
+      "method": "POST",
+      "relativePath": "/oauth/exchange-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 484,
+      "group": "antigravity",
+      "method": "POST",
+      "relativePath": "/oauth/refresh-token",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 491,
+      "group": "grok",
+      "method": "GET",
+      "relativePath": "/oauth/capabilities",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 492,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/auth-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 493,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/exchange-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 494,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/refresh-token",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 495,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/sso-token",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 496,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/password",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 497,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/create-from-oauth",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 498,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/sso-to-oauth",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 499,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/oauth/reconcile",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 500,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/accounts/:id/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 501,
+      "group": "grok",
+      "method": "GET",
+      "relativePath": "/accounts/:id/quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 502,
+      "group": "grok",
+      "method": "POST",
+      "relativePath": "/accounts/:id/reset-quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 503,
+      "group": "grok",
+      "method": "GET",
+      "relativePath": "/runtime-sanity",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 512,
+      "group": "cn",
+      "method": "GET",
+      "relativePath": "/accounts/:id/quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 514,
+      "group": "cn",
+      "method": "GET",
+      "relativePath": "/accounts/:id/balance",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 521,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 522,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "/all",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 524,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "/data",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 525,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "/data",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 526,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 527,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 528,
+      "group": "proxies",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 529,
+      "group": "proxies",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 530,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "/:id/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 531,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "/:id/quality-check",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 532,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "/:id/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 533,
+      "group": "proxies",
+      "method": "GET",
+      "relativePath": "/:id/accounts",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 534,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "/batch-delete",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 535,
+      "group": "proxies",
+      "method": "POST",
+      "relativePath": "/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 542,
+      "group": "codes",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 543,
+      "group": "codes",
+      "method": "GET",
+      "relativePath": "/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 544,
+      "group": "codes",
+      "method": "GET",
+      "relativePath": "/export",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 545,
+      "group": "codes",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 546,
+      "group": "codes",
+      "method": "POST",
+      "relativePath": "/create-and-redeem",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 547,
+      "group": "codes",
+      "method": "POST",
+      "relativePath": "/generate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 548,
+      "group": "codes",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 549,
+      "group": "codes",
+      "method": "POST",
+      "relativePath": "/batch-delete",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 550,
+      "group": "codes",
+      "method": "POST",
+      "relativePath": "/batch-update",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 551,
+      "group": "codes",
+      "method": "POST",
+      "relativePath": "/:id/expire",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 558,
+      "group": "promoCodes",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 559,
+      "group": "promoCodes",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 560,
+      "group": "promoCodes",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 561,
+      "group": "promoCodes",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 562,
+      "group": "promoCodes",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 563,
+      "group": "promoCodes",
+      "method": "GET",
+      "relativePath": "/:id/usages",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 570,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 571,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 572,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/test-smtp",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 573,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/send-test-email",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 574,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/email-templates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 575,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/email-template-preview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 576,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/email-templates/:event/:locale",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 577,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/email-templates/:event/:locale",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 578,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/email-templates/:event/:locale/restore-official",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 580,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/admin-api-key",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 581,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/admin-api-key/regenerate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 582,
+      "group": "adminSettings",
+      "method": "DELETE",
+      "relativePath": "/admin-api-key",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 584,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/overload-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 585,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/overload-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 587,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/rate-limit-429-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 588,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/rate-limit-429-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 590,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/openai-images-oauth-unavailable-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 591,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/openai-images-oauth-unavailable-cooldown",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 593,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/panel-rate-limit",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 594,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/panel-rate-limit",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 596,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/stream-timeout",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 597,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/stream-timeout",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 599,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/rectifier",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 600,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/rectifier",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 602,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/beta-policy",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 603,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/beta-policy",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 605,
+      "group": "adminSettings",
+      "method": "GET",
+      "relativePath": "/web-search-emulation",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 606,
+      "group": "adminSettings",
+      "method": "PUT",
+      "relativePath": "/web-search-emulation",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 607,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/web-search-emulation/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 608,
+      "group": "adminSettings",
+      "method": "POST",
+      "relativePath": "/web-search-emulation/reset-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 615,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/agent/health",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 616,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 617,
+      "group": "dataManagement",
+      "method": "PUT",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 618,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/sources/:source_type/profiles",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 619,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/sources/:source_type/profiles",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 620,
+      "group": "dataManagement",
+      "method": "PUT",
+      "relativePath": "/sources/:source_type/profiles/:profile_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 621,
+      "group": "dataManagement",
+      "method": "DELETE",
+      "relativePath": "/sources/:source_type/profiles/:profile_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 622,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/sources/:source_type/profiles/:profile_id/activate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 623,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/s3/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 624,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/s3/profiles",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 626,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/s3/profiles",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 627,
+      "group": "dataManagement",
+      "method": "PUT",
+      "relativePath": "/s3/profiles/:profile_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 628,
+      "group": "dataManagement",
+      "method": "DELETE",
+      "relativePath": "/s3/profiles/:profile_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 629,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/s3/profiles/:profile_id/activate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 630,
+      "group": "dataManagement",
+      "method": "POST",
+      "relativePath": "/backups",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 631,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/backups",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 632,
+      "group": "dataManagement",
+      "method": "GET",
+      "relativePath": "/backups/:job_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 640,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "/s3-config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 642,
+      "group": "backup",
+      "method": "PUT",
+      "relativePath": "/s3-config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 643,
+      "group": "backup",
+      "method": "POST",
+      "relativePath": "/s3-config/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 646,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "/image-storage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 648,
+      "group": "backup",
+      "method": "PUT",
+      "relativePath": "/image-storage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 649,
+      "group": "backup",
+      "method": "POST",
+      "relativePath": "/image-storage/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 652,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "/schedule",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 653,
+      "group": "backup",
+      "method": "PUT",
+      "relativePath": "/schedule",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 656,
+      "group": "backup",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 657,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 658,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 659,
+      "group": "backup",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 661,
+      "group": "backup",
+      "method": "GET",
+      "relativePath": "/:id/download-url",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 664,
+      "group": "backup",
+      "method": "POST",
+      "relativePath": "/:id/restore",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 671,
+      "group": "system",
+      "method": "GET",
+      "relativePath": "/version",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 672,
+      "group": "system",
+      "method": "GET",
+      "relativePath": "/check-updates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 673,
+      "group": "system",
+      "method": "GET",
+      "relativePath": "/rollback-versions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 674,
+      "group": "system",
+      "method": "POST",
+      "relativePath": "/update",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 675,
+      "group": "system",
+      "method": "POST",
+      "relativePath": "/rollback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 676,
+      "group": "system",
+      "method": "POST",
+      "relativePath": "/restart",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 683,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 684,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 685,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "/:id/progress",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 686,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/assign",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 687,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/bulk-assign",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 688,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/bulk-action",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 689,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/:id/extend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 690,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/:id/reset-quota",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 691,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/:id/revoke",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 692,
+      "group": "subscriptions",
+      "method": "POST",
+      "relativePath": "/:id/restore",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 693,
+      "group": "subscriptions",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 697,
+      "group": "admin",
+      "method": "GET",
+      "relativePath": "/groups/:id/subscriptions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 700,
+      "group": "admin",
+      "method": "GET",
+      "relativePath": "/users/:id/subscriptions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 706,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 707,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 708,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/search-users",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 709,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/search-api-keys",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 710,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/cleanup-tasks",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 711,
+      "group": "usage",
+      "method": "POST",
+      "relativePath": "/cleanup-tasks",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 712,
+      "group": "usage",
+      "method": "POST",
+      "relativePath": "/cleanup-tasks/:id/cancel",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 719,
+      "group": "attrs",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 720,
+      "group": "attrs",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 721,
+      "group": "attrs",
+      "method": "POST",
+      "relativePath": "/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 722,
+      "group": "attrs",
+      "method": "PUT",
+      "relativePath": "/reorder",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 723,
+      "group": "attrs",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 724,
+      "group": "attrs",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 731,
+      "group": "plans",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 732,
+      "group": "plans",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 733,
+      "group": "plans",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 734,
+      "group": "plans",
+      "method": "GET",
+      "relativePath": "/:id/results",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 737,
+      "group": "admin",
+      "method": "GET",
+      "relativePath": "/accounts/:id/scheduled-test-plans",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 743,
+      "group": "rules",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 744,
+      "group": "rules",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 745,
+      "group": "rules",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 746,
+      "group": "rules",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 747,
+      "group": "rules",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 754,
+      "group": "profiles",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 755,
+      "group": "profiles",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 756,
+      "group": "profiles",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 757,
+      "group": "profiles",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 758,
+      "group": "profiles",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 765,
+      "group": "plugins",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 766,
+      "group": "plugins",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 767,
+      "group": "plugins",
+      "method": "POST",
+      "relativePath": "/upload",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 768,
+      "group": "plugins",
+      "method": "POST",
+      "relativePath": "/:id/enable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 769,
+      "group": "plugins",
+      "method": "POST",
+      "relativePath": "/:id/disable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 770,
+      "group": "plugins",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 771,
+      "group": "plugins",
+      "method": "GET",
+      "relativePath": "/:id/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 772,
+      "group": "plugins",
+      "method": "GET",
+      "relativePath": "/:id/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 773,
+      "group": "plugins",
+      "method": "PUT",
+      "relativePath": "/:id/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 774,
+      "group": "plugins",
+      "method": "POST",
+      "relativePath": "/:id/test",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 775,
+      "group": "plugins",
+      "method": "POST",
+      "relativePath": "/:id/ui-session",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 782,
+      "group": "channels",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 783,
+      "group": "channels",
+      "method": "GET",
+      "relativePath": "/model-pricing",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 784,
+      "group": "channels",
+      "method": "GET",
+      "relativePath": "/pricing/sync-models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 785,
+      "group": "channels",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 786,
+      "group": "channels",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 787,
+      "group": "channels",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 788,
+      "group": "channels",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 797,
+      "group": "monitors",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 798,
+      "group": "monitors",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 799,
+      "group": "monitors",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 800,
+      "group": "monitors",
+      "method": "POST",
+      "relativePath": "/:id/duplicate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 801,
+      "group": "monitors",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 802,
+      "group": "monitors",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 803,
+      "group": "monitors",
+      "method": "POST",
+      "relativePath": "/:id/run",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 804,
+      "group": "monitors",
+      "method": "GET",
+      "relativePath": "/:id/history",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 810,
+      "group": "templates",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 811,
+      "group": "templates",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 812,
+      "group": "templates",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 813,
+      "group": "templates",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 814,
+      "group": "templates",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 815,
+      "group": "templates",
+      "method": "GET",
+      "relativePath": "/:id/monitors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 816,
+      "group": "templates",
+      "method": "POST",
+      "relativePath": "/:id/apply",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 824,
+      "group": "affiliates",
+      "method": "GET",
+      "relativePath": "/invites",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 825,
+      "group": "affiliates",
+      "method": "GET",
+      "relativePath": "/rebates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 826,
+      "group": "affiliates",
+      "method": "GET",
+      "relativePath": "/transfers",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 830,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 831,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/lookup",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 832,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/batch-rate",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 833,
+      "group": "users",
+      "method": "GET",
+      "relativePath": "/:user_id/overview",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 834,
+      "group": "users",
+      "method": "POST",
+      "relativePath": "/:user_id/withdraw",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 835,
+      "group": "users",
+      "method": "PUT",
+      "relativePath": "/:user_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 836,
+      "group": "users",
+      "method": "DELETE",
+      "relativePath": "/:user_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 852,
+      "group": "config",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 853,
+      "group": "config",
+      "method": "PUT",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 858,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/dimensions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 859,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/snapshot",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 860,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 861,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/matrix",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 862,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/admin.go",
+      "line": 863,
+      "group": "reads",
+      "method": "GET",
+      "relativePath": "/users",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 35,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/register",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 38,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 41,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/login/2fa",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 44,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/passkey/login/begin",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 47,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/passkey/login/finish",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 50,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/send-verify-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 54,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/refresh",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 58,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/logout",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 60,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/validate-promo-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 64,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/validate-invitation-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 68,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/forgot-password",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 72,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/reset-password",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 75,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/linuxdo/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 76,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/linuxdo/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 79,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/github/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 80,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/github/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 83,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/github/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 84,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/github/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 90,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/google/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 91,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/google/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 94,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/google/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 95,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/google/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 101,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/linuxdo/bind/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 107,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/linuxdo/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 108,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/wechat/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 109,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/wechat/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 112,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/wechat/bind/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 118,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/wechat/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 119,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/wechat/payment/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 120,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/wechat/payment/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 121,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/pending/exchange",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 127,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/pending/send-verify-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 133,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/pending/create-account",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 139,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/pending/bind-login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 145,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/linuxdo/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 151,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/linuxdo/bind-login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 157,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/linuxdo/create-account",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 163,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/wechat/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 169,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/wechat/bind-login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 175,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/wechat/create-account",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 181,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/oidc/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 182,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/oidc/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 185,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/oidc/bind/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 191,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/oidc/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 192,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/oidc/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 198,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/oidc/bind-login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 204,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/oidc/create-account",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 210,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/dingtalk/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 211,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/dingtalk/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 214,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/dingtalk/bind/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 220,
+      "group": "auth",
+      "method": "GET",
+      "relativePath": "/oauth/dingtalk/callback",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 221,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/dingtalk/complete-registration",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 227,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/dingtalk/bind-login",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 233,
+      "group": "auth",
+      "method": "POST",
+      "relativePath": "/oauth/dingtalk/create-account",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 246,
+      "group": "settings",
+      "method": "GET",
+      "relativePath": "/public",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 247,
+      "group": "settings",
+      "method": "GET",
+      "relativePath": "/email-unsubscribe",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 257,
+      "group": "authenticated",
+      "method": "GET",
+      "relativePath": "/auth/me",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 259,
+      "group": "authenticated",
+      "method": "POST",
+      "relativePath": "/auth/revoke-all-sessions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/auth.go",
+      "line": 260,
+      "group": "authenticated",
+      "method": "POST",
+      "relativePath": "/auth/oauth/bind-token",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/common.go",
+      "line": 12,
+      "group": "r",
+      "method": "GET",
+      "relativePath": "/health",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/common.go",
+      "line": 17,
+      "group": "r",
+      "method": "POST",
+      "relativePath": "/api/event_logging/batch",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/common.go",
+      "line": 23,
+      "group": "r",
+      "method": "GET",
+      "relativePath": "/setup/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 186,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/sub2api/billing",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 192,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/messages",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 200,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/systemone",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 203,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/messages/count_tokens",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 207,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 209,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/models/:model",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 210,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 211,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/live",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 212,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/live/:call_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 214,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/responses",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 221,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/responses/*subpath",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 228,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/alpha/search",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 229,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/responses",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 233,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/chat/completions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 240,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/embeddings",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 253,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/generations",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 254,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/edits",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 255,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/generations/async",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 256,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/edits/async",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 257,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/tasks/:task_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 258,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/batches",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 259,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 260,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 261,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 262,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches/:id/items",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 263,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches/:id/items/:custom_id/content",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 264,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/images/batches/:id/download",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 265,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/images/batches/:id/cancel",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 266,
+      "group": "gateway",
+      "method": "DELETE",
+      "relativePath": "/images/batches/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 267,
+      "group": "gateway",
+      "method": "DELETE",
+      "relativePath": "/images/batches/:id/outputs",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 270,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/videos",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 271,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/videos/generations",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 272,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/videos/edits",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 273,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/videos/extensions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 274,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/generations/:request_id/content",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 275,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/edits/:request_id/content",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 276,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/extensions/:request_id/content",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 277,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/generations/:request_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 278,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/edits/:request_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 279,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/extensions/:request_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 280,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/:request_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 281,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/videos/:request_id/content",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 295,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/tts",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 296,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/stt",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 297,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/custom-voices",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 306,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/custom-voices",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 307,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/custom-voices/:voice_id/audio",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 308,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/custom-voices/:voice_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 309,
+      "group": "gateway",
+      "method": "PATCH",
+      "relativePath": "/custom-voices/:voice_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 310,
+      "group": "gateway",
+      "method": "DELETE",
+      "relativePath": "/custom-voices/:voice_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 311,
+      "group": "gateway",
+      "method": "GET",
+      "relativePath": "/realtime",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 319,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/web_search",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 327,
+      "group": "gateway",
+      "method": "POST",
+      "relativePath": "/x_search",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 348,
+      "group": "gemini",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 349,
+      "group": "gemini",
+      "method": "GET",
+      "relativePath": "/models/:model",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 351,
+      "group": "gemini",
+      "method": "POST",
+      "relativePath": "/models/*modelAction",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 353,
+      "group": "gemini",
+      "method": "POST",
+      "relativePath": "/cachedContents",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 354,
+      "group": "gemini",
+      "method": "GET",
+      "relativePath": "/cachedContents",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 355,
+      "group": "gemini",
+      "method": "GET",
+      "relativePath": "/cachedContents/:cacheID",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 356,
+      "group": "gemini",
+      "method": "PATCH",
+      "relativePath": "/cachedContents/:cacheID",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 357,
+      "group": "gemini",
+      "method": "DELETE",
+      "relativePath": "/cachedContents/:cacheID",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 390,
+      "group": "codexDirect",
+      "method": "POST",
+      "relativePath": "/realtime/calls",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 391,
+      "group": "codexDirect",
+      "method": "GET",
+      "relativePath": "/:call_id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 392,
+      "group": "codexDirect",
+      "method": "POST",
+      "relativePath": "/responses",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 393,
+      "group": "codexDirect",
+      "method": "POST",
+      "relativePath": "/responses/*subpath",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 394,
+      "group": "codexDirect",
+      "method": "POST",
+      "relativePath": "/alpha/search",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 395,
+      "group": "codexDirect",
+      "method": "GET",
+      "relativePath": "/responses",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 398,
+      "group": "codexDirect",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 491,
+      "group": "r",
+      "method": "GET",
+      "relativePath": "/antigravity/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 504,
+      "group": "antigravityV1",
+      "method": "POST",
+      "relativePath": "/messages",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 505,
+      "group": "antigravityV1",
+      "method": "POST",
+      "relativePath": "/messages/count_tokens",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 506,
+      "group": "antigravityV1",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 507,
+      "group": "antigravityV1",
+      "method": "GET",
+      "relativePath": "/usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 520,
+      "group": "antigravityV1Beta",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 521,
+      "group": "antigravityV1Beta",
+      "method": "GET",
+      "relativePath": "/models/:model",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/gateway.go",
+      "line": 522,
+      "group": "antigravityV1Beta",
+      "method": "POST",
+      "relativePath": "/models/*modelAction",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/model_plaza.go",
+      "line": 28,
+      "group": "plaza",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 46,
+      "group": "authenticated",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 47,
+      "group": "authenticated",
+      "method": "GET",
+      "relativePath": "/checkout-info",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 48,
+      "group": "authenticated",
+      "method": "GET",
+      "relativePath": "/plans",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 49,
+      "group": "authenticated",
+      "method": "GET",
+      "relativePath": "/limits",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 53,
+      "group": "orders",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 54,
+      "group": "orders",
+      "method": "POST",
+      "relativePath": "/verify",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 55,
+      "group": "orders",
+      "method": "GET",
+      "relativePath": "/my",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 56,
+      "group": "orders",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 57,
+      "group": "orders",
+      "method": "POST",
+      "relativePath": "/:id/cancel",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 58,
+      "group": "orders",
+      "method": "POST",
+      "relativePath": "/:id/refund-request",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 59,
+      "group": "orders",
+      "method": "GET",
+      "relativePath": "/refund-eligible-providers",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 73,
+      "group": "public",
+      "method": "POST",
+      "relativePath": "/orders/verify",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 76,
+      "group": "public",
+      "method": "POST",
+      "relativePath": "/orders/resolve",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 83,
+      "group": "webhook",
+      "method": "GET",
+      "relativePath": "/easypay",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 84,
+      "group": "webhook",
+      "method": "POST",
+      "relativePath": "/easypay",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 85,
+      "group": "webhook",
+      "method": "POST",
+      "relativePath": "/alipay",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 86,
+      "group": "webhook",
+      "method": "POST",
+      "relativePath": "/wxpay",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 87,
+      "group": "webhook",
+      "method": "POST",
+      "relativePath": "/stripe",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 88,
+      "group": "webhook",
+      "method": "POST",
+      "relativePath": "/airwallex",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 98,
+      "group": "adminGroup",
+      "method": "GET",
+      "relativePath": "/dashboard",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 101,
+      "group": "adminGroup",
+      "method": "GET",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 102,
+      "group": "adminGroup",
+      "method": "PUT",
+      "relativePath": "/config",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 107,
+      "group": "adminOrders",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 108,
+      "group": "adminOrders",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 109,
+      "group": "adminOrders",
+      "method": "POST",
+      "relativePath": "/:id/cancel",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 110,
+      "group": "adminOrders",
+      "method": "POST",
+      "relativePath": "/:id/retry",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 111,
+      "group": "adminOrders",
+      "method": "POST",
+      "relativePath": "/:id/refund",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 112,
+      "group": "adminOrders",
+      "method": "POST",
+      "relativePath": "/:id/refund/query",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 118,
+      "group": "plans",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 119,
+      "group": "plans",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 120,
+      "group": "plans",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 121,
+      "group": "plans",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 127,
+      "group": "providers",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 128,
+      "group": "providers",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 129,
+      "group": "providers",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/payment.go",
+      "line": 130,
+      "group": "providers",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 31,
+      "group": "user",
+      "method": "GET",
+      "relativePath": "/profile",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 32,
+      "group": "user",
+      "method": "PUT",
+      "relativePath": "/password",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 33,
+      "group": "user",
+      "method": "PUT",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 34,
+      "group": "user",
+      "method": "GET",
+      "relativePath": "/aff",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 35,
+      "group": "user",
+      "method": "POST",
+      "relativePath": "/aff/transfer",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 36,
+      "group": "user",
+      "method": "POST",
+      "relativePath": "/account-bindings/email/send-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 37,
+      "group": "user",
+      "method": "POST",
+      "relativePath": "/account-bindings/email",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 38,
+      "group": "user",
+      "method": "DELETE",
+      "relativePath": "/account-bindings/:provider",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 39,
+      "group": "user",
+      "method": "POST",
+      "relativePath": "/auth-identities/bind/start",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 40,
+      "group": "user",
+      "method": "GET",
+      "relativePath": "/api-keys/:id/usage/daily",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 41,
+      "group": "user",
+      "method": "GET",
+      "relativePath": "/platform-quotas",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 46,
+      "group": "notifyEmail",
+      "method": "POST",
+      "relativePath": "/send-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 47,
+      "group": "notifyEmail",
+      "method": "POST",
+      "relativePath": "/verify",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 48,
+      "group": "notifyEmail",
+      "method": "PUT",
+      "relativePath": "/toggle",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 49,
+      "group": "notifyEmail",
+      "method": "DELETE",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 55,
+      "group": "totp",
+      "method": "GET",
+      "relativePath": "/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 56,
+      "group": "totp",
+      "method": "GET",
+      "relativePath": "/verification-method",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 57,
+      "group": "totp",
+      "method": "POST",
+      "relativePath": "/send-code",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 58,
+      "group": "totp",
+      "method": "POST",
+      "relativePath": "/setup",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 59,
+      "group": "totp",
+      "method": "POST",
+      "relativePath": "/enable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 60,
+      "group": "totp",
+      "method": "POST",
+      "relativePath": "/disable",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 62,
+      "group": "totp",
+      "method": "POST",
+      "relativePath": "/step-up",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 67,
+      "group": "passkeys",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 68,
+      "group": "passkeys",
+      "method": "POST",
+      "relativePath": "/register/begin",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 69,
+      "group": "passkeys",
+      "method": "POST",
+      "relativePath": "/register/finish",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 70,
+      "group": "passkeys",
+      "method": "PATCH",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 71,
+      "group": "passkeys",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 78,
+      "group": "keys",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 79,
+      "group": "keys",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 80,
+      "group": "keys",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 81,
+      "group": "keys",
+      "method": "PUT",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 82,
+      "group": "keys",
+      "method": "DELETE",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 88,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/available",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 89,
+      "group": "groups",
+      "method": "GET",
+      "relativePath": "/rates",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 95,
+      "group": "channels",
+      "method": "GET",
+      "relativePath": "/available",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 102,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 103,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 104,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/errors/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 105,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/:id",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 106,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 108,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/dashboard/stats",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 109,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/dashboard/trend",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 110,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/dashboard/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 111,
+      "group": "usage",
+      "method": "GET",
+      "relativePath": "/dashboard/snapshot-v2",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 112,
+      "group": "usage",
+      "method": "POST",
+      "relativePath": "/dashboard/api-keys-usage",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 118,
+      "group": "announcements",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 119,
+      "group": "announcements",
+      "method": "POST",
+      "relativePath": "/:id/read",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 125,
+      "group": "redeem",
+      "method": "POST",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 126,
+      "group": "redeem",
+      "method": "GET",
+      "relativePath": "/history",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 132,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 133,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "/active",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 134,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "/progress",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 135,
+      "group": "subscriptions",
+      "method": "GET",
+      "relativePath": "/summary",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 141,
+      "group": "monitors",
+      "method": "GET",
+      "relativePath": "",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 142,
+      "group": "monitors",
+      "method": "GET",
+      "relativePath": "/:id/status",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 150,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/dimensions",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 151,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/snapshot",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 152,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/models",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 153,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/matrix",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 154,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/errors",
+      "status": "pending",
+      "acceptance": []
+    },
+    {
+      "source": "backend/internal/server/routes/user.go",
+      "line": 155,
+      "group": "monitorV2",
+      "method": "GET",
+      "relativePath": "/users",
+      "status": "pending",
+      "acceptance": []
+    }
+  ]
+}
