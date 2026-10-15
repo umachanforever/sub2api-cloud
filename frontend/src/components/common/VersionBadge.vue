@@ -651,9 +651,8 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'Wei-Shaw/sub2api'
-// Docker Hub image published by CI (tags carry no "v" prefix, e.g. weishaw/sub2api:0.1.146)
-const DOCKER_IMAGE = 'weishaw/sub2api'
+const GITHUB_REPO = 'umachanforever/sub2api-supabase'
+
 
 const { t } = useI18n()
 
@@ -698,8 +697,7 @@ const rollbackError = ref('')
 
 const { copied, copyToClipboard } = useClipboard()
 
-// Manual rollback methods differ by deployment: script installs use install.sh,
-// docker deployments pin the image tag instead
+// Rollback commands rebuild this project from a selected release tag.
 const manualTab = ref<'script' | 'docker'>('script')
 
 const manualTabs = computed(() => [
@@ -710,18 +708,12 @@ const manualTabs = computed(() => [
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
   const tag = `v${selectedRollbackVersion.value}`
-  return `curl -sSL https://raw.githubusercontent.com/${GITHUB_REPO}/${tag}/deploy/install.sh | sudo bash -s -- rollback ${tag}`
+  return `git fetch https://github.com/${GITHUB_REPO}.git tag ${tag}\ngit switch --detach ${tag}\nnpm ci\nnpm run deploy\ndocker compose --env-file .env.local -p sub2api-supabase up -d --build`
 })
 
 const dockerRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
-  return [
-    `# ${t('version.dockerEditCompose')}`,
-    `image: ${DOCKER_IMAGE}:${selectedRollbackVersion.value}`,
-    '',
-    `# ${t('version.dockerRecreate')}`,
-    'docker compose up -d'
-  ].join('\n')
+  return scriptRollbackCommand.value
 })
 
 const activeManualCommand = computed(() =>
