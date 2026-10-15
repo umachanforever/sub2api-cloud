@@ -117,8 +117,10 @@ async function proxyWithIdentity(
     ) throw new HttpError(400, "invalid_model_id");
   }
   const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";
-  const voiceKind=/^\/v1\/(tts|stt)$/.exec(path)?.[1];
-  const voice=!!voiceKind&&request.method==='POST';
+  const customVoice=/^\/v1\/custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?$/.test(path);
+  const customVoiceMethod=customVoice&&(path==='/v1/custom-voices'?['GET','POST']:/^\/v1\/custom-voices\/[^/]+\/audio$/.test(path)?['GET']:['GET','PATCH','DELETE']).includes(request.method);
+  const voiceKind=customVoiceMethod?'custom-voices':/^\/v1\/(tts|stt)$/.exec(path)?.[1];
+  const voice=customVoiceMethod||!!voiceKind&&request.method==='POST';
   let voiceBytes:Uint8Array|undefined;
   let voiceBody:Record<string,unknown>|undefined;
   const grokSearchKind=/^\/(?:v1\/)?(web_search|x_search)$/.exec(path)?.[1] as GrokSearch['kind']|undefined;
@@ -184,8 +186,8 @@ async function proxyWithIdentity(
       const limit=requestBodyLimit(path, db.config.requestLimits);
       const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
       imageMultipart=parsed?.form;
-      if(voiceKind==='stt')voiceBytes=await voiceUpload(request,limit);
-      const raw = voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
+      if(voiceKind==='stt'||customVoiceMethod&&!['GET','DELETE'].includes(request.method))voiceBytes=await voiceUpload(request,limit);
+      const raw = customVoiceMethod?{model:'custom-voices'}:voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
@@ -417,6 +419,7 @@ async function proxyWithIdentity(
           const headers=new Headers(native.init.headers);headers.set('accept','application/json, audio/*');
           if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');native.init.body=voiceBytes as BodyInit;}
           else native.init.body=JSON.stringify(voiceBody);
+          if(customVoiceMethod){native.init.method=request.method;if(['GET','DELETE'].includes(request.method))delete native.init.body;const target=new URL(native.url);target.search=new URL(request.url).search;native.url=target.href;}
           native.init.headers=headers;
         }
         if(imageMultipart && platform === "openai"){
@@ -451,6 +454,7 @@ async function proxyWithIdentity(
             const headers=new Headers(outgoing.init.headers);headers.set('accept','application/json, audio/*');
             if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');outgoing.init.body=voiceBytes as BodyInit;}
             else outgoing.init.body=JSON.stringify(voiceBody);
+          if(customVoiceMethod){outgoing.init.method=request.method;if(['GET','DELETE'].includes(request.method))delete outgoing.init.body;const target=new URL(outgoing.url);target.search=new URL(request.url).search;outgoing.url=target.href;}
             outgoing.init.headers=headers;
           }
           if (platform === "gemini" && models) {
@@ -559,7 +563,7 @@ async function proxyWithIdentity(
             ? 15
             : 0,
         );
-        if (!imageJob && ([401, 403, 429].includes(status) || status >= 500)) {
+        if (!imageJob && !customVoiceMethod && ([401, 403, 429].includes(status) || status >= 500)) {
           excluded.push(account.id);
           continue;
         }
@@ -571,7 +575,7 @@ async function proxyWithIdentity(
       }
       responseAccepted = native ? native.streaming : stream;
       if (native) {
-        if(voice)return voiceResponse(upstream,signal,finish);
+        if(voice){if(upstream.status===204){await finish(204,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});return new Response(null,{status:204,headers:{'cache-control':'no-store'}});}return voiceResponse(upstream,signal,finish);}
         if(grokSearch){
           const value=await upstream.json();
           if(value?.status&&value.status!=='completed')throw new HttpError(502,'search_upstream_failed');

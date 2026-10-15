@@ -55,3 +55,21 @@ test('voice authentication rejects invalid and wrong-platform keys without readi
   assert.equal(response.status,status);assert.equal(reads,0);assert.equal(cancelled,true);assert.equal(acquisitions,0);
  }
 });
+
+test('custom voice lifecycle preserves methods, multipart uploads, audio and empty deletion responses',async()=>{
+ for(const type of ['apikey','oauth'])for(const [path,method,status] of [['custom-voices','POST',201],['custom-voices','GET',200],['custom-voices/voice_1','GET',200],['custom-voices/voice_1','PATCH',200],['custom-voices/voice_1','DELETE',204],['custom-voices/voice_1/audio','GET',200],['custom-voices/audio','GET',200],['custom-voices/audio','PATCH',200],['custom-voices/audio','DELETE',204]]){
+  const stored=await encryptCredentials(type==='apikey'?{api_key:'provider-private'}:{access_token:'oauth-private',expires_at:Date.now()+3600000},config.encryptionKey);
+  const bytes=Uint8Array.of(0,255,1,13,10,128),finishes=[];let calls=0;
+  const handler=createBackendHandler(config,async(url,init)=>{
+   if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'grok'});
+   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'1',platform:'grok',type,credential_version:1}});
+   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+   if(String(url).includes('/rpc/'))return Response.json(null);
+   calls++;assert.equal(url,'https://api.x.ai/v1/'+path+'?limit=5');assert.equal(init.method,method);
+   if(['POST','PATCH'].includes(method)){assert.deepEqual(new Uint8Array(init.body),bytes);assert.equal(new Headers(init.headers).get('content-type'),'multipart/form-data; boundary=original');}else assert.equal(init.body,undefined);
+   return status===204?new Response(null,{status}):path.endsWith('/audio')&&path!=='custom-voices/audio'?new Response(bytes,{headers:{'content-type':'audio/wav'}}):Response.json({id:'voice_1'},{status});
+  });
+  const response=await handler(new Request('https://gateway/'+(type==='apikey'?'v1/':'')+path+'?limit=5',{method,headers:{authorization:'Bearer sk-client','content-type':'multipart/form-data; boundary=original'},...(['POST','PATCH'].includes(method)?{body:bytes}:{})}));
+  assert.equal(response.status,status);await response.arrayBuffer();assert.equal(calls,1);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');
+ }
+});
