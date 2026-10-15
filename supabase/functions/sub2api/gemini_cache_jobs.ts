@@ -1,3 +1,4 @@
+import {cleanupCacheCreation,type CreationJob} from './gemini_cache_creation_jobs.ts';
 import {Database,HttpError} from './db.ts';
 import {type Account} from './accounts.ts';
 import {decryptSecret} from './credential_store.ts';
@@ -8,10 +9,10 @@ type Job={id:string;lease_id:string;upstream_name:string;expire_time:string;acco
 export async function geminiCacheJobs(request:Request,db:Database):Promise<Response>{
  await authorizeJob(request,db,'gemini-cache');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
- const jobs=await db.rpc<Job[]>('s2a_personal_cache_jobs_claim',{});
- if(!Array.isArray(jobs)||jobs.length>3)throw new HttpError(503,'invalid_cache_jobs');
+ const [jobs,creations]=await Promise.all([db.rpc<Job[]>('s2a_personal_cache_jobs_claim',{}),db.rpc<CreationJob[]>('s2a_personal_cache_creations_claim',{})]);
+ if(!Array.isArray(jobs)||jobs.length>3||!Array.isArray(creations)||creations.length>2)throw new HttpError(503,'invalid_cache_jobs');
  let finished=0;
- await Promise.all(jobs.map(async job=>{
+ await Promise.all([...jobs.map(async job=>{
   let success=false,deleted=false;
   try{
    const credentials=await decryptSecret(job.account,db.config.encryptionKey);
@@ -21,6 +22,6 @@ export async function geminiCacheJobs(request:Request,db:Database):Promise<Respo
   try{
    if(await db.rpc<boolean>('s2a_personal_cache_jobs_finish',{p_id:job.id,p_lease_id:job.lease_id,p_success:success,p_deleted:deleted}))finished++;
   }catch{console.warn('cache_recovery_finish_failed');}
- }));
- return json(200,{claimed:jobs.length,finished});
+ }),...creations.map(async job=>{if(await cleanupCacheCreation(db,job,request))finished++;})]);
+ return json(200,{claimed:jobs.length+creations.length,finished});
 }

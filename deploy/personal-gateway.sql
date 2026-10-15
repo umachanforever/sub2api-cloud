@@ -546,5 +546,51 @@ REVOKE ALL ON FUNCTION public.s2a_personal_cache_jobs_claim() FROM PUBLIC,anon,a
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_jobs_claim() TO service_role;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean) TO service_role;
+CREATE INDEX IF NOT EXISTS cache_creation_pending ON s2a_private.cache_creation_intents(created_at,public_id) WHERE completed_at IS NULL AND abandoned_at IS NULL;
+ALTER TABLE s2a_private.cache_creation_intents ADD COLUMN IF NOT EXISTS recovery_lease uuid;
+ALTER TABLE s2a_private.cache_creation_intents ADD COLUMN IF NOT EXISTS recovery_until timestamptz;
+ALTER TABLE s2a_private.cache_creation_intents ADD COLUMN IF NOT EXISTS recovery_page_token text;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_creations_claim()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE intent s2a_private.cache_creation_intents%ROWTYPE; a s2a_private.accounts%ROWTYPE; snapshot jsonb; token uuid; result jsonb:='[]'::jsonb;
+BEGIN
+    FOR intent IN SELECT c.* FROM s2a_private.cache_creation_intents c
+        WHERE c.completed_at IS NULL AND c.abandoned_at IS NULL AND c.created_at<clock_timestamp()-interval '180 seconds'
+        AND (c.recovery_until IS NULL OR c.recovery_until<=clock_timestamp())
+        AND NOT EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases l WHERE l.id=c.lease_id AND l.expires_at+interval '30 seconds'>clock_timestamp())
+        AND NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents b WHERE b.public_id=c.public_id)
+        ORDER BY coalesce(c.recovery_until,c.created_at+interval '180 seconds'),c.public_id LIMIT 2 FOR UPDATE OF c SKIP LOCKED LOOP
+        SELECT * INTO a FROM s2a_private.accounts WHERE id=intent.account_id AND deleted_at IS NULL;
+        IF NOT FOUND THEN
+            UPDATE s2a_private.cache_creation_intents SET abandoned_at=clock_timestamp() WHERE public_id=intent.public_id;
+            CONTINUE;
+        END IF;
+        token:=gen_random_uuid();
+        UPDATE s2a_private.cache_creation_intents SET recovery_lease=token,recovery_until=clock_timestamp()+interval '180 seconds' WHERE public_id=intent.public_id;
+        snapshot:=public.s2a_gateway_account_snapshot(a.id);
+        IF snapshot ? 'error' THEN CONTINUE; END IF;
+        result:=result||jsonb_build_array(jsonb_build_object('public_id',intent.public_id,'lease_id',token::text,
+            'upstream_model',intent.upstream_model,'page_token',intent.recovery_page_token,
+            'account',snapshot||jsonb_build_object('platform',a.platform,'type',a.type,'proxy_id',a.proxy_id::text)));
+    END LOOP;
+    RETURN result;
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_creations_finish(p_public_id text,p_lease_id uuid,p_complete boolean,p_page_token text DEFAULT NULL)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    IF p_complete IS NULL OR length(p_page_token)>2048 THEN RETURN false; END IF;
+    UPDATE s2a_private.cache_creation_intents SET recovery_lease=NULL,
+        recovery_until=clock_timestamp()+interval '60 seconds',recovery_page_token=CASE WHEN p_complete THEN NULL ELSE p_page_token END,
+        abandoned_at=CASE WHEN p_complete THEN clock_timestamp() ELSE abandoned_at END
+        WHERE public_id=p_public_id AND recovery_lease=p_lease_id AND recovery_until>clock_timestamp()
+        AND completed_at IS NULL AND abandoned_at IS NULL;
+    RETURN FOUND;
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_creations_claim() OWNER TO s2a_management;
+ALTER FUNCTION public.s2a_personal_cache_creations_finish(text,uuid,boolean,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_creations_claim() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_creations_finish(text,uuid,boolean,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_creations_claim() TO service_role;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_creations_finish(text,uuid,boolean,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

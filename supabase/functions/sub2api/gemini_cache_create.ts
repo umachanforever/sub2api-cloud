@@ -51,7 +51,14 @@ export async function geminiCacheCreate(request:Request,token:string,db:Database
    if(prepared?.error)throw new HttpError(prepared.status??503,prepared.error);
    if(prepared?.prepared!==true)throw new HttpError(503,'cache_creation_unavailable');
    const response=await accountFetch(db,account,outgoing.url,outgoing.init);status=response.status;
-   if(!response.ok){await response.body?.cancel();retry=[401,403,429].includes(status)||status>=500;throw new HttpError(status>=500?502:status,'cached_content_create_failed');}
+   if(!response.ok){
+    await response.body?.cancel();
+    if([400,401,403,404,405,413,415,422,429].includes(status)){
+     try{await db.rpc<Item>('s2a_personal_cache_create',{...args,p_action:'abandon'});}catch{console.warn('cache_creation_cleanup_pending');}
+    }
+    retry=[401,403,429].includes(status)||status>=500;
+    throw new HttpError(status>=500?502:status,'cached_content_create_failed');
+   }
    let metadata:Item;
    try{metadata=await readBody(new Request('https://cache.invalid',{method:'POST',body:response.body,duplex:'half'} as RequestInit),4*1048576);}catch{throw new HttpError(502,'invalid_cache_upstream_response');}
    const validName=typeof metadata.name==='string'&&/^cachedContents\/[a-zA-Z0-9_-]{1,480}$/.test(metadata.name);

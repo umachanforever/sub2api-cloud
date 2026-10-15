@@ -91,6 +91,7 @@ Gemini `cachedContent` references are scoped to their owning key and group and s
 `DELETE /v1beta/cachedContents/{id}` deletes an owned cache through its bound API-key account and removes its local binding only after the provider confirms absence.
 `PATCH /v1beta/cachedContents/{id}` updates `ttl` or `expireTime` (up to 24 hours), with immutable cache identity and serialized updates/deletions. Interrupted mutations retain ownership until recovery restores the recorded expiry on the bound provider; resources that are absent or expiring are removed.
 Supabase runs cache mutation recovery every minute. Signed jobs reclaim expired mutation leases, restore the recorded provider expiry, and remove missing or expired resources without relying on the local console or an enabled client key.
+The scheduled worker also cleans interrupted creations after their request leases expire. Provider pages stay private; cleanup matches the owning account, unique creation tag, and model. Pagination progress is persisted, and provider failures leave the intent pending for another attempt.
 
 ### Subscription usage
 

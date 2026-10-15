@@ -170,6 +170,23 @@ BEGIN
     IF public.s2a_personal_cache_create(h,repeat('b',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','abandon')->>'abandoned' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache intent abandonment failed'; END IF;
     IF public.s2a_personal_cache_create(h,repeat('b',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','complete','cachedContents/removed-private',now()+interval '1 hour',100)->>'error' IS DISTINCT FROM 'cache_creation_conflict' THEN RAISE EXCEPTION 'abandoned intent completed'; END IF;
     DELETE FROM public.gemini_cached_contents WHERE public_id=repeat('a',40);
+    IF has_function_privilege('anon','public.s2a_personal_cache_creations_claim()','EXECUTE') OR has_function_privilege('authenticated','public.s2a_personal_cache_creations_finish(text,uuid,boolean,text)','EXECUTE') THEN RAISE EXCEPTION 'creation recovery exposed'; END IF;
+    PERFORM public.s2a_personal_cache_create(h,repeat('c',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','prepare');
+    UPDATE s2a_private.cache_creation_intents SET created_at=clock_timestamp()-interval '5 minutes' WHERE public_id=repeat('c',40);
+    IF public.s2a_personal_cache_creations_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'inflight creation reclaimed'; END IF;
+    UPDATE s2a_private.personal_gateway_leases SET expires_at=clock_timestamp()-interval '60 seconds' WHERE id=(acquired->>'lease_id')::uuid;
+    result:=public.s2a_personal_cache_creations_claim();
+    IF jsonb_array_length(result)<>1 OR result->0->>'public_id' IS DISTINCT FROM repeat('c',40) OR result->0->'account'->>'id' IS DISTINCT FROM cache_account::text THEN RAISE EXCEPTION 'creation recovery ownership changed'; END IF;
+    IF public.s2a_personal_cache_creations_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'creation cleanup claimed twice'; END IF;
+    IF public.s2a_personal_cache_creations_finish(repeat('c',40),gen_random_uuid(),true) THEN RAISE EXCEPTION 'wrong cleanup lease accepted'; END IF;
+    IF NOT public.s2a_personal_cache_creations_finish(repeat('c',40),(result->0->>'lease_id')::uuid,false,'next-page') THEN RAISE EXCEPTION 'cleanup pagination not persisted'; END IF;
+    IF public.s2a_personal_cache_creations_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleanup retry delay ignored'; END IF;
+    UPDATE s2a_private.cache_creation_intents SET recovery_until=clock_timestamp()-interval '1 second' WHERE public_id=repeat('c',40);
+    result:=public.s2a_personal_cache_creations_claim();
+    IF result->0->>'page_token' IS DISTINCT FROM 'next-page' THEN RAISE EXCEPTION 'cleanup cursor lost'; END IF;
+    IF NOT public.s2a_personal_cache_creations_finish(repeat('c',40),(result->0->>'lease_id')::uuid,true) THEN RAISE EXCEPTION 'cleanup completion failed'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM s2a_private.cache_creation_intents WHERE public_id=repeat('c',40) AND abandoned_at IS NOT NULL) THEN RAISE EXCEPTION 'orphan intent not closed'; END IF;
+    UPDATE s2a_private.personal_gateway_leases SET expires_at=clock_timestamp()+interval '150 seconds' WHERE id=(acquired->>'lease_id')::uuid;
     IF has_function_privilege('anon','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE') THEN RAISE EXCEPTION 'cache mutation public privileges'; END IF;
     UPDATE public.gemini_cached_contents SET mutation_lease=gen_random_uuid(),mutation_until=now()+interval '1 hour' WHERE public_id='cache-fixture';

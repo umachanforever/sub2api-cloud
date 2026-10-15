@@ -33,7 +33,7 @@ for(const scenario of ['success','retry-persist','malformed','zero-tokens','miss
  const success=!['malformed','zero-tokens','missing-tokens','cleanup-failure','network'].includes(scenario);assert.equal(response.status,success?200:502);assert.equal(acquires,scenario==='failover'?2:1);assert.equal(events[0],'prepare');assert.equal(finishes.at(-1).p_outcome,success?'completed':'failed');
  if(success){const body=await response.json();assert.equal(body.name,'cachedContents/'+publicId);assert.equal(body.displayName,'Name');assert.ok(!JSON.stringify(body).includes('private'));}
  if(scenario==='retry-persist')assert.equal(completes,2);if(!success)assert.equal(completes,0);
- assert.equal(cleanups,['zero-tokens','missing-tokens','cleanup-failure'].includes(scenario)?1:0);assert.equal(events.includes('abandon'),['zero-tokens','missing-tokens'].includes(scenario));
+ assert.equal(cleanups,['zero-tokens','missing-tokens','cleanup-failure'].includes(scenario)?1:0);assert.equal(events.includes('abandon'),['zero-tokens','missing-tokens','failover'].includes(scenario));
 });
 test('cache creation rejects non-Gemini groups before reading input or acquiring accounts',async()=>{
  let reads=0,acquired=0;const handler=createBackendHandler(config,async(url)=>{if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'openai'});if(String(url).endsWith('/s2a_personal_acquire'))acquired++;return Response.json(null);});

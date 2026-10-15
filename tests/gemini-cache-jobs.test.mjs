@@ -9,6 +9,7 @@ for(const scenario of ['restored','absent','expired','failure'])test(`scheduled 
  const credentials=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);const finishes=[];let forwards=0;
  const expiry=new Date(Date.now()+(scenario==='expired'?-60000:3600000)).toISOString();
  const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_cache_creations_claim'))return Response.json([]);
   if(String(url).endsWith('/s2a_personal_cache_jobs_claim'))return Response.json([{id:'7',lease_id:'worker-lease',upstream_name:'cachedContents/private',expire_time:expiry,account:{...credentials,id:'1',platform:'gemini',type:'apikey',credential_version:1}}]);
   if(String(url).endsWith('/s2a_personal_cache_jobs_finish')){finishes.push(JSON.parse(init.body));return Response.json(scenario!=='failure');}
   if(String(url).includes('/rpc/'))return Response.json(null);
@@ -22,4 +23,15 @@ test('scheduled cache recovery rejects missing credentials and cross-scope ticke
  let calls=0;const handler=createBackendHandler(config,async()=>{calls++;return Response.json([]);});
  for(const headers of [{},{'x-s2a-gemini-cache-job-token':ticket('codex')},{authorization:'Bearer wrong'}])assert.equal((await handler(new Request('https://gateway/internal/jobs/gemini-cache',{method:'POST',headers}))).status,401);
  assert.equal(calls,0);
+});
+test('the scheduled endpoint also processes abandoned creation intents on their owning account',async()=>{
+ const credentials=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);let completed=0,listed=0;
+ const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_cache_jobs_claim'))return Response.json([]);
+  if(String(url).endsWith('/s2a_personal_cache_creations_claim'))return Response.json([{public_id:'a'.repeat(40),lease_id:'creation-lease',upstream_model:'gemini-model',page_token:null,account:{...credentials,id:'1',platform:'gemini',credential_version:1}}]);
+  if(String(url).endsWith('/s2a_personal_cache_creations_finish')){const args=JSON.parse(init.body);assert.equal(args.p_complete,true);assert.equal(args.p_lease_id,'creation-lease');completed++;return Response.json(true);}
+  if(String(url).includes('/rpc/'))return Response.json(null);
+  assert.equal(new URL(url).origin,'https://generativelanguage.googleapis.com');assert.equal(init.method,'GET');listed++;return Response.json({});
+ });
+ const response=await handler(new Request('https://gateway/internal/jobs/gemini-cache',{method:'POST',headers:{'x-s2a-gemini-cache-job-token':ticket('gemini-cache')}}));assert.equal(response.status,200);assert.deepEqual(await response.json(),{claimed:1,finished:1});assert.equal(completed,1);assert.equal(listed,1);
 });
