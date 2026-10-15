@@ -30,7 +30,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
-    allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; bound_account_id bigint;
+    allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; bound_account_id bigint;
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -79,6 +79,14 @@ BEGIN
         IF cache_binding ? 'error' THEN RETURN cache_binding; END IF;
         bound_account_id:=(cache_binding->>'account_id')::bigint;
     END IF;
+    IF p_billing_context ? 'video_task' THEN
+        video_binding:=public.s2a_personal_video_resolve(p_key_hash,p_billing_context->>'video_task',p_client_ip);
+        IF video_binding ? 'error' THEN RETURN video_binding; END IF;
+        IF video_binding->>'state'<>'submitted' THEN RETURN jsonb_build_object('error','video_task_not_submitted','status',409); END IF;
+        IF p_model IS DISTINCT FROM video_binding->>'model' THEN RETURN jsonb_build_object('error','video_task_model_mismatch','status',400); END IF;
+        IF bound_account_id IS NOT NULL AND bound_account_id<>(video_binding->>'account_id')::bigint THEN RETURN jsonb_build_object('error','resource_account_mismatch','status',400); END IF;
+        bound_account_id:=(video_binding->>'account_id')::bigint;
+    END IF;
     fingerprint:=encode(sha256(convert_to(jsonb_build_array(p_key_hash,p_model,p_client_ip,p_billing_context)::text,'UTF8')),'hex');
     SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE request_id=p_request_id ORDER BY created_at DESC LIMIT 1;
     IF FOUND THEN
@@ -118,7 +126,8 @@ BEGIN
     IF (account->>'credential_version')::bigint<>lease.credential_version THEN RETURN jsonb_build_object('error','account_credentials_changed','status',409); END IF;
     SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
-        'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true));
+        'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true))
+        || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') ELSE '{}'::jsonb END;
 END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) FROM PUBLIC,anon,authenticated;
@@ -592,5 +601,81 @@ REVOKE ALL ON FUNCTION public.s2a_personal_cache_creations_claim() FROM PUBLIC,a
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_creations_finish(text,uuid,boolean,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_creations_claim() TO service_role;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_creations_finish(text,uuid,boolean,text) TO service_role;
+-- Bind asynchronous provider tasks to the key and account that created them.
+CREATE TABLE IF NOT EXISTS s2a_private.video_tasks (
+    public_id text PRIMARY KEY,lease_id uuid NOT NULL,user_id bigint NOT NULL,key_id bigint NOT NULL,
+    group_id bigint NOT NULL,account_id bigint NOT NULL,model text NOT NULL,upstream_model text NOT NULL,
+    operation text NOT NULL CHECK(operation IN ('generations','edits','extensions')),
+    upstream_id text,state text NOT NULL DEFAULT 'creating' CHECK(state IN ('creating','submitted','rejected')),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    UNIQUE(account_id,upstream_id)
+);
+ALTER TABLE s2a_private.video_tasks OWNER TO s2a_management;
+ALTER TABLE s2a_private.video_tasks ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON s2a_private.video_tasks FROM PUBLIC,anon,authenticated,service_role;
+CREATE INDEX IF NOT EXISTS video_tasks_owner ON s2a_private.video_tasks(key_id,created_at DESC);
+CREATE OR REPLACE FUNCTION public.s2a_personal_video_create(p_key_hash text,p_public_id text,p_lease_id uuid,p_upstream_model text,p_operation text,p_action text,p_upstream_id text DEFAULT NULL,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; lease s2a_private.personal_gateway_leases%ROWTYPE; task s2a_private.video_tasks%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'grok' THEN RETURN jsonb_build_object('error','grok_video_requires_grok_group','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    IF p_public_id IS NULL OR p_public_id !~ '^video_[a-f0-9]{40}$' OR p_upstream_model IS NULL OR p_upstream_model !~ '^[a-zA-Z0-9._-]{1,200}$'
+        OR p_operation IS NULL OR p_operation NOT IN ('generations','edits','extensions') THEN RETURN jsonb_build_object('error','invalid_video_task','status',400); END IF;
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
+    IF NOT FOUND OR lease.finished_at IS NOT NULL OR lease.expires_at<=clock_timestamp()
+        OR lease.user_id<>(identity->>'user_id')::bigint OR lease.key_id<>(identity->>'key_id')::bigint OR lease.group_id<>(identity->>'group_id')::bigint
+        THEN RETURN jsonb_build_object('error','invalid_video_reservation','status',409); END IF;
+    IF NOT EXISTS(SELECT 1 FROM s2a_private.accounts WHERE id=lease.account_id AND platform='grok' AND deleted_at IS NULL) THEN RETURN jsonb_build_object('error','invalid_video_reservation','status',409); END IF;
+    IF p_action='prepare' THEN
+        INSERT INTO s2a_private.video_tasks(public_id,lease_id,user_id,key_id,group_id,account_id,model,upstream_model,operation)
+            VALUES(p_public_id,lease.id,lease.user_id,lease.key_id,lease.group_id,lease.account_id,lease.model,p_upstream_model,p_operation)
+            ON CONFLICT(public_id) DO NOTHING;
+    END IF;
+    SELECT * INTO task FROM s2a_private.video_tasks WHERE public_id=p_public_id FOR UPDATE;
+    IF NOT FOUND OR task.lease_id<>lease.id OR task.upstream_model<>p_upstream_model OR task.operation<>p_operation THEN
+        RETURN jsonb_build_object('error','video_task_conflict','status',409);
+    END IF;
+    IF p_action='prepare' AND task.state='creating' THEN RETURN jsonb_build_object('prepared',true); END IF;
+    IF p_action='reject' AND task.state IN ('creating','rejected') THEN
+        UPDATE s2a_private.video_tasks SET state='rejected',updated_at=clock_timestamp() WHERE public_id=p_public_id;
+        RETURN jsonb_build_object('rejected',true);
+    END IF;
+    IF p_action IS DISTINCT FROM 'bind' OR p_upstream_id IS NULL OR p_upstream_id !~ '^[a-zA-Z0-9_-]{1,200}$'
+        THEN RETURN jsonb_build_object('error','invalid_video_upstream_response','status',400); END IF;
+    IF task.state='submitted' AND task.upstream_id=p_upstream_id THEN RETURN jsonb_build_object('bound',true); END IF;
+    IF task.state<>'creating' OR EXISTS(SELECT 1 FROM s2a_private.video_tasks WHERE account_id=task.account_id AND upstream_id=p_upstream_id AND public_id<>p_public_id)
+        THEN RETURN jsonb_build_object('error','video_task_conflict','status',409); END IF;
+    BEGIN
+        UPDATE s2a_private.video_tasks SET upstream_id=p_upstream_id,state='submitted',updated_at=clock_timestamp() WHERE public_id=p_public_id;
+    EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('error','video_task_conflict','status',409);
+    END;
+    RETURN jsonb_build_object('bound',true);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_personal_video_resolve(p_key_hash text,p_public_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; task s2a_private.video_tasks%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'grok' THEN RETURN jsonb_build_object('error','grok_video_requires_grok_group','status',400); END IF;
+    IF p_public_id IS NULL OR p_public_id !~ '^video_[a-f0-9]{40}$' THEN RETURN jsonb_build_object('error','invalid_video_task','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    SELECT * INTO task FROM s2a_private.video_tasks WHERE public_id=p_public_id
+        AND user_id=(identity->>'user_id')::bigint AND key_id=(identity->>'key_id')::bigint AND group_id=(identity->>'group_id')::bigint;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','video_task_not_found','status',404); END IF;
+    RETURN jsonb_build_object('public_id',task.public_id,'account_id',task.account_id::text,'model',task.model,'upstream_model',task.upstream_model,
+        'operation',task.operation,'upstream_id',task.upstream_id,'state',task.state,'created_at',task.created_at);
+END $$;
+ALTER FUNCTION public.s2a_personal_video_create(text,text,uuid,text,text,text,text,text) OWNER TO s2a_management;
+ALTER FUNCTION public.s2a_personal_video_resolve(text,text,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_video_create(text,text,uuid,text,text,text,text,text) FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.s2a_personal_video_resolve(text,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_video_create(text,text,uuid,text,text,text,text,text) TO service_role;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_video_resolve(text,text,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

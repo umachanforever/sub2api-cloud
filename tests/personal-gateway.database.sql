@@ -3,7 +3,7 @@ SET LOCAL ROLE s2a_management;
 DO $$
 DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::bigint;
     k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
-    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text; cache_group bigint; cache_account bigint; alternative_cache_account bigint; oauth_cache_account bigint;
+    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text; cache_group bigint; cache_account bigint; alternative_cache_account bigint; oauth_cache_account bigint; video_key bigint; video_hash text;
 BEGIN
     IF has_function_privilege('anon','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_key_policy(text,text)','EXECUTE')
@@ -230,5 +230,45 @@ BEGIN
     UPDATE public.api_keys SET status='inactive' WHERE id=k;
     IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'discovery accepted revoked key'; END IF;
     IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
+    IF has_table_privilege('service_role','s2a_private.video_tasks','SELECT') OR has_table_privilege('authenticated','s2a_private.video_tasks','SELECT')
+        OR has_function_privilege('anon','public.s2a_personal_video_create(text,text,uuid,text,text,text,text,text)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_video_resolve(text,text,text)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_video_resolve(text,text,text)','EXECUTE') THEN RAISE EXCEPTION 'video task ACL mismatch'; END IF;
+    INSERT INTO public.groups(name,platform) VALUES('Video task fixture','grok') RETURNING id INTO cache_group;
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Video task fixture','grok','apikey','{"api_key":"fixture-video-secret"}',2) RETURNING id INTO cache_account;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(cache_account,cache_group);
+    INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'video-key-'||gen_random_uuid()::text,'Video fixture',cache_group) RETURNING id,s2a_key_hash INTO video_key,video_hash;
+    acquired:=public.s2a_personal_acquire(video_hash,'grok-imagine-video',gen_random_uuid(),p_count_request=>false,p_billing_context=>'{"count_only":true}');
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'video task admission failed: %',acquired; END IF;
+    lease:=(acquired->>'lease_id')::uuid;
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),gen_random_uuid(),'grok-imagine-video','generations','prepare')->>'error' IS DISTINCT FROM 'invalid_video_reservation' THEN RAISE EXCEPTION 'video task accepted foreign lease'; END IF;
+    result:=public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'grok-imagine-video','generations','prepare');
+    IF result->>'prepared' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'video task prepare failed: %',result; END IF;
+    result:=public.s2a_personal_video_resolve(video_hash,'video_'||repeat('a',40));
+    IF result->>'state' IS DISTINCT FROM 'creating' OR result->>'account_id' IS DISTINCT FROM cache_account::text OR result->>'upstream_id' IS NOT NULL THEN RAISE EXCEPTION 'video creation intent lost ownership'; END IF;
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'other-model','generations','prepare')->>'error' IS DISTINCT FROM 'video_task_conflict' THEN RAISE EXCEPTION 'video model changed during creation'; END IF;
+    result:=public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'grok-imagine-video','generations','bind','provider-video-1');
+    IF result->>'bound' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'video binding failed: %',result; END IF;
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'grok-imagine-video','generations','bind','provider-video-1')->>'bound' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'video binding not idempotent'; END IF;
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'grok-imagine-video','generations','bind','provider-video-2')->>'error' IS DISTINCT FROM 'video_task_conflict' THEN RAISE EXCEPTION 'video binding overwritten'; END IF;
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('a',40),lease,'grok-imagine-video','generations','reject')->>'error' IS NULL THEN RAISE EXCEPTION 'submitted video rejected'; END IF;
+    PERFORM public.s2a_personal_video_create(video_hash,'video_'||repeat('b',40),lease,'grok-imagine-video','edits','prepare');
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('b',40),lease,'grok-imagine-video','edits','bind','provider-video-1')->>'error' IS DISTINCT FROM 'video_task_conflict' THEN RAISE EXCEPTION 'provider task rebound'; END IF;
+    PERFORM public.s2a_personal_video_create(video_hash,'video_'||repeat('b',40),lease,'grok-imagine-video','edits','reject');
+    IF public.s2a_personal_video_create(video_hash,'video_'||repeat('b',40),lease,'grok-imagine-video','edits','bind','provider-video-2')->>'error' IS DISTINCT FROM 'video_task_conflict' THEN RAISE EXCEPTION 'rejected video resurrected'; END IF;
+    IF public.s2a_personal_acquire(video_hash,'other-video-model',gen_random_uuid(),p_billing_context=>jsonb_build_object('video_task','video_'||repeat('a',40)))->>'error' IS DISTINCT FROM 'video_task_model_mismatch' THEN RAISE EXCEPTION 'video lookup model changed'; END IF;
+    IF public.s2a_personal_acquire(video_hash,'grok-imagine-video',gen_random_uuid(),p_billing_context=>jsonb_build_object('video_task','video_'||repeat('b',40)))->>'error' IS DISTINCT FROM 'video_task_not_submitted' THEN RAISE EXCEPTION 'unsubmitted video acquired'; END IF;
+    acquired:=public.s2a_personal_acquire(video_hash,'grok-imagine-video',gen_random_uuid(),p_count_request=>false,p_billing_context=>jsonb_build_object('video_task','video_'||repeat('a',40),'count_only',true));
+    IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM cache_account::text OR acquired->>'upstream_model' IS DISTINCT FROM 'grok-imagine-video' THEN RAISE EXCEPTION 'video lookup lost account binding: %',acquired; END IF;
+    UPDATE public.accounts SET schedulable=false WHERE id=cache_account;
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Alternative video task fixture','grok','apikey','{"api_key":"fixture-video-secret"}',2) RETURNING id INTO alternative_cache_account;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(alternative_cache_account,cache_group);
+    IF public.s2a_personal_acquire(video_hash,'grok-imagine-video',gen_random_uuid(),p_billing_context=>jsonb_build_object('video_task','video_'||repeat('a',40)))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'disabled video owner failed over'; END IF;
+    INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'foreign-video-key-'||gen_random_uuid()::text,'Foreign video fixture',cache_group) RETURNING s2a_key_hash INTO h;
+    IF public.s2a_personal_video_resolve(h,'video_'||repeat('a',40))->>'error' IS DISTINCT FROM 'video_task_not_found' THEN RAISE EXCEPTION 'video task leaked across keys'; END IF;
+    UPDATE public.api_keys SET group_id=g WHERE id=video_key;
+    IF public.s2a_personal_video_resolve(video_hash,'video_'||repeat('a',40))->>'error' IS DISTINCT FROM 'grok_video_requires_grok_group' THEN RAISE EXCEPTION 'video task survived platform switch'; END IF;
+    UPDATE public.api_keys SET group_id=cache_group,status='inactive' WHERE id=video_key;
+    IF public.s2a_personal_video_resolve(video_hash,'video_'||repeat('a',40))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key resolved video'; END IF;
 END $$;
 ROLLBACK;
