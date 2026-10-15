@@ -61,12 +61,13 @@ export async function signArtifact(db:Database,path:string,seconds=600):Promise<
  if(url.origin!==base.origin||url.username||url.password||url.hash||url.pathname!=='/storage/v1/object/sign/'+bucket+'/'+encoded||!url.searchParams.get('token')||[...url.searchParams.keys()].some(key=>key!=='token'))throw new HttpError(502,'invalid_artifact_signature');
  return url.href;
 }
-export async function deleteArtifacts(db:Database,paths:string[]):Promise<void>{
+export async function deleteArtifacts(db:Database,paths:string[],signal?:AbortSignal):Promise<void>{
+ signal?.throwIfAborted();
  if(!paths.length)return;
  if(paths.length>100)throw new HttpError(400,'invalid_artifact_count');
  for(const path of paths)encodedPath(path);
  const headers=auth(db);headers.set('content-type','application/json');
- const response=await db.fetchImpl(storageURL(db,'object/'+bucket),{method:'DELETE',headers,body:JSON.stringify({prefixes:paths}),signal:AbortSignal.timeout(30000),redirect:'error'});
+ const response=await db.fetchImpl(storageURL(db,'object/'+bucket),{method:'DELETE',headers,body:JSON.stringify({prefixes:paths}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000),redirect:'error'});
  await response.body?.cancel();if(!response.ok)throw new HttpError(503,'artifact_storage_unavailable');
 }
 
@@ -86,10 +87,11 @@ export async function listTaskArtifacts(db:Database,taskId:string):Promise<strin
  });
 }
 
-export async function listBatchArtifacts(db:Database,batchId:string):Promise<string[]>{
+export async function listBatchArtifacts(db:Database,batchId:string,signal?:AbortSignal):Promise<string[]>{
+ signal?.throwIfAborted();
  if(!/^imgbatch_[a-f0-9]{32}$/.test(batchId))throw new HttpError(400,'invalid_artifact_path');
  const prefix='batches/'+batchId,headers=auth(db);headers.set('content-type','application/json');
- const response=await db.fetchImpl(storageURL(db,'object/list/'+bucket),{method:'POST',headers,body:JSON.stringify({prefix,limit:203,offset:0,sortBy:{column:'name',order:'asc'}}),signal:AbortSignal.timeout(10000),redirect:'error'});
+ const response=await db.fetchImpl(storageURL(db,'object/list/'+bucket),{method:'POST',headers,body:JSON.stringify({prefix,limit:203,offset:0,sortBy:{column:'name',order:'asc'}}),signal:signal?AbortSignal.any([signal,AbortSignal.timeout(10000)]):AbortSignal.timeout(10000),redirect:'error'});
  if(!response.ok){await response.body?.cancel();throw new HttpError(503,'artifact_storage_unavailable');}
  const entries=await storageMetadata(response,262144);
  if(!Array.isArray(entries)||entries.length>202)throw new HttpError(502,'invalid_artifact_listing');
