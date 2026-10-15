@@ -1,6 +1,7 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
+import {vertexGeminiRequest} from './vertex_gemini.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -449,11 +450,18 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      if(account.type==='service_account'&&platform==='gemini'&&models){
+      if(account.type==='service_account'&&platform==='gemini'){
         const credentials=await decryptSecret(account,db.config.encryptionKey);
-        native={url:'',init:{},streaming:false};
         providerDispatched=true;
-        upstream=await vertexGeminiCatalog(credentials,forwardedPath,(url,init)=>accountFetch(db,account,url,init),signal);
+        if(models){
+          native={url:'',init:{},streaming:false};
+          upstream=await vertexGeminiCatalog(credentials,forwardedPath,(url,init)=>accountFetch(db,account,url,init),signal);
+        } else {
+          if(!gemini)throw new HttpError(501,'provider_protocol_unsupported');
+          native=await vertexGeminiRequest(credentials,forwardedPath,forwardedBody!,signal,(url,init)=>accountFetch(db,account,url,init));
+          upstreamEndpoint=usageEndpoint(native.url);
+          upstream=await accountFetch(db,account,native.url,native.init);
+        }
       } else if (apiKey) {
         const credentials = await decryptApiKeyCredentials(
           account,

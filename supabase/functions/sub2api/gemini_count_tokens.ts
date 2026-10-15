@@ -1,6 +1,7 @@
 import {Database,HttpError} from './db.ts';
 import {type Account,credentialsFor} from './accounts.ts';
-import {decryptApiKeyCredentials} from './credential_store.ts';
+import {decryptApiKeyCredentials,decryptSecret} from './credential_store.ts';
+import {vertexGeminiRequest} from './vertex_gemini.ts';
 import {apiKeyRequest} from './api_key_provider.ts';
 import {accountFetch} from './account_proxy.ts';
 import {readBody} from './validation.ts';
@@ -22,9 +23,16 @@ export async function countGeminiTokens(db:Database,account:Account&{type?:strin
  if(!['gemini','antigravity'].includes(account.platform??''))throw new HttpError(400,'gemini_group_required');
  const fallback=()=>({totalTokens:estimateGeminiTokens(body.generateContentRequest??body)});
  const apiKey=account.type==='apikey';
- const credentials=apiKey?await decryptApiKeyCredentials(account,db.config.encryptionKey):await credentialsFor(db,account);
- const outgoing=apiKeyRequest('gemini',apiKey?credentials as {api_key:string}:{api_key:(credentials as {access_token:string}).access_token},'gemini',path,body,request,signal);
- if(!apiKey){const headers=new Headers(outgoing.init.headers);headers.delete('x-goog-api-key');headers.set('authorization','Bearer '+(credentials as {access_token:string}).access_token);outgoing.init.headers=headers;}
+ const vertex=account.type==='service_account';
+ let outgoing:ReturnType<typeof apiKeyRequest>;
+ if(vertex){
+  if(account.platform!=='gemini')throw new HttpError(400,'vertex_gemini_account_required');
+  outgoing=await vertexGeminiRequest(await decryptSecret(account,db.config.encryptionKey),path,body,signal,(url,init)=>accountFetch(db,account,url,init));
+ } else {
+  const credentials=apiKey?await decryptApiKeyCredentials(account,db.config.encryptionKey):await credentialsFor(db,account);
+  outgoing=apiKeyRequest('gemini',apiKey?credentials as {api_key:string}:{api_key:(credentials as {access_token:string}).access_token},'gemini',path,body,request,signal);
+  if(!apiKey){const headers=new Headers(outgoing.init.headers);headers.delete('x-goog-api-key');headers.set('authorization','Bearer '+(credentials as {access_token:string}).access_token);outgoing.init.headers=headers;}
+ }
  let response:Response;
  onDispatch();
  try{response=await accountFetch(db,account,outgoing.url,outgoing.init);}catch(error){
