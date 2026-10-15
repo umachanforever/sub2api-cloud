@@ -9,7 +9,7 @@
   },
   "tasks": {
     "dev": "deno run --allow-env --allow-net --env-file=.env.local supabase/functions/sub2api/index.ts",
-    "check": "deno check supabase/functions/sub2api/index.ts supabase/functions/sub2api/validation.ts supabase/functions/sub2api/batch_image_input.ts supabase/functions/sub2api/gemini_batch.ts supabase/functions/sub2api/vertex_batch_provider.ts supabase/functions/sub2api/batch_image_execute.ts supabase/functions/sub2api/batch_image_storage.ts supabase/functions/sub2api/batch_image_runner.ts supabase/functions/sub2api/batch_image_result.ts supabase/functions/sub2api/batch_image_index.ts supabase/functions/sub2api/batch_image_submit.ts supabase/functions/sub2api/batch_image_content.ts"
+    "check": "deno check supabase/functions/sub2api/index.ts supabase/functions/sub2api/validation.ts supabase/functions/sub2api/batch_image_input.ts supabase/functions/sub2api/gemini_batch.ts supabase/functions/sub2api/vertex_batch_provider.ts supabase/functions/sub2api/batch_image_execute.ts supabase/functions/sub2api/batch_image_storage.ts supabase/functions/sub2api/batch_image_runner.ts supabase/functions/sub2api/batch_image_result.ts supabase/functions/sub2api/batch_image_index.ts supabase/functions/sub2api/batch_image_submit.ts supabase/functions/sub2api/batch_image_content.ts supabase/functions/sub2api/batch_image_download.ts"
   },
   "imports": {
     "nodemailer": "npm:nodemailer@10.1.1",
