@@ -7,7 +7,7 @@ function contentParts(content: unknown, assistant = false): Item[] {
     return [{ type: assistant ? "output_text" : "input_text", text: content }];
   }
   if (!Array.isArray(content)) throw new Error("Invalid message content");
-  return content.map((block) => {
+  return content.flatMap((block): Item | Item[] => {
     if (block?.type === "text" && typeof block.text === "string") {
       return {
         type: assistant ? "output_text" : "input_text",
@@ -37,6 +37,28 @@ function contentParts(content: unknown, assistant = false): Item[] {
       }
       throw new Error("Invalid image source");
     }
+    if (!assistant && block?.type === "document") {
+      const source = block.source;
+      if (block.citations !== undefined && (typeof block.citations !== "object" || block.citations === null || Array.isArray(block.citations) || (block.citations.enabled !== undefined && block.citations.enabled !== false))) {
+        throw new Error("Document citations are not supported by the Responses bridge");
+      }
+      for (const field of ["title", "context"]) {
+        if (block[field] !== undefined && typeof block[field] !== "string") throw new Error("Invalid document metadata");
+      }
+      let part: Item;
+      if (source?.type === "base64" && source.media_type === "application/pdf" && typeof source.data === "string" && source.data.length > 0 && source.data.length % 4 === 0 && /^[A-Za-z0-9+/]*={0,2}$/.test(source.data)) {
+        part = { type: "input_file", filename: block.title || "document.pdf", file_data: `data:application/pdf;base64,${source.data}` };
+      } else if (source?.type === "url" && typeof source.url === "string" && /^https?:\/\//i.test(source.url) && !/[\r\n]/.test(source.url)) {
+        part = { type: "input_file", file_url: source.url };
+      } else if (source?.type === "text" && source.media_type === "text/plain" && typeof source.data === "string") {
+        part = { type: "input_text", text: source.data };
+      } else throw new Error("Unsupported or invalid document source");
+      const parts: Item[] = [];
+      if (block.title) parts.push({ type: "input_text", text: block.title });
+      if (block.context) parts.push({ type: "input_text", text: block.context });
+      parts.push(part);
+      return parts;
+    }
     throw new Error("Unsupported message content");
   });
 }
@@ -51,8 +73,9 @@ export function messagesToResponses(body: Item): Item {
   ) throw new Error("Invalid messages request");
   const input: Item[] = [];
   if (body.system !== undefined) {
+    if (typeof body.system !== "string" && (!Array.isArray(body.system) || body.system.some((part: Item) => part?.type !== "text" || typeof part.text !== "string"))) throw new Error("Invalid system content");
     const content = contentParts(body.system).filter((part) =>
-      !part.text.startsWith("x-anthropic-billing-header: ")
+      part.type === "input_text" && !part.text.startsWith("x-anthropic-billing-header: ")
     );
     if (content.length) {
       input.push({ type: "message", role: "developer", content });
@@ -109,7 +132,7 @@ export function messagesToResponses(body: Item): Item {
             part.type === "input_text"
           ).map((part) => part.text).join("\n\n") || "(empty)",
         });
-        parts.push(...result.filter((part) => part.type === "input_image"));
+        parts.push(...result.filter((part) => ["input_image", "input_file"].includes(part.type)));
       } else if (block?.type === "thinking" && message.role === "assistant") {
         flush();
         // Only a returned provider signature can be replayed as encrypted reasoning.
