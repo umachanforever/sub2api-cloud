@@ -28,8 +28,8 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
-      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
+      if (gatewayRequest) errorContext.endpoint = ["/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|embeddings|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);
@@ -43,7 +43,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^Bearer\s+(\S+)$/i,
       )?.[1];
       if (authorization !== null && !bearer) throw new HttpError(401, "unauthorized");
-      const nativeKeys = pathname === "/v1/messages" || /^\/v1\/models(?:\/[^/]+)?$/.test(pathname)
+      const nativeKeys = ["/v1/messages", "/v1/messages/count_tokens", "/messages/count_tokens"].includes(pathname) || /^\/v1\/models(?:\/[^/]+)?$/.test(pathname)
         ? [request.headers.get("x-api-key")]
         : pathname.startsWith("/v1beta/")
         ? [request.headers.get("x-goog-api-key"), new URL(request.url).searchParams.get("key")]

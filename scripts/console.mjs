@@ -62,7 +62,7 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir, requ
         ) return reply(403, null, "local_origin_required");
       }
       const url = new URL(request.url, "http://127.0.0.1");
-      const gatewayPath = /^\/(?:(?:antigravity\/)?(?:v1\/(?:responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|messages|embeddings|images\/generations|usage)|v1beta\/models(?:\/[^/]+)?)|responses(?:\/input_tokens)?|backend-api\/codex\/responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|embeddings|images\/generations)$/.test(url.pathname);
+      const gatewayPath = /^\/(?:(?:antigravity\/)?(?:v1\/(?:responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|messages(?:\/count_tokens)?|embeddings|images\/generations|usage)|v1beta\/models(?:\/[^/]+)?)|messages\/count_tokens|responses(?:\/input_tokens)?|backend-api\/codex\/responses(?:\/input_tokens)?|models(?:\/[^/]+)?|chat\/completions|embeddings|images\/generations)$/.test(url.pathname);
       if (!gatewayPath && await serveStatic(request, response, url.pathname, staticDir)) return;
       if (
         url.pathname === "/api/v1/settings/public" && request.method === "GET"

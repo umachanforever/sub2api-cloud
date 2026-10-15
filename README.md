@@ -130,6 +130,8 @@ OpenAI API-key accounts support `/v1/embeddings` (also `/embeddings`) with text 
 Chat Completions accepts inline file data and provider file IDs. The Messages-to-OpenAI bridge accepts base64 PDFs, document URLs, and plain text documents, including files in tool results. Document citations are supported only by providers that handle them natively; enabling citations through the OpenAI bridge returns an explicit error.
 
 OpenAI accounts support `POST /v1/responses/input_tokens`, including `/responses/input_tokens` and `/backend-api/codex/responses/input_tokens` aliases. The gateway uses the provider preflight endpoint when available and falls back to the upstream tiktoken estimation approach inside the Edge Function when the endpoint is unsupported. Preflight counts do not create generation usage records or charge a balance. The fallback is an estimate, including for multimodal inputs.
+Anthropic-format clients can use `POST /v1/messages/count_tokens` or `/messages/count_tokens` with Bearer or `x-api-key` authentication. OpenAI accounts use the Responses preflight bridge, Grok accounts use the local estimator, and Anthropic accounts use the native provider endpoint. These requests do not create generation usage records.
+
 
 AI request bodies default to 256 MiB at both the cloud gateway and the local console proxy, matching upstream Sub2API. Text-specific routes (embeddings, search, and systemone) use 32 MiB. Configure `SERVER_MAX_REQUEST_BODY_SIZE`, `GATEWAY_MAX_BODY_SIZE`, and `GATEWAY_TEXT_MAX_BODY_SIZE` in bytes before deployment. Setting the server limit to `0` disables only the server-wide cap; gateway limits still apply. Supabase runtime memory and provider limits may reduce the practical maximum for large attachments.
 

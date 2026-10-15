@@ -64,3 +64,37 @@ test('tiktoken estimator counts framing, tools and multilingual text without tok
   assert.equal(await estimateInputTokens(body),small);
   assert.equal(await estimateInputTokens({model:'gpt-3.5-turbo',input:'Hello world'}),2);
 });
+test('Messages count_tokens bridges OpenAI and Grok without generating or recording usage',async()=>{
+  for(const platform of ['openai','grok'])for(const path of ['/v1/messages/count_tokens','/messages/count_tokens']){
+    let calls=0;
+    const value=await fixture((url,init)=>{
+      calls++;assert.equal(url,'https://api.openai.com/v1/responses/input_tokens');
+      const body=JSON.parse(init.body);assert.equal(body.max_tokens,undefined);assert.equal(body.stream,undefined);
+      assert.ok(body.input.some(item=>item.content?.some(part=>part.text==='Hello world')));
+      return Response.json({input_tokens:13});
+    },{platform});
+    const response=await value.request(path,{model:'gpt-6.1',messages:[{role:'user',content:'Hello world'}]},{'x-api-key':'gateway-key'});
+    assert.equal(response.status,200);const body=await response.json();assert.ok(body.input_tokens>0);assert.equal(body.object,undefined);
+    assert.equal(calls,platform==='grok'?0:1);assert.equal(value.leases[0].p_billing_context.count_only,true);
+    assert.equal(value.finishes[0].p_input_tokens,null);
+  }
+});
+test('Anthropic count_tokens uses native API-key and OAuth headers and filters generation fields',async()=>{
+  for(const type of ['apikey','oauth']){
+    const value=await fixture((url,init)=>{
+      assert.equal(url,'https://api.anthropic.com/v1/messages/count_tokens');const headers=new Headers(init.headers);
+      assert.equal(headers.get(type==='apikey'?'x-api-key':'authorization'),type==='apikey'?'provider-secret':'Bearer provider-secret');
+      assert.equal(headers.get('anthropic-version'),'2023-06-01');
+      const body=JSON.parse(init.body);assert.equal(body.max_tokens,undefined);assert.equal(body.stream,undefined);
+      return Response.json({input_tokens:19,private_field:'hidden'});
+    },{platform:'anthropic',type});
+    const response=await value.request('/v1/messages/count_tokens',{model:'claude-sonnet-4-5',messages:[{role:'user',content:'hello'}],max_tokens:99,stream:false});
+    assert.equal(response.status,200);assert.deepEqual(await response.json(),{input_tokens:19});assert.equal(value.finishes[0].p_input_tokens,null);
+  }
+});
+test('Messages preflight rejects missing credentials, malformed messages and generation streams',async()=>{
+  const value=await fixture(()=>assert.fail('Provider must not be called'));
+  for(const body of [{model:'gpt-6.1'},{model:'gpt-6.1',messages:[]},{model:'gpt-6.1',messages:[{role:'user',content:'hi'}],stream:true}])assert.equal((await value.request('/v1/messages/count_tokens',body)).status,400);
+  assert.equal(value.leases.length,0);
+  assert.equal((await value.request('/v1/messages/count_tokens',{model:'gpt-6.1',messages:[{role:'user',content:'hi'}]},{})).status,401);
+});

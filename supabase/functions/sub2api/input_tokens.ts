@@ -1,3 +1,6 @@
+import {messagesToResponses} from './anthropic_protocol.ts';
+import {apiKeyRequest} from './api_key_provider.ts';
+import {anthropicOAuthRequest} from './anthropic_oauth.ts';
 import * as o200k from 'gpt-tokenizer/encoding/o200k_base';
 import * as cl100k from 'gpt-tokenizer/encoding/cl100k_base';
 import {type Account, credentialsFor} from './accounts.ts';
@@ -79,6 +82,29 @@ export async function countInputTokens(db:Database,account:Account&{platform?:Pl
     if(unsupported)return estimateInputTokens(body);
     throw new HttpError(upstream.status>=400&&upstream.status<500?upstream.status:502,'upstream_request_failed');
   }
+  let value;try{value=JSON.parse(text);}catch{throw new HttpError(502,'invalid_upstream_response');}
+  if(!Number.isSafeInteger(value?.input_tokens)||value.input_tokens<0)throw new HttpError(502,'invalid_upstream_response');
+  return value.input_tokens;
+}
+
+// Token-count requests reserve an account but never generate or bill output.
+export async function countMessageTokens(db:Database,account:Account&{platform?:Platform;type?:'oauth'|'apikey'},body:Record<string,unknown>,request:Request,signal:AbortSignal,onDispatch:()=>void=()=>{},onResponse:()=>void=()=>{}):Promise<number>{
+  const platform=account.platform??'openai';
+  if(platform==='openai'||platform==='grok'){
+    let converted:Record<string,unknown>;
+    try{converted=inputTokenRequest(messagesToResponses({...body,max_tokens:1,stream:false}));}
+    catch{throw new HttpError(400,'invalid_request');}
+    return countInputTokens(db,account,converted,signal,onDispatch,onResponse);
+  }
+  if(platform!=='anthropic')throw new HttpError(501,'provider_protocol_unsupported');
+  const filtered=Object.fromEntries(['model','messages','system','tools','tool_choice','thinking'].filter(key=>body[key]!==undefined).map(key=>[key,body[key]]));
+  const outgoing=account.type==='apikey'
+    ? apiKeyRequest('anthropic',await decryptApiKeyCredentials(account,db.config.encryptionKey),'messages','/v1/messages/count_tokens',filtered,request,signal)
+    : anthropicOAuthRequest(await credentialsFor(db,account),'messages','/v1/messages/count_tokens',filtered,request,signal);
+  onDispatch();
+  const response=await accountFetch(db,account,outgoing.url,outgoing.init);onResponse();
+  const text=await responseText(response);
+  if(!response.ok)throw new HttpError(response.status>=400&&response.status<500?response.status:502,'upstream_request_failed');
   let value;try{value=JSON.parse(text);}catch{throw new HttpError(502,'invalid_upstream_response');}
   if(!Number.isSafeInteger(value?.input_tokens)||value.input_tokens<0)throw new HttpError(502,'invalid_upstream_response');
   return value.input_tokens;
