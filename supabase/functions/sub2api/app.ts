@@ -23,8 +23,9 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (pathname === "/embeddings") pathname = "/v1/embeddings";
-      if (pathname === "/images/generations") pathname = "/v1/images/generations";
+      if (/^\/(?:models(?:\/[^/]+)?|chat\/completions|embeddings|images\/generations)$/.test(pathname)) {
+        pathname = "/v1" + pathname;
+      }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/responses", "/backend-api/codex/responses"].includes(pathname);

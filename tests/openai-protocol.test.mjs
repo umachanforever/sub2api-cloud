@@ -522,3 +522,33 @@ test("Messages request abort releases the OAuth account lease once", async () =>
   assert.equal(value.finishes.length, 1);
   assert.equal(value.finishes[0].p_outcome, "cancelled");
 });
+
+test('upstream root aliases preserve model lookup, Codex metadata, chat output and usage', async () => {
+  const manifest={models:[{slug:'gpt-test',instructions:'Provider instructions',context_window:200000}]};
+  const catalog=await fixture(()=>Response.json(manifest));
+  for(const prefix of ['', '/sub2api', '/functions/v1/sub2api']) {
+    const models=await catalog.request(prefix+'/models');
+    assert.equal(models.status,200);assert.equal((await models.json()).data[0].id,'gpt-test');
+    const model=await catalog.request(prefix+'/models/gpt-test');
+    assert.equal(model.status,200);assert.equal((await model.json()).id,'gpt-test');
+    const codex=await catalog.request(prefix+'/models?client_version=0.162.1');
+    assert.equal(codex.status,200);assert.deepEqual((await codex.json()).models,manifest.models);
+    const chat=await fixture(()=>new Response(source(),{headers:{'content-type':'text/event-stream'}}));
+    const response=await chat.request(prefix+'/chat/completions',{model:'gpt-test',messages:[{role:'user',content:'hello'}],stream:false});
+    assert.equal(response.status,200);assert.ok((await response.json()).choices[0].message.content);
+    assert.equal(chat.leases.length,1);assert.equal(chat.finishes.length,1);
+    assert.equal(chat.finishes[0].p_input_tokens,complete.usage.input_tokens);
+  }
+});
+test('root aliases keep authentication, credential conflicts and unknown-route boundaries',async()=>{
+  let called=0;const handler=createHandler(config,async()=>{called++;throw Error('Unexpected provider access');});
+  for(const path of ['/models','/models/gpt-test','/chat/completions']){
+    const denied=await handler(new Request('https://gateway'+path));assert.equal(denied.status,401);
+  }
+  const conflict=await handler(new Request('https://gateway/models',{headers:{authorization:'Bearer one','x-api-key':'two'}}));
+  assert.equal(conflict.status,400);
+  const invalid=await handler(new Request('https://gateway/chat/completions',{method:'POST',headers:{authorization:'Bearer key','content-type':'application/json'},body:'{}'}));
+  assert.equal(invalid.status,400);
+  const unknown=await handler(new Request('https://gateway/models/gpt-test/extra',{headers:{authorization:'Bearer key'}}));
+  assert.equal(unknown.status,404);assert.equal(called,0);
+});

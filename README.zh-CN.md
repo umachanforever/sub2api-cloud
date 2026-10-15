@@ -66,6 +66,8 @@ npm run up -- --cloud
 https://<project-ref>.supabase.co/functions/v1/sub2api
 ```
 
+网关同时支持原版根路径别名 `/models`、`/models/:model`、`/chat/completions`、`/responses`、`/embeddings` 和 `/images/generations`，使用相同的云函数入口，并与 `/v1` 路径共用鉴权、模型策略和用量记录。
+
 Codex 客户端标识会自动跟随官方稳定版。Supabase Cron 每 6 小时检查一次，本地服务关闭后仍会执行；请求处理也会刷新过期版本。界面中的自动同步开关同时控制两条更新路径，手动指定的客户端版本优先生效。实际模型可用性还取决于上游账号。
 
 在原版控制台创建供应商账号，绑定对应平台的分组，再创建 API Key。从 `/v1/models` 选择可用模型；也可使用账号的模型映射，保留现有应用使用的模型名。

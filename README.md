@@ -70,6 +70,8 @@ Use the gateway endpoint displayed in the console:
 https://<project-ref>.supabase.co/functions/v1/sub2api
 ```
 
+The gateway also accepts the upstream root aliases `/models`, `/models/:model`, `/chat/completions`, `/responses`, `/embeddings`, and `/images/generations` under the same function endpoint. Authentication, model policies, and usage recording are shared with the `/v1` routes.
+
 Codex client identity follows the official stable release automatically. Supabase Cron checks every six hours, even when local services are stopped; request handling also refreshes stale versions. The console automatic synchronization switch controls both paths, and an explicit client version retains precedence. Model availability also depends on the upstream account.
 
 Create a provider account, bind it to a matching provider group, and create an API key in the original console. Choose a model from `/v1/models`; account model mappings can preserve an application's existing model names.
