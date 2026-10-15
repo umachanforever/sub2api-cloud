@@ -7,7 +7,7 @@ export function imageArtifactPath(taskId:string,name:'request'|'result'|number,e
  return `images/${taskId}/${typeof name==='number'?'image-'+name:name}.${extension}`;
 }
 function encodedPath(path:string):string{
- if(/^batches\/imgbatch_[a-f0-9]{32}\/(?:request|created)\.json$/.test(path))return path.split('/').map(encodeURIComponent).join('/');
+ if(/^batches\/imgbatch_[a-f0-9]{32}\/(?:request|created|item-(?:[1-9]|[1-9][0-9]|1[0-9]{2}|200))\.json$/.test(path))return path.split('/').map(encodeURIComponent).join('/');
  if(!/^images\/imgtask_[a-f0-9]{32}\/(?:request|result|image-[1-9][0-9]?)\.(?:bin|json|png|jpg|webp|gif|avif)$/.test(path)&&!/^images\/imgtask_[a-f0-9]{32}\/image-100\.(?:bin|json|png|jpg|webp|gif|avif)$/.test(path))throw new HttpError(400,'invalid_artifact_path');
  return path.split('/').map(encodeURIComponent).join('/');
 }

@@ -205,8 +205,51 @@ BEGIN
     IF snapshot ? 'error' THEN RETURN snapshot||jsonb_build_object('status',503); END IF;
     RETURN jsonb_build_object('account',snapshot||jsonb_build_object('proxy_id',a.proxy_id::text),'provider',native.provider,'model',native.model,'request_hash',task.request_hash);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_indexed(p_id text,p_lease uuid,p_items jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; item jsonb; successes integer:=0; failures integer:=0;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_lease_lost','status',409); END IF;
+    IF task.stage<>'index' THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
+    SELECT * INTO native FROM public.batch_image_jobs WHERE batch_id=p_id FOR UPDATE;
+    IF p_items IS NULL OR jsonb_typeof(p_items)<>'array' THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+    IF jsonb_array_length(p_items)<>native.item_count OR jsonb_array_length(p_items) NOT BETWEEN 1 AND 200
+        OR (SELECT count(DISTINCT value->>'custom_id') FROM jsonb_array_elements(p_items))<>jsonb_array_length(p_items)
+        THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+    FOR item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
+        IF jsonb_typeof(item)<>'object' OR jsonb_typeof(item->'custom_id') IS DISTINCT FROM 'string' OR octet_length(item->>'custom_id') NOT BETWEEN 1 AND 255
+            OR item->>'custom_id' ~ '[[:cntrl:]]' OR coalesce(item->>'status','') NOT IN ('success','failed')
+            OR coalesce(item->>'image_count','') !~ '^[0-9]{1,6}$'
+            OR (item ? 'error_code' AND coalesce(item->>'error_code','') !~ '^[A-Z][A-Z0-9_]{0,99}$')
+            THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+        IF item->>'status'='success' THEN
+            IF (item->>'image_count')::integer<1 OR coalesce(item->>'provider_source_object','') !~ ('^batches/'||p_id||'/item-([1-9]|[1-9][0-9]|1[0-9]{2}|200)[.]json$')
+                OR coalesce(item->>'mime_type','') !~ '^image/[A-Za-z0-9.+_-]{1,100}$'
+                THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+            successes:=successes+1;
+        ELSE
+            IF (item->>'image_count')::integer<>0 THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+            failures:=failures+1;
+        END IF;
+        IF (item ? 'source_line_number' AND coalesce(item->>'source_line_number','') !~ '^[0-9]{1,9}$')
+            OR (item ? 'source_byte_offset' AND coalesce(item->>'source_byte_offset','') !~ '^[0-9]{1,15}$')
+            OR (item ? 'source_byte_length' AND coalesce(item->>'source_byte_length','') !~ '^[0-9]{1,9}$')
+            THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+    END LOOP;
+    DELETE FROM public.batch_image_items WHERE job_id=p_id;
+    INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count,provider_source_object,source_line_number,source_byte_offset,source_byte_length,mime_type,file_extension,error_code,indexed_at,billed_amount)
+        SELECT p_id,value->>'custom_id',value->>'status',(value->>'image_count')::integer,value->>'provider_source_object',
+            (value->>'source_line_number')::integer,(value->>'source_byte_offset')::bigint,(value->>'source_byte_length')::bigint,
+            value->>'mime_type',value->>'file_extension',value->>'error_code',clock_timestamp(),0 FROM jsonb_array_elements(p_items);
+    UPDATE public.batch_image_jobs SET status='completed',success_count=successes,fail_count=failures,cancelled_count=0,actual_cost=0,
+        finished_at=clock_timestamp(),settled_at=clock_timestamp(),output_expires_at=clock_timestamp()+interval '24 hours',updated_at=clock_timestamp() WHERE batch_id=p_id;
+    UPDATE s2a_private.batch_image_runtime SET stage='completed',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    RETURN jsonb_build_object('applied',true);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

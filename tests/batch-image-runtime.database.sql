@@ -75,3 +75,20 @@ BEGIN
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'allowlist bypass'; END IF;
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');lease uuid:=gen_random_uuid();items jsonb;r jsonb;
+BEGIN
+ INSERT INTO public.batch_image_jobs(batch_id,user_id,provider,model,item_count,status) VALUES(ident,1,'gemini_api','gemini-image',2,'indexing');
+ INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,stage,input_ref,provider_job_name,lease_id,lease_until)
+ VALUES(ident,1,1,1,1,'fixture',repeat('a',64),'index','files/input','batches/result',lease,clock_timestamp()+interval '3 minutes');
+ items:=jsonb_build_array(jsonb_build_object('custom_id','cover','status','success','image_count',1,'provider_source_object','batches/'||ident||'/item-1.json','mime_type','image/png','file_extension','png'),jsonb_build_object('custom_id','missing','status','failed','image_count',0,'error_code','PROVIDER_RESULT_MISSING'));
+ IF public.s2a_batch_image_runtime_indexed(ident,gen_random_uuid(),items)->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'index stale lease'; END IF;
+ IF public.s2a_batch_image_runtime_indexed(ident,lease,jsonb_build_array(items->0))->>'error' IS DISTINCT FROM 'invalid_batch_image_index' THEN RAISE EXCEPTION 'incomplete index accepted'; END IF;
+ IF public.s2a_batch_image_runtime_indexed(ident,lease,jsonb_build_array(items->0,items->0))->>'error' IS DISTINCT FROM 'invalid_batch_image_index' THEN RAISE EXCEPTION 'duplicate index accepted'; END IF;
+ IF public.s2a_batch_image_runtime_indexed(ident,lease,items)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'index completion failed'; END IF;
+ IF (SELECT count(*) FROM public.batch_image_items WHERE job_id=ident)<>2 THEN RAISE EXCEPTION 'item count mismatch'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='completed' AND success_count=1 AND fail_count=1 AND actual_cost=0 AND output_expires_at IS NOT NULL) THEN RAISE EXCEPTION 'native index totals mismatch'; END IF;
+END $$;
+ROLLBACK;
