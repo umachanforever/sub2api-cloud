@@ -270,8 +270,40 @@ BEGIN
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
         'output_expires_at',native.output_expires_at,'error_code',native.last_error_code,'items',items));
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_list(p_key_hash text,p_limit integer DEFAULT 20,p_offset integer DEFAULT 0,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; entries jsonb; total bigint;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 OR p_offset IS NULL OR p_offset NOT BETWEEN 0 AND 1000000 THEN RETURN jsonb_build_object('error','invalid_batch_pagination','status',400); END IF;
+    SELECT count(*) INTO total FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
+        WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL;
+    SELECT coalesce(jsonb_agg(public.s2a_batch_image_read(p_key_hash,q.batch_id,p_client_ip)-'items' ORDER BY q.created_at DESC,q.batch_id DESC),'[]'::jsonb) INTO entries
+        FROM (SELECT r.batch_id,j.created_at FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
+            WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL
+            ORDER BY j.created_at DESC,r.batch_id DESC LIMIT p_limit OFFSET p_offset) q;
+    RETURN jsonb_build_object('items',entries,'total',total,'limit',p_limit,'offset',p_offset);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_content_resolve(p_key_hash text,p_id text,p_custom_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE snapshot jsonb; job public.batch_image_jobs%ROWTYPE; item public.batch_image_items%ROWTYPE;
+BEGIN
+    snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+    IF snapshot ? 'error' THEN RETURN snapshot; END IF;
+    SELECT * INTO job FROM public.batch_image_jobs WHERE batch_id=p_id;
+    IF job.output_deleted_at IS NOT NULL OR job.output_expires_at IS NOT NULL AND job.output_expires_at<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_output_expired','status',410); END IF;
+    IF job.status<>'completed' THEN RETURN jsonb_build_object('error','batch_image_not_completed','status',409); END IF;
+    SELECT * INTO item FROM public.batch_image_items WHERE job_id=p_id AND custom_id=p_custom_id;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_item_not_found','status',404); END IF;
+    IF item.status<>'success' OR item.provider_source_object IS NULL THEN RETURN jsonb_build_object('error','batch_image_item_failed','status',409); END IF;
+    RETURN jsonb_build_object('custom_id',item.custom_id,'path',item.provider_source_object,'image_count',item.image_count);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

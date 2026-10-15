@@ -44,7 +44,7 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE u bigint;g bigint;k bigint;a bigint;h text;r jsonb; leased jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
+DECLARE u bigint;g bigint;k bigint;a bigint;h text;other_hash text;r jsonb; leased jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
 BEGIN
  INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
  INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch fixture','gemini',false) RETURNING id INTO g;
@@ -65,6 +65,12 @@ BEGIN
  UPDATE public.groups SET allow_batch_image_generation=false WHERE id=g;
  IF public.s2a_batch_image_read(h,ident)->>'id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'prior batch hidden after permission disabled'; END IF;
  UPDATE public.groups SET allow_batch_image_generation=true WHERE id=g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-other-'||gen_random_uuid(),'Other batch key',g) RETURNING s2a_key_hash INTO other_hash;
+ IF public.s2a_batch_image_read(other_hash,ident)->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key read'; END IF;
+ IF public.s2a_batch_image_list(other_hash)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'cross-key list'; END IF;
+ IF public.s2a_batch_image_list(h)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'own batch missing from list'; END IF;
+ IF public.s2a_batch_image_content_resolve(h,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_not_completed' THEN RAISE EXCEPTION 'pending output readable'; END IF;
+ IF public.s2a_batch_image_content_resolve(other_hash,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key content'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
  leased:=public.s2a_batch_image_runtime_claim()->0;
