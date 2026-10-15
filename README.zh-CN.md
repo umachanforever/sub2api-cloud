@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向开发者的 AI API 网关：核心请求运行在 Supabase 云端，管理端沿用原版 Sub2API 的 Go 后端和 Vue 控制台。支持接入 OpenAI、Anthropic OAuth 账号与受支持供应商的 API Key，管理账号池、调用密钥与 Token 用量。
+面向开发者的 AI API 网关：核心请求运行在 Supabase 云端，管理端沿用原版 Sub2API 的 Go 后端和 Vue 控制台。支持接入 OpenAI、Anthropic、Gemini OAuth 账号与受支持供应商的 API Key，管理账号池、调用密钥与 Token 用量。
 
 Supabase 负责 API 鉴权、凭据刷新、供应商请求、流式响应和用量记录。本地管理端直接读写同一套云端数据，**关闭本地服务后，云端 AI API 仍可独立使用**。小程序自身的登录认证保持独立。
 
@@ -35,7 +35,7 @@ npm run up -- --cloud
 
 控制台使用 Supabase Auth 登录。供应商凭据由 Supabase Vault 加密保存，API 鉴权与用量记录直接使用原版 Go 业务表。个人云端调用不受商业计费逻辑限制，也不扣减用户余额。
 
-使用 Gemini CLI 或 Antigravity OAuth 授权前，请在 `.env.local` 配置对应的 `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` 或 `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`。Google OAuth 客户端信息由部署者提供，Gemini 也支持在管理端设置自定义 OAuth 客户端。
+使用 Gemini CLI 或 Antigravity OAuth 授权前，请在 `.env.local` 配置对应的 `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` 或 `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`。Google OAuth 客户端信息由部署者提供。Gemini 支持 AI Studio 和 Code Assist，可通过 `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` 配置自定义 AI Studio 客户端。一键部署会同步云端刷新所需配置，Code Assist 的项目信息保存在加密账号凭据中。
 
 ## 本地 Supabase
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A developer-friendly AI API gateway with a Supabase cloud backend and the original Sub2API management console. Connect OpenAI and Anthropic OAuth accounts and supported provider API keys, manage account pools and access keys, and inspect provider-reported token usage.
+A developer-friendly AI API gateway with a Supabase cloud backend and the original Sub2API management console. Connect OpenAI, Anthropic, and Gemini OAuth accounts and supported provider API keys, manage account pools and access keys, and inspect provider-reported token usage.
 
 Supabase runs API authentication, credential refresh, provider requests, streaming, and usage recording. The local Go service and Vue console manage the same cloud records. **AI requests continue working when the local management services are stopped.** Mini Program authentication remains separate.
 
@@ -37,7 +37,9 @@ Keep `SUB2API_DATA_MODEL=native`. Missing administrator passwords and credential
 
 The console uses Supabase Auth. Account credentials are encrypted with Supabase Vault; API authentication and usage records use the original Go business tables. Commercial billing does not gate personal cloud requests or debit the user's balance.
 
-For Gemini CLI or Antigravity OAuth authorization, configure the corresponding `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` or `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET` values in `.env.local`. Google OAuth clients are supplied at deployment time. Gemini also supports a custom OAuth client configured in the console.
+For Gemini CLI or Antigravity OAuth authorization, configure the corresponding `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` or `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET` values in `.env.local`. Google OAuth clients are supplied at deployment time.
+
+Gemini OAuth supports AI Studio and Code Assist. Use `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` for a custom AI Studio client. The deployment command installs the Gemini client configuration in the cloud gateway as well as local management, so token refresh continues with the local services stopped. Code Assist accounts retain their project information in encrypted account credentials.
 
 ## Local Supabase
 
