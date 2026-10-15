@@ -298,3 +298,22 @@ BEGIN
  IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0) THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint;g bigint;a bigint;b bigint;foreign_account bigint;k bigint;h text;r jsonb;
+BEGIN
+ INSERT INTO public.users(email,password_hash,balance) VALUES('ws-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('WebSocket fixture','openai') RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'ws-'||gen_random_uuid(),'WebSocket fixture',g) RETURNING id,s2a_key_hash INTO k,h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Preferred WS','openai','apikey','{"api_key":"synthetic"}',1,0) RETURNING id INTO a;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Pinned WS','openai','apikey','{"api_key":"synthetic"}',1,10) RETURNING id INTO b;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Foreign WS','openai','apikey','{"api_key":"synthetic"}',1) RETURNING id INTO foreign_account;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
+ r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',b::text,'native_stream',true));
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'WebSocket account affinity lost'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',foreign_account::text))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'WebSocket cross-group account accepted'; END IF;
+ IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"websocket_account":"bad"}'::jsonb)->>'error' IS DISTINCT FROM 'invalid_websocket_account' THEN RAISE EXCEPTION 'WebSocket invalid account accepted'; END IF;
+END $$;
+ROLLBACK;

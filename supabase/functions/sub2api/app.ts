@@ -90,6 +90,10 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       const imageRead=/^\/v1\/images\/tasks\/([^/]+)$/.exec(pathname);
       if(imageRead&&request.method==='GET')return await imageTaskRead(request,imageRead[1],token,db);
       if(videoRoute(pathname,request.method))return await grokVideo(request,pathname,token,db,errorContext);
+      if(request.method==='GET'&&['/v1/responses','/responses','/backend-api/codex/responses'].includes(pathname)){
+        const {openAIResponsesWebSocket}=await import('./openai_responses_ws.ts');
+        return await openAIResponsesWebSocket(request,token,db);
+      }
       return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);
     } catch (error) {
       if (error instanceof HttpError) {

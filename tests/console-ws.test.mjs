@@ -37,3 +37,14 @@ test('console realtime tunnel uses the cloud function and preserves bearer heade
  const {default:Socket}=await import('ws');const socket=new Socket(`ws://127.0.0.1:${port}/v1/realtime?model=grok-voice-latest`,{headers:{authorization:'Bearer client-key'}});
  const message=await new Promise((resolve,reject)=>{socket.once('message',data=>resolve(data.toString()));socket.once('error',reject);});assert.equal(message,'ok');socket.terminate();
 });
+test('console Responses WebSocket aliases preserve authentication and session headers',async t=>{
+ for(const path of ['/responses','/v1/responses','/backend-api/codex/responses']){
+  const upstream=createServer();upstream.on('upgrade',(req,socket)=>{
+   assert.equal(req.url,'/functions/v1/sub2api'+path);assert.equal(req.headers.authorization,'Bearer client-key');assert.equal(req.headers['session-id'],'session-fixture');
+   const accept=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);socket.write(Buffer.from([0x81,2,111,107]));
+  });
+  const upstreamPort=await listen(upstream,t),proxy=createConsoleServer({config:{mode:'local',supabase_url:`http://127.0.0.1:${upstreamPort}`,publishable_key:key,management_url:'http://127.0.0.1:1'}}),port=await listen(proxy,t);
+  const {default:Socket}=await import('ws');const socket=new Socket(`ws://127.0.0.1:${port}`+path,{headers:{authorization:'Bearer client-key','session-id':'session-fixture'}});
+  const message=await new Promise((resolve,reject)=>{socket.once('message',data=>resolve(data.toString()));socket.once('error',reject);});assert.equal(message,'ok');socket.terminate();
+ }
+});

@@ -77,6 +77,10 @@ BEGIN
         END LOOP;
         IF NOT allowed THEN RETURN jsonb_build_object('error', 'model_not_allowed', 'status', 403); END IF;
     END IF;
+    IF p_billing_context ? 'websocket_account' THEN
+        IF coalesce(p_billing_context->>'websocket_account','') !~ '^[1-9][0-9]{0,17}$' THEN RETURN jsonb_build_object('error','invalid_websocket_account','status',400); END IF;
+        bound_account_id:=(p_billing_context->>'websocket_account')::bigint;
+    END IF;
     IF p_billing_context ? 'cached_content' THEN
         cache_binding:=public.s2a_personal_cache_resolve(p_key_hash,p_billing_context->>'cached_content',p_model,p_client_ip);
         IF cache_binding ? 'error' THEN RETURN cache_binding; END IF;
