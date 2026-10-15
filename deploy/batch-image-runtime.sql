@@ -202,7 +202,8 @@ BEGIN
         AND coalesce(a.temp_unschedulable_until,'-infinity')<=clock_timestamp();
     RETURN jsonb_build_object('sources',sources,'model_allowlist',policy->'model_allowlist');
 END $$;
-CREATE OR REPLACE FUNCTION public.s2a_batch_image_ready(p_key_hash text,p_id text,p_hash text,p_client_ip text DEFAULT NULL)
+DROP FUNCTION IF EXISTS public.s2a_batch_image_ready(text,text,text,text);
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_ready(p_key_hash text,p_id text,p_hash text,p_client_ip text DEFAULT NULL,p_items jsonb DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE;
 BEGIN
@@ -216,6 +217,17 @@ BEGIN
     IF task.key_hash IS DISTINCT FROM p_key_hash OR task.request_hash IS DISTINCT FROM p_hash OR task.user_id<>(identity->>'user_id')::bigint OR task.key_id<>(identity->>'key_id')::bigint OR task.group_id<>(identity->>'group_id')::bigint
         THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
     IF NOT task.ready AND task.stage<>'upload' THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
+    IF NOT task.ready THEN
+        IF p_items IS NULL OR jsonb_typeof(p_items)<>'array' THEN RETURN jsonb_build_object('error','invalid_batch_pending_items','status',400); END IF;
+        IF jsonb_array_length(p_items)<>(SELECT item_count FROM public.batch_image_jobs WHERE batch_id=p_id)
+            OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_items) v WHERE jsonb_typeof(v)<>'object' OR jsonb_typeof(v->'custom_id') IS DISTINCT FROM 'string'
+                OR octet_length(v->>'custom_id') NOT BETWEEN 1 AND 255 OR v->>'custom_id' ~ '[[:cntrl:]]'
+                OR jsonb_typeof(v->'prompt_preview') IS DISTINCT FROM 'string' OR octet_length(v->>'prompt_preview')>8000)
+            OR (SELECT count(DISTINCT v->>'custom_id') FROM jsonb_array_elements(p_items) v)<>jsonb_array_length(p_items)
+            THEN RETURN jsonb_build_object('error','invalid_batch_pending_items','status',400); END IF;
+        INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count,prompt_preview,request_hash)
+            SELECT p_id,v->>'custom_id','pending',0,v->>'prompt_preview',p_hash FROM jsonb_array_elements(p_items) v;
+    END IF;
     UPDATE s2a_private.batch_image_runtime SET ready=true,updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('id',p_id,'ready',true);
 END $$;
@@ -261,7 +273,7 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_indexed(p_id text,p_lease uuid,p_items jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; item jsonb; token_field text; successes integer:=0; failures integer:=0;
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; item jsonb; token_field text; previews jsonb; successes integer:=0; failures integer:=0;
 BEGIN
     SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
     IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
@@ -301,11 +313,12 @@ BEGIN
             OR (item ? 'source_byte_length' AND coalesce(item->>'source_byte_length','') !~ '^[0-9]{1,9}$')
             THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
     END LOOP;
+    SELECT jsonb_object_agg(custom_id,prompt_preview) INTO previews FROM public.batch_image_items WHERE job_id=p_id;
     DELETE FROM public.batch_image_items WHERE job_id=p_id;
-    INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count,provider_source_object,source_line_number,source_byte_offset,source_byte_length,mime_type,file_extension,error_code,indexed_at,billed_amount)
+    INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count,provider_source_object,source_line_number,source_byte_offset,source_byte_length,mime_type,file_extension,error_code,indexed_at,billed_amount,prompt_preview)
         SELECT p_id,value->>'custom_id',value->>'status',(value->>'image_count')::integer,value->>'provider_source_object',
             (value->>'source_line_number')::integer,(value->>'source_byte_offset')::bigint,(value->>'source_byte_length')::bigint,
-            value->>'mime_type',value->>'file_extension',value->>'error_code',clock_timestamp(),0 FROM jsonb_array_elements(p_items);
+            value->>'mime_type',value->>'file_extension',value->>'error_code',clock_timestamp(),0,previews->>(value->>'custom_id') FROM jsonb_array_elements(p_items);
     INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,
         input_tokens,output_tokens,cache_read_tokens,stream,request_type,billing_mode,s2a_personal_details)
         SELECT task.user_id,task.key_id,task.account_id,task.group_id,
@@ -335,7 +348,7 @@ BEGIN
     SELECT * INTO native FROM public.batch_image_jobs WHERE batch_id=p_id AND user_deleted_at IS NULL;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_not_found','status',404); END IF;
     SELECT coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('custom_id',custom_id,'status',status,'image_count',image_count,
-        'mime_type',mime_type,'file_extension',file_extension,'error_code',error_code)) ORDER BY id),'[]'::jsonb) INTO items FROM public.batch_image_items WHERE job_id=p_id;
+        'prompt_preview',prompt_preview,'mime_type',mime_type,'file_extension',file_extension,'error_code',error_code)) ORDER BY id),'[]'::jsonb) INTO items FROM public.batch_image_items WHERE job_id=p_id;
     RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
         'parent_batch_id',native.parent_batch_id,'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,

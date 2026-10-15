@@ -75,7 +75,11 @@ BEGIN
  IF public.s2a_batch_image_content_resolve(h,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_not_completed' THEN RAISE EXCEPTION 'pending output readable'; END IF;
  IF public.s2a_batch_image_content_resolve(other_hash,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key content'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
- IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
+ IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'error' IS DISTINCT FROM 'invalid_batch_pending_items' THEN RAISE EXCEPTION 'missing pending items accepted'; END IF;
+ IF public.s2a_batch_image_ready(h,ident,repeat('a',64),p_items=>'[{"custom_id":"cover","prompt_preview":7}]'::jsonb)->>'error' IS DISTINCT FROM 'invalid_batch_pending_items' THEN RAISE EXCEPTION 'invalid preview accepted'; END IF;
+ IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'invalid pending request became claimable'; END IF;
+ IF public.s2a_batch_image_ready(h,ident,repeat('a',64),p_items=>'[{"custom_id":"cover","prompt_preview":"blue square"}]'::jsonb)->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
+ IF public.s2a_batch_image_read(h,ident)->'items'->0->>'prompt_preview' IS DISTINCT FROM 'blue square' THEN RAISE EXCEPTION 'pending preview missing'; END IF;
  leased:=public.s2a_batch_image_runtime_claim()->0;
  IF leased->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'persisted request not claimable'; END IF;
  r:=public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid);
@@ -94,6 +98,7 @@ BEGIN
  IF public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,jsonb_build_array(jsonb_build_object('custom_id','cover','status','failed','image_count',0,'error_code','EMPTY_IMAGE_OUTPUT','usage',jsonb_build_object('input_tokens',-1))))->>'error' IS DISTINCT FROM 'invalid_batch_image_usage' THEN RAISE EXCEPTION 'negative batch usage accepted'; END IF;
  r:=public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,jsonb_build_array(jsonb_build_object('custom_id','cover','status','failed','image_count',0,'error_code','EMPTY_IMAGE_OUTPUT','usage',jsonb_build_object('input_tokens',12,'output_tokens',0))));
  IF r->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'batch usage completion failed: %',r; END IF;
+ IF public.s2a_batch_image_read(h,ident)->'items'->0->>'prompt_preview' IS DISTINCT FROM 'blue square' THEN RAISE EXCEPTION 'preview lost during indexing'; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident AND user_id=u AND api_key_id=k AND account_id=a AND input_tokens=12 AND output_tokens=0 AND actual_cost=0 AND NOT (s2a_personal_details->'usage' ? 'cache_read_tokens')) THEN RAISE EXCEPTION 'batch usage identity or unknown values lost'; END IF;
  PERFORM public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,'[]'::jsonb);
  IF (SELECT count(*) FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident)<>1 THEN RAISE EXCEPTION 'batch usage duplicated'; END IF;
@@ -182,7 +187,7 @@ BEGIN
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Cancel batch','gemini','apikey','{"api_key":"fixture"}',4) RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
  PERFORM public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images');
- PERFORM public.s2a_batch_image_ready(h,ident,repeat('a',64));
+ PERFORM public.s2a_batch_image_ready(h,ident,repeat('a',64),p_items=>'[{"custom_id":"cover","prompt_preview":"blue square"}]'::jsonb);
  lease:=(public.s2a_batch_image_runtime_claim()->0->>'lease_id')::uuid;
  r:=public.s2a_batch_image_cancel(h,ident);
  IF r->>'status' IS DISTINCT FROM 'cancelled' OR r->>'cancelled_count' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'queued cancellation failed'; END IF;

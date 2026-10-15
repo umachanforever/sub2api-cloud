@@ -41,7 +41,7 @@ export async function submitBatchImage(db:Database,keyHash:string,input:unknown,
  if(prepared.ready===true)return {id,ready:true};
  const stored=await storeBatchRequest(db,id,normalized,signal);
  if(stored.requestHash!==hash)throw new HttpError(503,'batch_submission_hash_changed');
- const ready=checked(await db.rpc('s2a_batch_image_ready',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_client_ip:options.clientIP??null}),id);
+ const ready=checked(await db.rpc('s2a_batch_image_ready',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_client_ip:options.clientIP??null,p_items:normalized.items.map(item=>({custom_id:item.custom_id,prompt_preview:item.prompt}))}),id);
  if(ready.ready!==true)throw new HttpError(503,'batch_submission_not_ready');
  return {id,ready:true};
 }
