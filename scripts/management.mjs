@@ -78,7 +78,7 @@ SELECT 1 / count(*)::integer AS administrator_identity_verified FROM public.user
 COMMIT;`);
  }
  await sql(`BEGIN; SET LOCAL ROLE s2a_management;
-INSERT INTO public.settings(key,value) VALUES('api_base_url',${literal(env.SUPABASE_URL+'/functions/v1/subscription-api')}) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE settings.value='';
+INSERT INTO public.settings(key,value) VALUES('api_base_url',${literal(env.SUPABASE_URL+'/functions/v1/subscription-api')}) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE btrim(settings.value)='' OR settings.value ~* '^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?(/|$)';
 INSERT INTO public.settings(key,value) VALUES('site_name','sub2api-supabase') ON CONFLICT(key) DO NOTHING;
 COMMIT;`);
  console.log('Management schema, encrypted credentials, and cloud identity are ready.');

@@ -1669,8 +1669,13 @@ const loadPublicSettings = async () => {
   }
 }
 
-const openUseKeyModal = (key: ApiKey) => {
+const openUseKeyModal = async (key: ApiKey) => {
   if (key.key.includes('完整密钥仅创建时返回')) { appStore.showError('请使用创建时保存的完整密钥，列表仅有前缀。'); return }
+  if (!publicSettings.value?.api_base_url) await loadPublicSettings()
+  if (!publicSettings.value?.api_base_url) {
+    appStore.showError(t('common.error'))
+    return
+  }
   selectedKey.value = key
   showUseKeyModal.value = true
 }
