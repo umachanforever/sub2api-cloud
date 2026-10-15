@@ -14,3 +14,7 @@ test('batch models propagate denied group permission without returning account m
  const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async()=>Response.json({error:'batch_image_generation_forbidden',status:403}));
  await assert.rejects(batchImageRoute(new Request('https://gateway/images/batches/models'),'/images/batches/models','key',db),error=>error.status===403);
 });
+test('batch model wildcard matching follows original trailing-star semantics',async()=>{
+ const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async()=>Response.json({sources:[{provider:'gemini_api',mapping:{'gemini-3.1-flash-imag?':'target','Gemini-*':'target'}}]}));
+ const response=await batchImageRoute(new Request('https://gateway/images/batches/models'),'/images/batches/models','key',db);assert.deepEqual((await response.json()).data,[]);
+});

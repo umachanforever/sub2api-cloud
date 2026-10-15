@@ -1,10 +1,7 @@
 import {Database,HttpError} from './db.ts';
 import {allowsModel,type ModelAllowlist} from './model_policy.ts';
 const defaults=['gemini-2.0-flash-exp-image-generation','gemini-2.5-flash-image','gemini-3-pro-image','gemini-3-pro-image-preview','gemini-3.1-flash-image','gemini-3.1-flash-image-preview','gemini-3.1-flash-lite-image'];
-function matches(pattern:string,model:string):boolean{
- const expression=pattern.split('').map(char=>char==='*'?'.*':char==='?'?'.':char.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')).join('');
- return new RegExp('^'+expression+'$').test(model);
-}
+function matches(pattern:string,model:string):boolean{return pattern.endsWith('*')?model.startsWith(pattern.slice(0,-1)):model===pattern;}
 export async function batchImageModels(db:Database,keyHash:string,clientIP:string|null):Promise<Record<string,unknown>>{
  const result=await db.rpc<{error?:string;status?:number;sources:{provider:string;mapping:Record<string,unknown>}[];model_allowlist?:ModelAllowlist}>('s2a_batch_image_model_sources',{p_key_hash:keyHash,p_client_ip:clientIP,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket)});
  if(result?.error)throw new HttpError(result.status??503,result.error);

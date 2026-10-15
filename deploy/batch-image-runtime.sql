@@ -119,6 +119,15 @@ BEGIN
     UPDATE public.batch_image_jobs SET status='failed',last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
+CREATE OR REPLACE FUNCTION s2a_private.batch_model_supported(mapping jsonb,model text)
+RETURNS boolean LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+    SELECT CASE WHEN mapping IS NULL OR mapping='{}'::jsonb THEN true
+        WHEN jsonb_typeof(mapping)<>'object' THEN false
+        ELSE EXISTS(SELECT 1 FROM jsonb_object_keys(mapping) pattern
+            WHERE model=pattern OR right(pattern,1)='*' AND starts_with(model,left(pattern,-1))) END
+$$;
+ALTER FUNCTION s2a_private.batch_model_supported(jsonb,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.batch_model_supported(jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
 DROP FUNCTION IF EXISTS public.s2a_batch_image_prepare(text,text,text,text,text,integer,text,text);
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL,p_vertex_enabled boolean DEFAULT false)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -152,6 +161,7 @@ BEGIN
         JOIN public.groups g ON g.id=ag.group_id WHERE g.id=(identity->>'group_id')::bigint AND accounts.platform='gemini'
         AND accounts.type IN ('apikey','service_account') AND (accounts.type<>'service_account' OR coalesce(p_vertex_enabled,false)) AND (p_provider='' OR accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END)
         AND accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
+        AND s2a_private.batch_model_supported(s2a_private.account_credentials(accounts.id)->'model_mapping',p_model)
         AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
         AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp() AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
         AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp() AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
@@ -228,6 +238,7 @@ BEGIN
             OR NOT EXISTS(SELECT 1 FROM public.account_groups WHERE account_id=a.id AND group_id=task.group_id)
             OR EXISTS(SELECT 1 FROM public.groups WHERE id=task.group_id AND require_oauth_only AND a.type='apikey')
             OR a.s2a_credential_version IS DISTINCT FROM task.credential_version
+            OR NOT s2a_private.batch_model_supported(s2a_private.account_credentials(a.id)->'model_mapping',native.model)
             THEN RETURN jsonb_build_object('error','batch_image_account_changed','status',409); END IF;
         IF coalesce((policy->'model_allowlist'->>'enabled')::boolean,false) THEN
             FOR pattern IN SELECT jsonb_array_elements_text(coalesce(policy->'model_allowlist'->'models','[]'::jsonb)) LOOP

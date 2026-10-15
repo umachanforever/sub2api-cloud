@@ -44,7 +44,7 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE u bigint;g bigint;k bigint;a bigint;h text;other_hash text;r jsonb; leased jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
+DECLARE u bigint;g bigint;k bigint;a bigint;unsupported bigint;h text;other_hash text;r jsonb; leased jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
 BEGIN
  INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
  INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch fixture','gemini',false) RETURNING id INTO g;
@@ -54,6 +54,9 @@ BEGIN
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'no_available_batch_account' THEN RAISE EXCEPTION 'empty group admitted'; END IF;
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Batch account','gemini','apikey','{"api_key":"fixture-batch"}',4) RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Unsupported batch account','gemini','apikey','{"api_key":"fixture-other","model_mapping":{"other-*":"target"}}',4,-100) RETURNING id INTO unsupported;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(unsupported,g);
+ IF NOT s2a_private.batch_model_supported('{"gemini-*":"target"}','gemini-image') OR s2a_private.batch_model_supported('{"Gemini-*":"target"}','gemini-image') OR s2a_private.batch_model_supported('{"gemini-?":"target"}','gemini-x') THEN RAISE EXCEPTION 'model wildcard semantics mismatch'; END IF;
  r:=public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images');
  IF r->>'id' IS DISTINCT FROM ident OR r->>'ready' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'prepare failed: %',r; END IF;
  IF NOT EXISTS(SELECT 1 FROM s2a_private.batch_image_runtime WHERE batch_id=ident AND user_id=u AND key_id=k AND group_id=g AND account_id=a AND NOT ready) THEN RAISE EXCEPTION 'frozen binding mismatch'; END IF;
