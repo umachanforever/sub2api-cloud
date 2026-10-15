@@ -30,7 +30,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
-    allowed boolean; fingerprint text; now_at timestamptz; account jsonb;
+    allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; bound_account_id bigint;
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -74,6 +74,11 @@ BEGIN
         END LOOP;
         IF NOT allowed THEN RETURN jsonb_build_object('error', 'model_not_allowed', 'status', 403); END IF;
     END IF;
+    IF p_billing_context ? 'cached_content' THEN
+        cache_binding:=public.s2a_personal_cache_resolve(p_key_hash,p_billing_context->>'cached_content',p_model,p_client_ip);
+        IF cache_binding ? 'error' THEN RETURN cache_binding; END IF;
+        bound_account_id:=(cache_binding->>'account_id')::bigint;
+    END IF;
     fingerprint:=encode(sha256(convert_to(jsonb_build_array(p_key_hash,p_model,p_client_ip,p_billing_context)::text,'UTF8')),'hex');
     SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE request_id=p_request_id ORDER BY created_at DESC LIMIT 1;
     IF FOUND THEN
@@ -89,6 +94,7 @@ BEGIN
             JOIN public.account_groups ag ON ag.account_id=accounts.id AND ag.group_id=g.id
             WHERE accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
                 AND accounts.platform=g.platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
+                AND (bound_account_id IS NULL OR accounts.id=bound_account_id)
                 AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
                 AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp()
                 AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
@@ -254,7 +260,6 @@ END $$;
 ALTER FUNCTION public.s2a_personal_key_policy(text,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_key_policy(text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_key_policy(text,text) TO service_role;
-COMMIT;
 
 -- Read configured token billing multipliers without consuming a request lease.
 CREATE OR REPLACE FUNCTION public.s2a_personal_key_billing(p_key_hash text,p_client_ip text DEFAULT NULL)
@@ -294,4 +299,41 @@ ALTER FUNCTION public.s2a_personal_key_billing(text,text) OWNER TO s2a_managemen
 REVOKE ALL ON FUNCTION public.s2a_personal_key_billing(text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_key_billing(text,text) TO service_role;
 
+-- Keep the native cache binding schema private from direct client REST access.
+CREATE TABLE IF NOT EXISTS public.gemini_cached_contents (
+    id BIGSERIAL PRIMARY KEY,public_id VARCHAR(64) NOT NULL,user_id BIGINT NOT NULL,api_key_id BIGINT NOT NULL,
+    group_id BIGINT NOT NULL,account_id BIGINT NOT NULL,upstream_name VARCHAR(512) NOT NULL,
+    model VARCHAR(255) NOT NULL,upstream_model VARCHAR(512) NOT NULL,display_name VARCHAR(512) NOT NULL DEFAULT '',
+    total_token_count BIGINT NOT NULL DEFAULT 0,expire_time TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),deleted_at TIMESTAMPTZ NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gemini_cached_contents_public_id ON public.gemini_cached_contents(public_id);
+CREATE INDEX IF NOT EXISTS idx_gemini_cached_contents_api_key_active ON public.gemini_cached_contents(api_key_id,id DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_gemini_cached_contents_account ON public.gemini_cached_contents(account_id);
+ALTER TABLE public.gemini_cached_contents OWNER TO s2a_management;
+ALTER TABLE public.gemini_cached_contents ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON public.gemini_cached_contents FROM PUBLIC,anon,authenticated,service_role;
+REVOKE ALL ON SEQUENCE public.gemini_cached_contents_id_seq FROM PUBLIC,anon,authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_resolve(p_key_hash text,p_name text,p_model text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; binding public.gemini_cached_contents%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'gemini' THEN RETURN jsonb_build_object('error','gemini_cache_requires_gemini_group','status',400); END IF;
+    IF p_name IS NULL OR p_name !~ '^cachedContents/[a-zA-Z0-9_-]{1,64}$' THEN RETURN jsonb_build_object('error','invalid_cached_content','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    SELECT * INTO binding FROM public.gemini_cached_contents
+        WHERE public_id=substring(p_name FROM 16) AND user_id=(identity->>'user_id')::bigint
+        AND api_key_id=(identity->>'key_id')::bigint AND group_id=(identity->>'group_id')::bigint
+        AND deleted_at IS NULL AND expire_time>clock_timestamp();
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','cached_content_not_found','status',404); END IF;
+    IF binding.model IS DISTINCT FROM regexp_replace(p_model,'^models/','') THEN RETURN jsonb_build_object('error','cached_content_model_mismatch','status',400); END IF;
+    RETURN jsonb_build_object('account_id',binding.account_id::text,'upstream_name',binding.upstream_name,'upstream_model',binding.upstream_model);
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
+COMMIT;

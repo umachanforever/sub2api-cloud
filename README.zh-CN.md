@@ -43,6 +43,8 @@ Grok API Key 与 OAuth 账号支持原生 Chat Completions、Responses 和模型
 
 Antigravity OAuth 账号提供供应商模型目录，以及 Gemini 原生 `generateContent` / `streamGenerateContent` 和 Claude Messages 接口，支持普通 JSON 与 SSE 流式响应。Claude 客户端可使用 `/antigravity` 基础路径和同一分组的调用密钥。配置 `ANTIGRAVITY_OAUTH_CLIENT_ID` 和 `ANTIGRAVITY_OAUTH_CLIENT_SECRET` 后，由云端刷新凭据。网关保留加密的项目 ID，在保留调用方指令的同时注入上游身份提示，解包内部响应，并在供应商固定的 daily 和 production 地址间执行故障切换。
 
+Gemini 的 `cachedContent` 引用限定于创建缓存的密钥和分组，并固定使用原账号。不存在、已过期、属于其他密钥或模型不匹配的缓存会在请求上游前被拒绝。
+
 ## 本地 Supabase
 
 ```sh

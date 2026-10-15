@@ -1,3 +1,4 @@
+import {geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
 import {voiceUpload,voiceResponse} from './grok_voice.ts';
 import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from './grok_search.ts';
 import {imageResponses} from './image_responses.ts';
@@ -205,6 +206,8 @@ export async function proxy(
     }
   }
   const policyModel = models ? modelId ? decodeURIComponent(modelId) : "" : gemini ? gemini[1] : body!.model as string;
+  const cacheName=gemini?geminiCacheName(body!):undefined;
+  const cacheBinding=cacheName?await resolveGeminiCache(db,keyHash,cacheName,policyModel,clientIp):undefined;
   if(grokSearch)await requireGrokPlatform('grok_search_requires_grok_group');
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const excluded: string[] = [];
@@ -224,6 +227,7 @@ export async function proxy(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(policyModel),
+        ...(cacheName?{cached_content:cacheName}:{}),
         ...(inputTokens || messageTokens ? {count_only:true} : {}),
         ...(search || grokSearch ? {web_search:true,search_operation:grokSearch?grokSearchKind:'alpha_search'} : {}),
         service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
@@ -242,9 +246,10 @@ export async function proxy(
       model_sources?:ModelSources;
     };
     const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
-    const upstreamModel = (account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel;
+    const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
     let forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    if(cacheBinding)forwardedBody=rewriteGeminiCache(forwardedBody!,cacheBinding);
     if(grokSearch)forwardedBody=grokSearchBody(grokSearchOptions!,upstreamModel);
     const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
     const forwardedPath=aliasCatalog?path.replace(/\/models\/[^/]+$/,"/models"):gemini?`/v1beta/models/${encodeURIComponent(upstreamModel.replace(/^models\//,""))}:${gemini[2]}`:path;
@@ -302,6 +307,7 @@ export async function proxy(
     };
     try {
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
+      if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');
       if (search) {
         let result:Awaited<ReturnType<typeof alphaSearch>>;
         try{result=await alphaSearch(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});}

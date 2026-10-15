@@ -84,6 +84,8 @@ curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
 
 The gateway supports Responses, Chat Completions, Anthropic Messages, and Gemini API formats, with streaming and ordinary responses according to the selected provider and credential type.
 
+Gemini `cachedContent` references are scoped to their owning key and group and stay pinned to the account that created the cache. Unknown, expired, foreign, or model-mismatched cache names are rejected before provider dispatch.
+
 ### Subscription usage
 
 `GET /v1/usage` returns the provider-reported five-hour and seven-day subscription windows for OpenAI OAuth accounts in the key's group. Authenticate with `Authorization: Bearer <api-key>`. Each account includes `five_hour` and `seven_day` objects with `used_percent`, `remaining_percent`, `window_seconds`, and `reset_at`. These are shared account allowances, rather than this key's token totals. Unsupported groups return an empty account list; missing window values are `null`.

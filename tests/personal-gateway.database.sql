@@ -3,7 +3,7 @@ SET LOCAL ROLE s2a_management;
 DO $$
 DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::bigint;
     k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
-    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text;
+    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text; cache_group bigint; cache_account bigint; alternative_cache_account bigint;
 BEGIN
     IF has_function_privilege('anon','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_key_policy(text,text)','EXECUTE')
@@ -110,6 +110,42 @@ BEGIN
         IF NOT EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text AND input_tokens=12 AND output_tokens=7 AND actual_cost=0
             AND s2a_personal_details->>'operation'=search_kind AND s2a_personal_details->>'web_search_calls'='1') THEN RAISE EXCEPTION 'standalone search usage mismatch'; END IF;
     END LOOP;
+    IF has_function_privilege('anon','public.s2a_personal_cache_resolve(text,text,text,text)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_cache_resolve(text,text,text,text)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_cache_resolve(text,text,text,text)','EXECUTE')
+        OR has_table_privilege('anon','public.gemini_cached_contents','SELECT')
+        OR has_table_privilege('authenticated','public.gemini_cached_contents','SELECT')
+        OR has_table_privilege('service_role','public.gemini_cached_contents','SELECT') THEN RAISE EXCEPTION 'cache binding ACL mismatch'; END IF;
+    INSERT INTO public.groups(name,platform) VALUES('Cache ownership fixture','gemini') RETURNING id INTO cache_group;
+    UPDATE public.api_keys SET group_id=cache_group WHERE id=k;
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Bound cache account','gemini','apikey','{"api_key":"fixture-cache-key"}',1) RETURNING id INTO cache_account;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(cache_account,cache_group);
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Alternative cache account','gemini','apikey','{"api_key":"fixture-other-key"}',1,-10) RETURNING id INTO alternative_cache_account;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(alternative_cache_account,cache_group);
+    INSERT INTO public.gemini_cached_contents(public_id,user_id,api_key_id,group_id,account_id,upstream_name,model,upstream_model,expire_time)
+        VALUES('cache-fixture',u,k,cache_group,cache_account,'cachedContents/provider-private','gemini-cache','gemini-upstream',now()+interval '1 hour');
+    result:=public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache');
+    IF result->>'account_id' IS DISTINCT FROM cache_account::text OR result->>'upstream_name' IS DISTINCT FROM 'cachedContents/provider-private' THEN RAISE EXCEPTION 'cache binding lookup failed: %',result; END IF;
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','different-model')->>'error' IS DISTINCT FROM 'cached_content_model_mismatch' THEN RAISE EXCEPTION 'cache accepted wrong model'; END IF;
+    UPDATE public.gemini_cached_contents SET api_key_id=k+100000 WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'foreign cache exposed'; END IF;
+    UPDATE public.gemini_cached_contents SET api_key_id=k WHERE public_id='cache-fixture';
+    UPDATE public.gemini_cached_contents SET user_id=u+100000 WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'foreign user cache exposed'; END IF;
+    UPDATE public.gemini_cached_contents SET user_id=u,group_id=cache_group+100000 WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'foreign group cache exposed'; END IF;
+    UPDATE public.gemini_cached_contents SET group_id=cache_group WHERE public_id='cache-fixture';
+    request:=gen_random_uuid();
+    acquired:=public.s2a_personal_acquire(h,'gemini-cache',request,'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture"}');
+    IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM cache_account::text THEN RAISE EXCEPTION 'cache account not pinned: %',acquired; END IF;
+    result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,200,'completed',10,2,NULL,8,0,1,NULL,'gemini-upstream');
+    UPDATE public.accounts SET status='inactive' WHERE id=cache_account;
+    IF public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture"}')->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'unavailable cache fell back'; END IF;
+    UPDATE public.gemini_cached_contents SET expire_time=now()-interval '1 second' WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'expired cache accepted'; END IF;
+    UPDATE public.gemini_cached_contents SET expire_time=now()+interval '1 hour',deleted_at=now() WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'deleted cache accepted'; END IF;
+    UPDATE public.api_keys SET group_id=g WHERE id=k;
     UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE id=k;
     IF public.s2a_personal_key_billing(h)->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'billing ignored IP allowlist'; END IF;
     IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'ip_forbidden' OR public.s2a_personal_key_policy(h,'192.0.2.5') ? 'error' THEN RAISE EXCEPTION 'discovery ignored IP allowlist'; END IF;
