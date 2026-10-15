@@ -15,6 +15,7 @@ ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS search_
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS inbound_endpoint varchar(128);
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS client_ip varchar(45);
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS responses_websocket boolean NOT NULL DEFAULT false;
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS composite_route jsonb;
 ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
 ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
@@ -91,7 +92,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
-    group_rpm integer; user_rpm integer;
+    group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
 BEGIN
@@ -108,7 +109,25 @@ BEGIN
     IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
     SELECT * INTO k FROM public.api_keys WHERE id=(identity->>'key_id')::bigint;
     SELECT * INTO g FROM public.groups WHERE id=k.group_id;
-    IF NOT coalesce(g.allow_image_generation,false) AND (coalesce((CASE WHEN g.platform='grok' THEN p_billing_context->>'grok_image_generation' ELSE p_billing_context->>'image_generation' END)::boolean,false) OR lower(p_model) ~ '^(gpt-image-|grok-imagine(?:$|-edit$|-image))')
+    target_platform:=g.platform; routed_model:=p_model;
+    IF g.platform='composite' THEN
+        IF p_model='__models__' THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
+        SELECT l.composite_route INTO route FROM s2a_private.personal_gateway_leases l
+            WHERE l.request_id=p_request_id AND l.key_id=k.id ORDER BY l.created_at DESC LIMIT 1;
+        IF route IS NULL THEN
+        route:=s2a_private.composite_resolve(g.id,p_model,CASE
+            WHEN p_billing_context->>'inbound_endpoint' ~ '/messages/count_tokens$' THEN 'count_tokens'
+            WHEN p_billing_context->>'inbound_endpoint' ~ '/messages$' THEN 'messages'
+            WHEN p_billing_context->>'inbound_endpoint' ~ '/chat/completions$' THEN 'chat_completions'
+            WHEN p_billing_context->>'inbound_endpoint' ~ '/embeddings$' THEN 'embeddings'
+            WHEN p_billing_context->>'inbound_endpoint' ~ '/images/(generations|edits)$' THEN 'images'
+            WHEN p_billing_context->>'inbound_endpoint' ~ '^/v1beta/' THEN 'gemini'
+            ELSE 'responses' END);
+        END IF;
+        IF route ? 'error' THEN RETURN route; END IF;
+        target_platform:=route->>'platform'; routed_model:=route->>'upstream_model';
+    END IF;
+    IF NOT coalesce(g.allow_image_generation,false) AND (coalesce((CASE WHEN target_platform='grok' THEN p_billing_context->>'grok_image_generation' ELSE p_billing_context->>'image_generation' END)::boolean,false) OR lower(p_model) ~ '^(gpt-image-|grok-imagine(?:$|-edit$|-image))')
         AND NOT coalesce((p_billing_context->>'count_only')::boolean,false)
         THEN RETURN jsonb_build_object('error','image_generation_forbidden','status',403); END IF;
     IF p_client_ip IS NOT NULL THEN
@@ -198,10 +217,10 @@ BEGIN
         FOR a IN SELECT accounts.* FROM s2a_private.accounts accounts
             JOIN public.account_groups ag ON ag.account_id=accounts.id AND ag.group_id=g.id
             WHERE accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
-                AND accounts.platform=g.platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
+                AND accounts.platform=target_platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
                 AND (bound_account_id IS NULL OR accounts.id=bound_account_id)
                 AND (NOT coalesce((p_billing_context->>'responses_websocket')::boolean,false) OR s2a_private.responses_websocket_mode(accounts.platform,accounts.type,accounts.extra)<>'off')
-                AND (NOT coalesce((p_billing_context->>'cache_create')::boolean,false) OR (g.platform='gemini' AND accounts.type='apikey'))
+                AND (NOT coalesce((p_billing_context->>'cache_create')::boolean,false) OR (target_platform='gemini' AND accounts.type='apikey'))
                 AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
                 AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp()
                 AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
@@ -210,11 +229,11 @@ BEGIN
                 AND (NOT g.require_privacy_set OR (accounts.platform<>'openai' OR accounts.extra->>'privacy_mode'='training_off'))
             ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
             FOR UPDATE OF accounts LOOP
-            IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',p_model) THEN CONTINUE; END IF;
+            IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',routed_model) THEN CONTINUE; END IF;
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
-            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket)
-                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false),coalesce((p_billing_context->>'web_search')::boolean,false),CASE WHEN p_billing_context->>'search_operation' IN ('web_search','x_search') THEN p_billing_context->>'search_operation' ELSE 'alpha_search' END,p_billing_context->>'inbound_endpoint',host(address),coalesce((p_billing_context->>'responses_websocket')::boolean,false)) RETURNING * INTO lease;
+            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket,composite_route)
+                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false),coalesce((p_billing_context->>'web_search')::boolean,false),CASE WHEN p_billing_context->>'search_operation' IN ('web_search','x_search') THEN p_billing_context->>'search_operation' ELSE 'alpha_search' END,p_billing_context->>'inbound_endpoint',host(address),coalesce((p_billing_context->>'responses_websocket')::boolean,false),route) RETURNING * INTO lease;
             UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
             EXIT;
         END LOOP;
@@ -224,9 +243,17 @@ BEGIN
     IF account ? 'error' THEN RETURN account || jsonb_build_object('status',503); END IF;
     IF (account->>'credential_version')::bigint<>lease.credential_version THEN RETURN jsonb_build_object('error','account_credentials_changed','status',409); END IF;
     SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
+    IF route IS NOT NULL THEN
+        route_mapping:=account->'credentials'->'model_mapping';
+        IF jsonb_typeof(route_mapping)='object' THEN
+            SELECT value#>>'{}' INTO route_target FROM jsonb_each(route_mapping)
+            WHERE jsonb_typeof(value)='string' AND (key=routed_model OR (right(key,1)='*' AND starts_with(routed_model,left(key,-1))))
+            ORDER BY (key=routed_model) DESC,octet_length(key) DESC,key COLLATE "C" LIMIT 1;
+        END IF;
+    END IF;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
         'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true))
-        || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') ELSE '{}'::jsonb END;
+        || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
 END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) FROM PUBLIC,anon,authenticated;

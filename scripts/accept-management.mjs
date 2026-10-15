@@ -707,6 +707,7 @@ try {
   sql(readFileSync(root + "/deploy/gateway-pricing.sql", "utf8"));
   sql(readFileSync(root + "/deploy/gateway-pricing.sql", "utf8"));
   if (process.env.S2A_ACCOUNT_VAULT === "1") {
+    sql(readFileSync(root + "/deploy/composite-routing.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gateway-maintenance.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
@@ -755,6 +756,7 @@ try {
   assert.equal(typeof managedKey.key, "string");
   const keyHash = createHash("sha256").update(managedKey.key).digest("hex");
   if (process.env.S2A_ACCOUNT_VAULT === "1") {
+    sql(readFileSync(root+"/tests/composite-routing.database.sql","utf8"));
     sql(`SELECT set_config('s2a.acceptance.user_id','${me.id}',false),set_config('s2a.acceptance.key_id','${managedKey.id}',false);`+readFileSync(root+"/tests/personal-gateway.database.sql","utf8"));
   }
   if (process.env.S2A_ACCOUNT_VAULT === "1" && process.env.S2A_PERSONAL_HTTP === "1") {
