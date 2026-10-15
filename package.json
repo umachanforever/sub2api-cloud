@@ -28,9 +28,12 @@
   },
   "dependencies": {
     "gpt-tokenizer": "4.0.3",
-    "nodemailer": "10.1.1"
+    "nodemailer": "10.1.1",
+    "proxy-agent": "6.5.0",
+    "ws": "8.22.0"
   },
   "devDependencies": {
-    "@types/node": "24.19.2"
+    "@types/node": "24.19.2",
+    "@types/ws": "8.18.1"
   }
 }

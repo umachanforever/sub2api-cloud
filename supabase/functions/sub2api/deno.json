@@ -2,6 +2,8 @@
   "imports": {
     "nodemailer": "npm:nodemailer@10.1.1",
     "gpt-tokenizer/encoding/o200k_base": "npm:gpt-tokenizer@4.0.3/encoding/o200k_base",
-    "gpt-tokenizer/encoding/cl100k_base": "npm:gpt-tokenizer@4.0.3/encoding/cl100k_base"
+    "gpt-tokenizer/encoding/cl100k_base": "npm:gpt-tokenizer@4.0.3/encoding/cl100k_base",
+    "ws": "npm:ws@8.22.0",
+    "proxy-agent": "npm:proxy-agent@6.5.0"
   }
 }

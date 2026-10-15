@@ -1,3 +1,5 @@
+import {relayGrokRealtime} from './grok_realtime.ts';
+import {resolveProxy} from './account_proxy.ts';
 import {imageGenerationIntent} from './image_policy.ts';
 import {countGeminiTokens} from './gemini_count_tokens.ts';
 import {validateGeminiCacheJson,geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
@@ -117,10 +119,12 @@ async function proxyWithIdentity(
     ) throw new HttpError(400, "invalid_model_id");
   }
   const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";
+  const realtime=path==='/v1/realtime'&&request.method==='GET';
+  if(realtime&&request.headers.get('upgrade')?.toLowerCase()!=='websocket')throw new HttpError(426,'websocket_upgrade_required');
   const customVoice=/^\/v1\/custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?$/.test(path);
   const customVoiceMethod=customVoice&&(path==='/v1/custom-voices'?['GET','POST']:/^\/v1\/custom-voices\/[^/]+\/audio$/.test(path)?['GET']:['GET','PATCH','DELETE']).includes(request.method);
-  const voiceKind=customVoiceMethod?'custom-voices':/^\/v1\/(tts|stt)$/.exec(path)?.[1];
-  const voice=customVoiceMethod||!!voiceKind&&request.method==='POST';
+  const voiceKind=realtime?'grok-voice-latest':customVoiceMethod?'custom-voices':/^\/v1\/(tts|stt)$/.exec(path)?.[1];
+  const voice=realtime||customVoiceMethod||!!voiceKind&&request.method==='POST';
   let voiceBytes:Uint8Array|undefined;
   let voiceBody:Record<string,unknown>|undefined;
   const grokSearchKind=/^\/(?:v1\/)?(web_search|x_search)$/.exec(path)?.[1] as GrokSearch['kind']|undefined;
@@ -187,7 +191,7 @@ async function proxyWithIdentity(
       const parsed=imageEdit && /^multipart\/form-data(?:;|$)/i.test(request.headers.get("content-type")??"") ? await imageForm(request,limit) : undefined;
       imageMultipart=parsed?.form;
       if(voiceKind==='stt'||customVoiceMethod&&!['GET','DELETE'].includes(request.method))voiceBytes=await voiceUpload(request,limit);
-      const raw = customVoiceMethod?{model:'custom-voices'}:voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
+      const raw = realtime?{model:'grok-voice-latest'}:customVoiceMethod?{model:'custom-voices'}:voiceBytes?{model:'stt'}:parsed?.body ?? await readBody(request,limit,gemini?validateGeminiCacheJson:undefined);
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }
@@ -202,7 +206,7 @@ async function proxyWithIdentity(
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
-      if(voice){if(!voiceBytes)voiceBody={...raw};raw.model=voiceKind;raw.stream=false;}
+      if(voice){if(!voiceBytes)voiceBody={...raw};raw.model=realtime?new URL(request.url).searchParams.get('model')?.trim()||'grok-voice-latest':voiceKind;raw.stream=false;}
       if(grokSearch){grokSearchOptions=grokSearchInput(raw,grokSearchKind!);raw.model='grok-4.6';raw.stream=false;}
       if(imageEdit && !imageMultipart)validateImageEdit(raw);
       if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
@@ -392,6 +396,15 @@ async function proxyWithIdentity(
       if(grokSearch&&(account.platform??'openai')!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
+      if(realtime){
+        if(platform!=='grok')throw new HttpError(400,'grok_voice_requires_grok_group');
+        const outbound=account.type==='apikey'?apiKeyRequest('grok',await decryptApiKeyCredentials(account,db.config.encryptionKey),'voice','/v1/realtime',undefined,request,signal):grokOAuthRequest(await credentialsFor(db,account),'voice','/v1/realtime',undefined,request,signal);
+        const target=new URL(outbound.url);target.searchParams.set('model',upstreamModel);
+        const transport=await resolveProxy(db,account.proxy_id,db.config.dataModel==='native');
+        providerDispatched=true;
+        return await relayGrokRealtime(request,target.href,new Headers(outbound.init.headers),transport,signal,finish);
+      }
+
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
       if (apiKey) {

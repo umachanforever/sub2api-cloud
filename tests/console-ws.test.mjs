@@ -26,3 +26,14 @@ test('console WebSocket rejects hostile origins, other routes and query credenti
  assert.equal(await rejected('/api/v1/admin/settings'),404);
  assert.equal(await rejected('/api/v1/admin/ops/ws/qps',{host:'evil.example'}),403);
 });
+
+test('console realtime tunnel uses the cloud function and preserves bearer headers and model',async t=>{
+ const upstream=createServer();upstream.on('upgrade',(req,socket)=>{
+  assert.equal(req.url,'/functions/v1/sub2api/v1/realtime?model=grok-voice-latest');assert.equal(req.headers.authorization,'Bearer client-key');
+  const accept=createHash('sha1').update(req.headers['sec-websocket-key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11').digest('base64');
+  socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);socket.write(Buffer.from([0x81,2,111,107]));
+ });
+ const upstreamPort=await listen(upstream,t),proxy=createConsoleServer({config:{mode:'local',supabase_url:`http://127.0.0.1:${upstreamPort}`,publishable_key:key,management_url:'http://127.0.0.1:1'}}),port=await listen(proxy,t);
+ const {default:Socket}=await import('ws');const socket=new Socket(`ws://127.0.0.1:${port}/v1/realtime?model=grok-voice-latest`,{headers:{authorization:'Bearer client-key'}});
+ const message=await new Promise((resolve,reject)=>{socket.once('message',data=>resolve(data.toString()));socket.once('error',reject);});assert.equal(message,'ok');socket.terminate();
+});

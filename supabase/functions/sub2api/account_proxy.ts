@@ -20,7 +20,23 @@ export async function proxyFetch(
   init?: RequestInit,
   native = false,
 ): Promise<Response> {
-  if (id == null) return db.fetchImpl(input, init);
+  const proxy=await resolveProxy(db,id,native);
+  if(!proxy)return db.fetchImpl(input,init);
+  return fetchWithProxy(
+    {
+      protocol: proxy.protocol,
+      host: proxy.host,
+      port: proxy.port,
+      username: proxy.username,
+      password: proxy.password,
+    },
+    input,
+    init,
+    db.fetchImpl,
+  );
+}
+export async function resolveProxy(db:Database,id:number|string|null|undefined,native=false):Promise<import('./proxy_transport.ts').TransportProxy|null>{
+  if (id == null) return null;
   if (
     native &&
     (!/^[1-9][0-9]{0,18}$/.test(String(id)) ||
@@ -36,7 +52,7 @@ export async function proxyFetch(
     p_id: native ? String(id) : proxyId(id),
   });
   if (route.error) throw new HttpError(route.status ?? 503, route.error);
-  if (route.proxy === null) return db.fetchImpl(input, init);
+  if (route.proxy === null) return null;
   if (!route.proxy) throw new HttpError(503, "proxy_route_unavailable");
   const proxy = route.proxy,
     secret = native
@@ -44,18 +60,7 @@ export async function proxyFetch(
       : await decryptSecret(proxy, db.config.encryptionKey);
   if (typeof secret.password !== "string")
     throw new HttpError(503, "proxy_credentials_unavailable");
-  return fetchWithProxy(
-    {
-      protocol: proxy.protocol,
-      host: proxy.host,
-      port: proxy.port,
-      username: proxy.username,
-      password: secret.password,
-    },
-    input,
-    init,
-    db.fetchImpl,
-  );
+  return {protocol:proxy.protocol,host:proxy.host,port:proxy.port,username:proxy.username,password:secret.password};
 }
 export function accountFetch(
   db: Database,
