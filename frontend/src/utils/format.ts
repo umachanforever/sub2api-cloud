@@ -59,7 +59,7 @@ export function formatNumber(num: number | null | undefined): string {
  * @returns Formatted string, such as "$1.25"
  */
 export function formatCurrency(amount: number | null | undefined, currency: string = 'USD'): string {
-  if (amount === null || amount === undefined) return '未提供'
+  if (amount === null || amount === undefined) return '$0.00'
 
   const locale = getLocale()
 

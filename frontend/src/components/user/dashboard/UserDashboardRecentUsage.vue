@@ -53,5 +53,5 @@ defineProps<{
   loading: boolean
 }>()
 const { t } = useI18n()
-const formatCost = (_c: number) => '未提供'
+const formatCost = (c: number) => c.toFixed(4)
 </script>

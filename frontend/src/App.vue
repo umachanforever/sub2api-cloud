@@ -163,7 +163,6 @@ onMounted(async () => {
 
 <template>
   <NavigationProgress />
-  <div role="status" class="relative z-50 bg-amber-50 px-4 py-2 text-center text-sm text-amber-900">Supabase 移植实验：金额、余额、缓存用量未提供；Token 汇总仅包含已知值。未移植操作会返回明确错误。</div>
   <RouterView />
   <Toast />
   <AnnouncementPopup />
