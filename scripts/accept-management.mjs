@@ -710,8 +710,8 @@ try {
     sql(readFileSync(root + "/deploy/composite-routing.sql", "utf8"));
     sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
     sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
-    sql(readFileSync(root + "/tests/pinned-models.database.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
+    sql(readFileSync(root + "/tests/pinned-models.database.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gateway-maintenance.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));

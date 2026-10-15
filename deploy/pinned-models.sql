@@ -25,13 +25,15 @@ BEGIN
   FROM jsonb_array_elements(cfg->'account_ids') WITH ORDINALITY v(value,ordinality)
   GROUP BY v.value
  ), eligible AS (
-  SELECT a.id,a.proxy_id,c.position FROM configured c
+  SELECT a.id,a.proxy_id,a.extra,c.position FROM configured c
   JOIN s2a_private.accounts a ON a.id=c.id
   JOIN public.account_groups ag ON ag.account_id=a.id AND ag.group_id=g.id
   WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.status='active' AND a.schedulable
    AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=statement_timestamp(),false)
  ) SELECT coalesce(jsonb_agg(public.s2a_gateway_account_snapshot(id)
-    ||jsonb_build_object('proxy_id',proxy_id::text) ORDER BY position),'[]'::jsonb)
+    ||jsonb_build_object('proxy_id',proxy_id::text,'model_passthrough',
+     CASE WHEN jsonb_typeof(extra->'openai_passthrough')='boolean' THEN (extra->>'openai_passthrough')::boolean
+      WHEN jsonb_typeof(extra->'openai_oauth_passthrough')='boolean' THEN (extra->>'openai_oauth_passthrough')::boolean ELSE false END) ORDER BY position),'[]'::jsonb)
  INTO sources FROM eligible;
  RETURN jsonb_build_object('accounts',sources,'fallback_to_scheduler',coalesce(cfg->'fallback_to_scheduler'='true'::jsonb,false),
   'model_allowlist',g.model_allowlist);

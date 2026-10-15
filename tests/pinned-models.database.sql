@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; other_group bigint; a bigint; b bigint; foreign_account bigint; sources jsonb; role_name text;
+DECLARE g bigint; other_group bigint; a bigint; b bigint; foreign_account bigint; sources jsonb; role_name text; u bigint; h text; decision jsonb;
 BEGIN
  FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
   IF has_function_privilege(role_name,'s2a_private.pinned_model_sources(bigint)','EXECUTE') THEN
@@ -22,6 +22,20 @@ BEGIN
  IF sources->'fallback_to_scheduler' IS DISTINCT FROM 'true'::jsonb THEN RAISE EXCEPTION 'fallback policy lost'; END IF;
  IF sources->'accounts'->0->>'credential_storage' IS DISTINCT FROM 'vault' OR sources->'accounts'->0->'credentials'->>'api_key' IS DISTINCT FROM 'synthetic-first' THEN RAISE EXCEPTION 'trusted pinned snapshot unavailable'; END IF;
  IF EXISTS(SELECT FROM s2a_private.accounts WHERE id IN (a,b) AND credentials::text LIKE '%synthetic-%') THEN RAISE EXCEPTION 'pinned credentials not encrypted at rest'; END IF;
+ INSERT INTO public.users(email,password_hash,concurrency) VALUES('pinned-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Pinned key') RETURNING s2a_key_hash INTO h;
+ decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF NOT decision ? 'pinned_catalog' OR decision ? 'lease_id' OR jsonb_array_length(decision->'pinned_catalog'->'accounts')<>2 THEN RAISE EXCEPTION 'HTTP discovery did not use pinned sources without a lease'; END IF;
+ UPDATE public.groups SET codex_models_manifest_config=jsonb_set(codex_models_manifest_config,'{fallback_to_scheduler}','false') WHERE id=g;
+ decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models","pinned_models_fallback":true}');
+ IF NOT decision ? 'pinned_catalog' THEN RAISE EXCEPTION 'disabled scheduler fallback bypassed'; END IF;
+ UPDATE public.groups SET codex_models_manifest_config=jsonb_set(codex_models_manifest_config,'{fallback_to_scheduler}','true') WHERE id=g;
+ decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models","pinned_models_fallback":true}');
+ IF decision->'account'->>'id' IS DISTINCT FROM b::text OR NOT decision ? 'lease_id' THEN RAISE EXCEPTION 'enabled fallback did not use normal scheduler'; END IF;
+ UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE s2a_key_hash=h;
+ decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF decision->>'error' IS DISTINCT FROM 'ip_forbidden' OR decision ? 'pinned_catalog' THEN RAISE EXCEPTION 'pinned discovery bypassed key IP policy'; END IF;
+ UPDATE public.api_keys SET ip_whitelist='[]' WHERE s2a_key_hash=h;
  UPDATE s2a_private.accounts SET auto_pause_on_expired=true,expires_at=now()-interval '1 minute' WHERE id=a;
  UPDATE s2a_private.accounts SET schedulable=false WHERE id=b;
  IF jsonb_array_length(s2a_private.pinned_model_sources(g)->'accounts')<>0 THEN RAISE EXCEPTION 'persistent ineligibility ignored'; END IF;

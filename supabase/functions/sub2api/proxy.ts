@@ -1,3 +1,5 @@
+import {codexManifestResponse} from './model_catalog_response.ts';
+import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
 import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,originalGeminiRestBody,originalMessagesToResponses,type OriginalChatBridge} from './original_chat_bridge.ts';
@@ -72,6 +74,7 @@ type ProviderAccount = Account & ({type:'service_account'}|{type?:'oauth'|'apike
   platform?: Platform;
 };
 type Reservation =
+  | {pinned_catalog:PinnedModelCatalog;error?:never}
   | {anthropic_catalog:string[];anthropic_capabilities?:CompositeCapabilitySource[];model_allowlist?:ModelAllowlist;error?:never}
   | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | {gemini_catalog_only:true;gemini_catalog_sources:GeminiCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
@@ -81,12 +84,7 @@ type Reservation =
     status: number;
   };
 
-async function codexManifestResponse(manifest:unknown,request:Request):Promise<Response>{
-  const serialized=JSON.stringify(manifest),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(serialized));
-  const etag='"'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')+'"';
-  const matched=request.headers.get('if-none-match')?.split(',').some(value=>value.trim()==='*'||value.trim().replace(/^W\//,'')===etag);
-  return new Response(matched?null:serialized,{status:matched?304:200,headers:{etag,'cache-control':'no-store',...(matched?{}:{'content-type':'application/json'})}});
-}
+
 
 export async function proxy(
   request: Request,
@@ -287,6 +285,7 @@ async function proxyWithIdentity(
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const imageIntent=!models&&!inputTokens&&!messageTokens&&!geminiTokens?{image_generation:imageGenerationIntent(path,policyModel,body),grok_image_generation:imageGenerationIntent(path,policyModel,body,'grok')}:undefined;
   const excluded: string[] = [];
+  let pinnedFallback = false;
   // One timeout covers all retries and the stream; the database lease lasts longer.
   const signal = AbortSignal.any([
     request.signal,
@@ -303,6 +302,7 @@ async function proxyWithIdentity(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(routingModel),
+        ...(pinnedFallback?{pinned_models_fallback:true}:{}),
         ...(db.config.dataModel==='native'?{inbound_endpoint:path.slice(0,128)}:{}),
         ...(imageIntent&&(imageIntent.image_generation||imageIntent.grok_image_generation)?imageIntent:{}),
         ...(imageJob?{image_task:imageJob.id,image_job_lease:imageJob.lease_id}:{}),
@@ -316,6 +316,14 @@ async function proxyWithIdentity(
     });
     if (reservation.error) {
       throw new HttpError(reservation.status, reservation.error);
+    }
+    if('pinned_catalog' in reservation){
+      if(!models||nativeGeminiModels||pinnedFallback)throw new HttpError(503,'invalid_pinned_model_catalog');
+      const result=await pinnedModelCatalog(db,reservation.pinned_catalog,request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels);
+      if(result)return result;
+      pinnedFallback=true;
+      attempt--;
+      continue;
     }
     if('anthropic_catalog' in reservation){
       if(!models||nativeGeminiModels)throw new HttpError(503,'invalid_anthropic_catalog');
@@ -408,6 +416,22 @@ async function proxyWithIdentity(
     };
     let chatBridge:OriginalChatBridge|undefined;
     try {
+      if(pinnedFallback&&models){
+        providerDispatched=true;
+        let result:Response|null;
+        try{
+          result=await pinnedModelCatalog(db,{accounts:[account as PinnedModelCatalog['accounts'][number]],model_allowlist},request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels);
+        }catch(error){
+          if(error instanceof HttpError&&error.code==='pinned_model_upstream_failed'&&attempt<2){
+            await finish(502,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'failed'});
+            excluded.push(account.id);continue;
+          }
+          throw error;
+        }
+        if(!result)throw new HttpError(503,'invalid_pinned_model_catalog');
+        await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});
+        return result;
+      }
       if(db.config.dataModel==='native'&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===false&&!models&&!inputTokens&&!messageTokens&&!geminiTokens&&imageGenerationIntent(path,upstreamModel,body,account.platform))throw new HttpError(403,'image_generation_forbidden');
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');

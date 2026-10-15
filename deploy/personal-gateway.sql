@@ -192,6 +192,11 @@ BEGIN
     ELSIF jsonb_array_length(coalesce(k.ip_blacklist, '[]'::jsonb)) > 0 THEN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
     END IF;
+    IF p_model='__models__' AND g.platform='openai' AND g.codex_models_manifest_config->'enabled'='true'::jsonb
+        AND NOT (coalesce(p_billing_context->'pinned_models_fallback'='true'::jsonb,false)
+            AND coalesce(g.codex_models_manifest_config->'fallback_to_scheduler'='true'::jsonb,false)) THEN
+        RETURN jsonb_build_object('pinned_catalog',s2a_private.pinned_model_sources(g.id));
+    END IF;
     IF native_gemini_catalog AND g.platform IN ('gemini','composite') THEN gemini_sources:=s2a_private.gemini_catalog_sources(g.id); END IF;
     IF p_model='__models__' AND g.platform='anthropic' AND coalesce(p_billing_context->>'inbound_endpoint','') ~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$' THEN
         RETURN jsonb_build_object('anthropic_catalog',s2a_private.anthropic_catalog_models(g.id),'model_allowlist',g.model_allowlist,'anthropic_capabilities',s2a_private.composite_capability_sources(g.id));
@@ -314,7 +319,9 @@ BEGIN
             ORDER BY candidate.rank,(m.key=candidate.model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1;
         END IF;
     END IF;
-    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
+    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text,'model_passthrough',
+        CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean
+            WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END),
         'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
         || CASE WHEN gemini_sources IS NOT NULL THEN jsonb_build_object('gemini_catalog_sources',gemini_sources) ELSE '{}'::jsonb END
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
