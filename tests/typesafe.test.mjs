@@ -6,11 +6,11 @@ import {validateSystemOneJson,systemOneTokens} from '../supabase/functions/sub2a
 import {nativeResponse} from '../supabase/functions/sub2api/api_key_provider.ts';
 const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
 const payload={model:'jev-latest',state:{text:'example'},questions:{valid:{type:'noul',instructions:'Is this valid?'}}};
-test('System One relays its native contract and records rounded usage through native admission',async()=>{
+for(const group of ['typesafe','composite'])test(`System One ${group} relays its native contract and records rounded usage through native admission`,async()=>{
  const stored=await encryptCredentials({api_key:'upstream-private'},config.encryptionKey),finishes=[];let calls=0;
  const wire=' { "answers": {"valid":true}, "model":"jev-latest", "usage":{"input_tokens":"2.6","output_tokens":1} }\n';
  const handler=createBackendHandler(config,async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'typesafe'});
+  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:group});
   if(String(url).endsWith('/s2a_personal_acquire')){assert.equal(JSON.parse(init.body).p_model,'jev-latest');return Response.json({lease_id:'lease',model_sources:{mapping:{'*':'wrong-model'}},account:{...stored,id:'1',platform:'typesafe',type:'apikey',credential_version:1}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
@@ -54,4 +54,16 @@ test('System One preserves provider counts above the PostgreSQL integer range',a
   assert.equal(status,200);assert.equal(usage.input,2**40);assert.equal(usage.output,2147483648);completed=true;
  });
  assert.equal(await response.text(),wire);assert.equal(completed,true);
+});
+test('Composite System One cannot dispatch a resolved non-TypeSafe account',async()=>{
+ const stored=await encryptCredentials({api_key:'private-openai-key'},config.encryptionKey);let dispatched=0;const finishes=[];
+ const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'composite'});
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'1',platform:'openai',type:'apikey',credential_version:1}});
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(String(url).includes('/rpc/'))return Response.json(null);
+  dispatched++;throw Error('Wrong provider must not receive the native body or credentials');
+ });
+ const response=await handler(new Request('https://gateway/v1/systemone',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify(payload)}));
+ assert.equal(response.status,400);assert.equal(dispatched,0);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'failed');
 });

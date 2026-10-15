@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
+DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; ts bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
 BEGIN
  IF has_function_privilege('service_role','s2a_private.composite_resolve(bigint,text,text)','EXECUTE') THEN RAISE EXCEPTION 'private resolver exposed'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('composite-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
@@ -67,5 +67,10 @@ BEGIN
  UPDATE public.composite_model_routes SET target_platform='antigravity' WHERE group_id=g AND public_model='gemini-public';
  acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
  IF acquired->>'upstream_model' IS DISTINCT FROM 'antigravity-normalized' THEN RAISE EXCEPTION 'Composite Antigravity normalized mapping failed'; END IF;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Composite TypeSafe','typesafe','apikey','{"api_key":"synthetic"}',10) RETURNING id INTO ts;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(ts,g);
+ INSERT INTO public.composite_model_routes(group_id,public_model,target_platform,upstream_model,endpoint) VALUES(g,'jev-latest','openai','gpt-6','responses');
+ acquired:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/systemone"}');
+ IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM ts::text THEN RAISE EXCEPTION 'System One incorrectly used a Responses-specific Composite route'; END IF;
 END $$;
 ROLLBACK;

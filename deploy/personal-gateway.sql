@@ -121,6 +121,7 @@ BEGIN
             WHEN p_billing_context->>'inbound_endpoint' ~ '/embeddings$' THEN 'embeddings'
             WHEN p_billing_context->>'inbound_endpoint' ~ '/images/(generations|edits)$' THEN 'images'
             WHEN p_billing_context->>'inbound_endpoint' ~ '^/v1beta/' THEN 'gemini'
+            WHEN p_billing_context->>'inbound_endpoint'='/v1/systemone' THEN 'any'
             ELSE 'responses' END);
         END IF;
         IF route ? 'error' THEN RETURN route; END IF;

@@ -179,7 +179,7 @@ async function proxyWithIdentity(
       const policy=await db.rpc<{platform?:string;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
       if(!policy)throw new HttpError(503,'database_unavailable');
       if(policy.error)throw new HttpError(policy.status??403,policy.error);
-      if(!['gemini','antigravity'].includes(policy.platform??''))throw new HttpError(400,'gemini_group_required');
+      if(!['gemini','antigravity','composite'].includes(policy.platform??''))throw new HttpError(400,'gemini_group_required');
     }catch(error){await request.body?.cancel().catch(()=>{});throw error;}
   }
   if(voice){
@@ -189,7 +189,7 @@ async function proxyWithIdentity(
   if(systemOne){
     const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
     if(!policy||policy.error)throw new HttpError(policy?.status??403,policy?.error??'database_unavailable');
-    if(policy.platform!=='typesafe')throw new HttpError(400,'systemone_requires_typesafe_group');
+    if(!['typesafe','composite'].includes(policy.platform??''))throw new HttpError(400,'systemone_requires_typesafe_group');
   }
   let body: Record<string, unknown> | undefined;
   let imageMultipart:FormData|undefined;

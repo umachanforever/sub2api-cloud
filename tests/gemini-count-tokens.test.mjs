@@ -45,3 +45,16 @@ test('Gemini token counts reject other groups before reading the request or acqu
  const body=new ReadableStream({pull(){reads++;},cancel(){canceled=true;}},{highWaterMark:0});
  const response=await handler(new Request('https://gateway/v1beta/models/gemini-count:countTokens',{method:'POST',headers:{authorization:'Bearer sk-client'},body,duplex:'half'}));assert.equal(response.status,400);assert.equal(reads,0);assert.equal(canceled,true);assert.equal(acquired,0);
 });
+
+for(const platform of ['gemini','openai'])test(`Composite Gemini token counts use resolved ${platform} account without bypassing concrete transport checks`,async()=>{
+ const stored=await encryptCredentials({api_key:'provider-private'},config.encryptionKey);let dispatched=0;const finishes=[];
+ const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'composite'});
+  if(String(url).endsWith('/s2a_personal_acquire')){const args=JSON.parse(init.body);assert.equal(args.p_model,'public-count');assert.equal(args.p_billing_context.count_only,true);return Response.json({lease_id:'lease',upstream_model:'gemini-upstream',account:{...stored,id:'1',platform,type:'apikey',credential_version:1}});}
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(String(url).includes('/rpc/'))return Response.json(null);
+  dispatched++;assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models/gemini-upstream:countTokens');return Response.json({totalTokens:17});
+ });
+ const response=await handler(new Request('https://gateway/v1beta/models/public-count:countTokens',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify(input)}));
+ assert.equal(response.status,platform==='gemini'?200:400);assert.equal(dispatched,platform==='gemini'?1:0);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,platform==='gemini'?'completed':'failed');
+});
