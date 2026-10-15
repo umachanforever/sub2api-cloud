@@ -1,5 +1,6 @@
 import './compat/wasm_exec.js';
 import {HttpError} from './db.ts';
+import {messagesToAPIResponses} from './anthropic_protocol.ts';
 
 type Item=Record<string,any>;
 type Runtime=typeof globalThis & {Go:new()=>{importObject:WebAssembly.Imports;run(instance:WebAssembly.Instance):Promise<void>};__s2aCompatCall(input:string):string};
@@ -77,6 +78,19 @@ export async function originalChatBridge(body:Item,scope:string):Promise<Origina
 export async function originalAnthropicBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'anthropic');}
 export async function originalGeminiBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'gemini');}
 export async function originalGeminiRestBody(body:Item):Promise<Item>{return (await converter())('gemini_rest',body);}
+export async function originalMessagesToResponses(body:Item):Promise<Item>{
+  const tools=Array.isArray(body.tools)?body.tools.filter((tool:Item)=>!/^web_search(?:_|$)/.test(String(tool?.type??''))):body.tools;
+  const validated=messagesToAPIResponses({...body,tools});
+  const converted=(await converter())('messages_request',body);
+  // Keep validated PDF, URL and tool-result attachments supported by the cloud bridge.
+  converted.input=validated.input;converted.model=validated.model;
+  // API bridges retain the caller's output budget; Codex OAuth has separate limits.
+  converted.max_output_tokens=body.max_tokens;
+  converted.stream=true;converted.store=false;
+  converted.parallel_tool_calls=body.tool_choice?.disable_parallel_tool_use!==true;
+  if(body.thinking===undefined&&body.output_config?.effort===undefined&&!/^gpt-(?:5|6)/.test(String(body.model??''))){delete converted.reasoning;delete converted.include;}
+  return converted;
+}
 async function originalBridge(body:Item,scope:string,protocol:string):Promise<OriginalChatBridge>{
   if(Array.isArray(body.input))rememberReasoning(scope,{response:{output:body.input}});
   const call=await converter(),opened=call(`open_${protocol}`,body,undefined,rememberedReasoning(scope,body.input));

@@ -1,6 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
-import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,originalGeminiRestBody,type OriginalChatBridge} from './original_chat_bridge.ts';
+import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,originalGeminiRestBody,originalMessagesToResponses,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {invalidateVertexTokenContext} from './vertex_auth.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
@@ -65,7 +65,6 @@ import {
 
 import {
   messagesToResponses,
-  messagesToAPIResponses,
   responseToMessages,
   streamMessages,
 } from "./anthropic_protocol.ts";
@@ -475,7 +474,7 @@ async function proxyWithIdentity(
       const geminiBridgePath='/v1beta/models/'+encodeURIComponent(upstreamModel)+':streamGenerateContent';
       let geminiBody=forwardedBody;
       if(nativeGeminiBridge){
-        let source;try{source=chat?chatToAPIResponses(forwardedBody!):messages?messagesToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+        let source;try{source=chat?chatToAPIResponses(forwardedBody!):messages?await originalMessagesToResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
         chatBridge=await originalGeminiBridge(source,keyHash);geminiBody=chatBridge.body;
       }
       let anthropicBody=forwardedBody;
@@ -518,11 +517,11 @@ async function proxyWithIdentity(
         const bridgeAnthropic=(chat||protocol==='responses')&&upstreamProtocol==='anthropic';
         let outgoingBody = nativeGeminiBridge?geminiBody:platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeResponses) {
-          try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
+          try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : await originalMessagesToResponses(forwardedBody!); }
           catch { throw new HttpError(400, "invalid_request"); }
         }
         if(bridgeChat){
-          let source;try{source=messages?messagesToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+          let source;try{source=messages?await originalMessagesToResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
           chatBridge=await originalChatBridge(source,keyHash);outgoingBody=chatBridge.body;
         }
         if(bridgeAnthropic){

@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+import {originalChatBridgeCount,originalMessagesToResponses} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+
+test('original Messages adapter keeps cloud PDF attachments and signed reasoning while lowering server tools',async()=>{
+ const request={model:'gemini-test',max_tokens:32,thinking:{type:'disabled'},tool_choice:{type:'auto',disable_parallel_tool_use:true},tools:[{type:'web_search_20250305',name:'web_search'}],messages:[
+  {role:'assistant',content:[{type:'thinking',thinking:'prior',signature:'signed-thinking'},{type:'text',text:'prior answer'}]},
+  {role:'user',content:[{type:'document',title:'report.pdf',source:{type:'base64',media_type:'application/pdf',data:'AA=='}}]},
+ ]};
+ const result=await originalMessagesToResponses(request);
+ assert.equal(result.tools[0].type,'web_search');assert.equal(result.max_output_tokens,32);assert.equal(result.parallel_tool_calls,false);assert.equal(result.reasoning.effort,'none');
+ assert.equal(result.input.find(item=>item.type==='reasoning').encrypted_content,'signed-thinking');
+ const file=result.input.flatMap(item=>Array.isArray(item.content)?item.content:[]).find(part=>part.type==='input_file');
+ assert.equal(file.filename,'report.pdf');assert.equal(file.file_data,'data:application/pdf;base64,AA==');
+ assert.equal(await originalChatBridgeCount(),0);
+});
 
 function call(operation,body,id){
   const result=JSON.parse(globalThis.__s2aCompatCall(JSON.stringify({operation,body,id})));

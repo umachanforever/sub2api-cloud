@@ -243,13 +243,13 @@ test('Command Code explicit rules override discovery and failed discovery falls 
   }
 });
 
-test('Gemini compatibility applies original AI Studio search-tool normalization before dispatch',async()=>{
+for(const protocol of ['responses','messages'])test(`Gemini ${protocol} compatibility applies original AI Studio search-tool normalization before dispatch`,async()=>{
  const value=await fixture('gemini',(_url,init)=>{
   const sent=JSON.parse(init.body);assert.deepEqual(sent.tools,[{google_search:{}}]);
   return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'answer'}]}}]});
  });
- const response=await value.request('/v1/responses',{model:'gemini-test',input:'search',stream:false,max_output_tokens:20,tools:[{type:'web_search'}]});
- assert.equal(response.status,200);assert.equal((await response.json()).output[0].content[0].text,'answer');
+ const response=await value.request('/v1/'+protocol,{model:'gemini-test',stream:false,...(protocol==='responses'?{input:'search',max_output_tokens:20,tools:[{type:'web_search'}]}:{messages:[{role:'user',content:'search'}],max_tokens:20,tools:[{type:'web_search_20250305',name:'web_search'}]})});
+ assert.equal(response.status,200);const output=await response.json();assert.equal(protocol==='responses'?output.output[0].content[0].text:output.content[0].text,'answer');
 });
 
 for(const protocol of ['responses','chat/completions','messages'])for(const stream of [false,true])test(`Gemini API-key compatibility serves ${protocol} with stream=${stream}`,async()=>{

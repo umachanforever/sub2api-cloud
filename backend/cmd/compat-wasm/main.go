@@ -32,6 +32,13 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "messages_request" {
+		var body apicompat.AnthropicRequest
+		if err := json.Unmarshal(input.Body, &body); err != nil {
+			return nil, err
+		}
+		return apicompat.AnthropicToResponses(&body)
+	}
 	if input.Operation == "gemini_rest" {
 		return json.RawMessage(normalizeGeminiRequestForAIStudio(input.Body)), nil
 	}
