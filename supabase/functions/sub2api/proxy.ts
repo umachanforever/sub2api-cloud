@@ -2,6 +2,7 @@ import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {vertexGeminiRequest} from './vertex_gemini.ts';
+import {vertexAnthropicRequest} from './vertex_anthropic.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -450,7 +451,16 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      if(account.type==='service_account'&&platform==='gemini'){
+      if(account.type==='service_account'&&platform==='anthropic'&&messages){
+        const credentials=await decryptSecret(account,db.config.encryptionKey);
+        const routed=(reservation as {composite_route?:{upstream_model?:string}}).composite_route?.upstream_model??routingModel;
+        const explicit=!!model_sources&&mappedTarget(model_sources.mapping,routed,'anthropic')!==undefined;
+        providerDispatched=true;
+        const outgoing=await vertexAnthropicRequest(credentials,forwardedBody!,request,signal,(url,init)=>accountFetch(db,account,url,init),explicit);
+        native=outgoing;dispatchedModel=outgoing.upstreamModel;errorContext.upstreamModel=dispatchedModel;attemptContext.upstreamModel=dispatchedModel;
+        upstreamEndpoint=usageEndpoint(outgoing.url);
+        upstream=await accountFetch(db,account,outgoing.url,outgoing.init);
+      } else if(account.type==='service_account'&&platform==='gemini'){
         const credentials=await decryptSecret(account,db.config.encryptionKey);
         providerDispatched=true;
         if(models){
