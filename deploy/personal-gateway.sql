@@ -20,6 +20,7 @@ ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
 CREATE INDEX IF NOT EXISTS personal_gateway_account_slots ON s2a_private.personal_gateway_leases(account_id,expires_at) WHERE finished_at IS NULL;
 CREATE INDEX IF NOT EXISTS personal_gateway_user_slots ON s2a_private.personal_gateway_leases(user_id,expires_at) WHERE finished_at IS NULL;
+CREATE INDEX IF NOT EXISTS personal_gateway_user_recent ON s2a_private.personal_gateway_leases(user_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS personal_gateway_request ON s2a_private.personal_gateway_leases(request_id);
 ALTER FUNCTION public.invalidate_group_usage_rollup_state() SET search_path=pg_catalog,public,pg_temp;
 ALTER FUNCTION public.invalidate_group_usage_rollup_state_after_insert() SET search_path=pg_catalog,public,pg_temp;
@@ -53,6 +54,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
+    group_rpm integer; user_rpm integer;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
 BEGIN
@@ -135,6 +137,19 @@ BEGIN
             RETURN jsonb_build_object('error','request_finished','status',409);
         END IF;
         IF lease.finished_at IS NULL AND lease.expires_at<=clock_timestamp() THEN RETURN jsonb_build_object('error','request_expired','status',409); END IF;
+    END IF;
+    -- Retries and idempotent replays share one RPM admission across provider accounts.
+    IF lease.id IS NULL THEN
+        now_at:=clock_timestamp();
+        SELECT coalesce(r.rpm_override,g.rpm_limit) INTO group_rpm
+            FROM (SELECT 1) seed LEFT JOIN public.user_group_rate_multipliers r ON r.user_id=k.user_id AND r.group_id=g.id;
+        IF group_rpm>0 AND (SELECT count(DISTINCT request_id) FROM s2a_private.personal_gateway_leases
+            WHERE user_id=k.user_id AND group_id=g.id AND created_at>=date_trunc('minute',now_at))>=group_rpm
+            THEN RETURN jsonb_build_object('error','group_rate_limit_exceeded','status',429); END IF;
+        SELECT rpm_limit INTO user_rpm FROM public.users WHERE id=k.user_id;
+        IF user_rpm>0 AND (SELECT count(DISTINCT request_id) FROM s2a_private.personal_gateway_leases
+            WHERE user_id=k.user_id AND created_at>=date_trunc('minute',now_at))>=user_rpm
+            THEN RETURN jsonb_build_object('error','rate_limit_exceeded','status',429); END IF;
     END IF;
     IF lease.id IS NULL OR lease.finished_at IS NOT NULL THEN
         -- The user row lock serializes admissions across every key and account.

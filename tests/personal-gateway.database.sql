@@ -374,3 +374,36 @@ BEGIN
  IF second ? 'error' THEN RAISE EXCEPTION 'zero user concurrency should be unlimited'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint; g bigint; a bigint; b bigint; h text; h2 text; request uuid:=gen_random_uuid(); r jsonb;
+BEGIN
+ INSERT INTO public.users(email,password_hash,concurrency,rpm_limit) VALUES('rpm-'||gen_random_uuid()||'@example.invalid','!fixture',0,0) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform,rpm_limit) VALUES('RPM fixture','openai',1) RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'RPM first') RETURNING s2a_key_hash INTO h;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'RPM second') RETURNING s2a_key_hash INTO h2;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('RPM account','openai','apikey','{"api_key":"synthetic"}',10,0) RETURNING id INTO a;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('RPM retry account','openai','apikey','{"api_key":"synthetic"}',10,10) RETURNING id INTO b;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
+ r:=public.s2a_personal_acquire(h,'gpt-test',request);
+ IF r ? 'error' THEN RAISE EXCEPTION 'first RPM request failed'; END IF;
+ IF public.s2a_personal_acquire(h,'gpt-test',request) IS DISTINCT FROM r THEN RAISE EXCEPTION 'RPM rejected idempotent replay'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,503,'failed',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ r:=public.s2a_personal_acquire(h,'gpt-test',request,ARRAY[a]);
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'RPM rejected provider retry'; END IF;
+ IF public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid())->>'error' IS DISTINCT FROM 'group_rate_limit_exceeded' THEN RAISE EXCEPTION 'group RPM bypassed with second key'; END IF;
+ INSERT INTO public.user_group_rate_multipliers(user_id,group_id,rpm_override) VALUES(u,g,2);
+ r:=public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid());
+ IF r ? 'error' THEN RAISE EXCEPTION 'positive override failed or provider retry counted twice'; END IF;
+ UPDATE public.user_group_rate_multipliers SET rpm_override=0 WHERE user_id=u AND group_id=g;
+ r:=public.s2a_personal_acquire(h2,'gpt-test',gen_random_uuid());
+ IF r ? 'error' THEN RAISE EXCEPTION 'zero override did not disable group RPM'; END IF;
+ UPDATE public.users SET rpm_limit=3 WHERE id=u;
+ IF public.s2a_personal_acquire(h,'gpt-test',gen_random_uuid())->>'error' IS DISTINCT FROM 'rate_limit_exceeded' THEN RAISE EXCEPTION 'group override bypassed user RPM'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET created_at=date_trunc('minute',clock_timestamp())-interval '1 second' WHERE user_id=u;
+ r:=public.s2a_personal_acquire(h,'gpt-test',gen_random_uuid());
+ IF r ? 'error' THEN RAISE EXCEPTION 'RPM did not reset at minute boundary'; END IF;
+END $$;
+ROLLBACK;
