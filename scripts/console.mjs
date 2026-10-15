@@ -79,7 +79,7 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir, requ
       }
       if (
         (!url.pathname.startsWith("/api/v1/") && !gatewayPath) ||
-        (/%/.test(url.pathname) && !/^\/api\/v1\/pages\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\/images\//.test(url.pathname)) || /\\/.test(url.pathname)
+        (/%/.test(url.pathname) && !/^\/api\/v1\/pages\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\/images\//.test(url.pathname) && !/^\/(?:v1\/)?images\/batches\/imgbatch_[a-f0-9]{32}\/items\/[^/]+\/content$/.test(url.pathname)) || /\\/.test(url.pathname)
       ) return reply(404, null, "not_found");
       const bodyLimit = gatewayPath ? requestBodyLimit(url.pathname, requestLimits) : 1_048_576;
       if (Number(request.headers["content-length"]) > bodyLimit) {
