@@ -1,5 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
+import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -42,7 +43,7 @@ import {
   type NativeProtocol,
   nativeResponse,
 } from "./api_key_provider.ts";
-import { decryptApiKeyCredentials } from "./credential_store.ts";
+import { decryptApiKeyCredentials,decryptSecret } from "./credential_store.ts";
 import { hashKey, readBody } from "./validation.ts";
 import { json } from "./http.ts";
 import { trackedStream, UsageObserver, type Usage } from "./stream.ts";
@@ -60,9 +61,8 @@ import {
   streamMessages,
 } from "./anthropic_protocol.ts";
 
-type ProviderAccount = Account & {
+type ProviderAccount = Account & ({type:'service_account'}|{type?:'oauth'|'apikey'}) & {
   platform?: Platform;
-  type?: "oauth" | "apikey";
 };
 type Reservation =
   | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
@@ -394,6 +394,7 @@ async function proxyWithIdentity(
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');
       if (search) {
+        if(account.type==='service_account')throw new HttpError(501,'provider_protocol_unsupported');
         let result:Awaited<ReturnType<typeof alphaSearch>>;
         try{result=await alphaSearch(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});}
         catch(error){
@@ -416,6 +417,7 @@ async function proxyWithIdentity(
         return json(200,counted);
       }
       if (inputTokens || messageTokens) {
+        if(account.type==='service_account')throw new HttpError(501,'provider_protocol_unsupported');
         const input_tokens=messageTokens
           ? await countMessageTokens(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;})
           : await countInputTokens(db,account,forwardedBody!,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});
@@ -447,7 +449,12 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      if (apiKey) {
+      if(account.type==='service_account'&&platform==='gemini'&&models){
+        const credentials=await decryptSecret(account,db.config.encryptionKey);
+        native={url:'',init:{},streaming:false};
+        providerDispatched=true;
+        upstream=await vertexGeminiCatalog(credentials,forwardedPath,(url,init)=>accountFetch(db,account,url,init),signal);
+      } else if (apiKey) {
         const credentials = await decryptApiKeyCredentials(
           account,
           db.config.encryptionKey,
