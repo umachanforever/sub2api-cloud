@@ -1,3 +1,4 @@
+import {grokImageBody} from './grok_images.ts';
 import { normalizeModernCodexResponses } from "./codex_models.ts";
 import { grokHeaders } from './grok_config.ts';
 import { mappedCatalog, type ModelSources } from "./model_mapping.ts";
@@ -48,7 +49,7 @@ export function apiKeyRequest(
   ) as ApiKeyCredentials;
   if (
     (["openai", "grok"].includes(platform) &&
-      !["chat", "responses", "models", ...(platform === "openai" ? ["images", "embeddings"] : ["voice"])].includes(protocol)) ||
+      !["chat", "responses", "models", "images", ...(platform === "openai" ? ["embeddings"] : ["voice"])].includes(protocol)) ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
     (path.startsWith("/v1beta/models") && protocol === "models" &&
@@ -117,7 +118,7 @@ export function apiKeyRequest(
       query.set(key, value);
     }
   } else if (platform === "gemini" && streaming) query.set("alt", "sse");
-  const outbound = body ? structuredClone(body) : undefined;
+  const outbound = body ? platform === "grok" && protocol === "images" ? grokImageBody(body,path.endsWith("/edits")) : structuredClone(body) : undefined;
   return {
     url: (validated.base_url || origins[platform]) + providerPath +
       (query.size ? `?${query}` : ""),

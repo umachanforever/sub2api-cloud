@@ -904,3 +904,21 @@ test('embeddings use the text request limit before account acquisition',async()=
  const r=await f.request('/v1/embeddings',{model:'text-embedding-3-small',input:'x'.repeat(200)});
  assert.equal(r.status,413);assert.equal(f.leases.length,0);
 });
+
+test('Grok images use native generation and edit endpoints with shared accounting',async()=>{
+ const calls=[];
+ const value=await fixture('grok',(url,init)=>{
+  calls.push({url,body:JSON.parse(init.body)});
+  return Response.json({data:[{url:'https://images.example/result.png'}],usage:{input_tokens:2,output_tokens:7}});
+ },{api_key:'provider-secret',base_url:'https://api.x.ai'});
+ const generated=await value.request('/v1/images/generations',{model:'grok-imagine',prompt:'A bird',size:'1024x1024'});
+ assert.equal(generated.status,200);assert.equal((await generated.json()).data.length,1);
+ assert.equal(calls[0].url,'https://api.x.ai/v1/images/generations');
+ assert.equal(calls[0].body.model,'grok-imagine-image-quality');assert.equal(calls[0].body.resolution,'1k');assert.equal(calls[0].body.aspect_ratio,'1:1');assert.equal(calls[0].body.size,undefined);
+ const edited=await value.request('/v1/images/edits',{model:'grok-imagine-image',prompt:'Make blue',images:[{image_url:'https://images.example/source.png'}]});
+ assert.equal(edited.status,200);await edited.json();
+ assert.equal(calls[1].url,'https://api.x.ai/v1/images/edits');assert.deepEqual(calls[1].body.image,{image_url:'https://images.example/source.png'});assert.equal(calls[1].body.images,undefined);
+ assert.equal(value.finishes.at(-1).p_input_tokens,2);assert.equal(value.finishes.at(-1).p_output_tokens,7);
+ const rejected=await value.request('/v1/images/edits',{model:'grok-imagine-image',prompt:'Make blue',images:Array.from({length:4},()=>({image_url:'https://images.example/source.png'}))});
+ assert.equal(rejected.status,400);assert.equal(calls.length,2);
+});

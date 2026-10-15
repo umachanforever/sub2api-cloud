@@ -5,6 +5,7 @@ import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from '.
 import {imageResponses} from './image_responses.ts';
 import {oauthImageRequest,oauthImageOutput,directModels} from './oauth_images.ts';
 import {imageForm,validateImageEdit} from './image_input.ts';
+import {grokImageForm} from './grok_images.ts';
 import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
 import {requestBodyLimit} from './request_limits.ts';
@@ -356,7 +357,7 @@ export async function proxy(
         return json(200,{...(inputTokens ? {object:"response.input_tokens"} : {}),input_tokens});
       }
       if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
-      if (images && (account.platform ?? "openai") !== "openai") throw new HttpError(501, "provider_protocol_unsupported");
+      if (images && !["openai","grok"].includes(account.platform ?? "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if(grokSearch&&(account.platform??'openai')!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
@@ -369,7 +370,7 @@ export async function proxy(
         );
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
         const bridgeMessages = platform === "openai" && messages;
-        let outgoingBody = forwardedBody;
+        let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeMessages) {
           try { outgoingBody = messagesToAPIResponses(forwardedBody!); }
           catch { throw new HttpError(400, "invalid_request"); }
@@ -389,7 +390,7 @@ export async function proxy(
           else native.init.body=JSON.stringify(voiceBody);
           native.init.headers=headers;
         }
-        if(imageMultipart){
+        if(imageMultipart && platform === "openai"){
           imageMultipart.set("model",upstreamModel);
           const headers=new Headers(native.init.headers);headers.delete("content-type");
           native={...native,init:{...native.init,headers,body:imageMultipart}};
@@ -412,7 +413,7 @@ export async function proxy(
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }
           const outgoing = platform === "grok"
-            ? grokOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
+            ? grokOAuthRequest(credentials, protocol, forwardedPath, imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody, request, signal)
             : platform === "gemini"
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
             : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
@@ -547,7 +548,7 @@ export async function proxy(
           if(value?.status&&value.status!=='completed')throw new HttpError(502,'search_upstream_failed');
           upstream=Response.json(value,{status:upstream.status});
         }
-        if(images&&!apiKey&&!directModels.has(String(forwardedBody?.model)))upstream=await imageResponses(upstream,native.streaming);
+        if(images&&platform==="openai"&&!apiKey&&!directModels.has(String(forwardedBody?.model)))upstream=await imageResponses(upstream,native.streaming);
         return await nativeResponse(
           upstream,
           platform,
@@ -561,7 +562,7 @@ export async function proxy(
           model_sources,
           aliasCatalog?decodeURIComponent(modelId!):undefined,
           errorContext.started,
-          grokSearch ? (value)=>grokSearchOutput(value,grokSearchOptions!) : images && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
+          grokSearch ? (value)=>grokSearchOutput(value,grokSearchOptions!) : images && platform === "openai" && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
         );
       }
       if (models) {

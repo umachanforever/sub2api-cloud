@@ -151,6 +151,8 @@ Codex clients can discover the native model manifest at `GET /backend-api/codex/
 
 OpenAI API-key accounts support `POST /v1/images/edits` and `/images/edits` with JSON image URLs or multipart uploads, including multiple images and masks. Model mapping, streaming image events, and provider token usage use the same gateway pipeline as image generation. The default image model is `gpt-image-2`.
 OpenAI OAuth subscription accounts support native Codex image generation and editing for `gpt-image-1.5`, `gpt-image-2`, and the `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` models, including their supported snapshots. Multipart images and masks are converted to data URLs inside the cloud gateway.
+
+Grok API-key and OAuth accounts also support `POST /v1/images/generations` and `/v1/images/edits`. Specify an Imagine image model; `grok-imagine` resolves to `grok-imagine-image-quality`. Edits accept JSON `images` references or multipart uploads with up to three source images and an optional mask. The gateway converts `size` into native resolution and aspect ratio parameters.
 Image responses support `b64_json` and MIME-aware data URLs with `response_format=url`. Streaming edits emit `image_edit.*` events; complete JSON responses from the upstream are adapted into SSE completion events with token usage recorded once.
 Other OAuth image models use the Responses `image_generation` bridge, including image inputs, masks, partial-image events, and completion usage. The bridge keeps image model selection separate from the Responses driver.
 
