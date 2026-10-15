@@ -1,11 +1,12 @@
 import {codexCatalogDescriptor} from './codex_catalog.ts';
 import {mappedTarget} from './model_mapping.ts';
-import {defaultSolModel} from './codex_models.ts';
+import {defaultSolModel,modernCodexModel} from './codex_models.ts';
 import {DEFAULT_PROVIDER_CATALOGS} from './provider_models.ts';
 import {COMPOSITE_DEFAULT_IDS} from './composite_defaults.ts';
 import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
-export type CompositeCatalogSources={sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
+export type CompositeCapabilitySource={platform:string;type:string;passthrough:boolean;official:boolean;mapping:Record<string,string>;modalities:Record<string,unknown>};
+export type CompositeCatalogSources={capability_sources?:CompositeCapabilitySource[];sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
 const precedence=['anthropic','gemini','openai','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go','typesafe','command_code','cline'];
 function defaults(platform:string):string[]{return DEFAULT_PROVIDER_CATALOGS[platform]?.map(entry=>String(entry.id))??COMPOSITE_DEFAULT_IDS[platform]??[];}
 // A standard catalog is aggregated from every eligible platform, without acquiring
@@ -47,20 +48,45 @@ function detectedPlatform(model:string):string|undefined{
  if(/^(minimax-|abab[567])/.test(model))return 'minimax';
  if(model.startsWith('jev-'))return 'typesafe';
 }
+function sourceImageInput(source:CompositeCapabilitySource,target:string):boolean{
+ if(!['openai','grok','deepseek','opencode_go'].includes(source.platform))return false;
+ const canonical=target.trim().toLowerCase().split('/').at(-1)!;
+ if(source.platform==='grok')return source.official&&['grok-4.3','grok-4.5','grok-4.6','grok-4.7','grok-build-0.1','grok-4.20-0309-reasoning','grok-4.20-0309-non-reasoning','grok-4.20-multi-agent-0309'].includes(canonical);
+ const raw=source.modalities[target],modalities=Array.isArray(raw)?raw.filter(value=>value==='text'||value==='image'):[];
+ if(modalities.length){if(source.platform==='openai'&&source.official&&canonical==='gpt-6-astra')return true;return modalities.includes('image');}
+ if(canonical==='deepseek-v4-flash-vision-exp')return source.type==='apikey';
+ return source.platform==='openai'&&['oauth','apikey'].includes(source.type)&&(['gpt-6-sol','gpt-6-luna','gpt-6-astra','gpt-6.1-sol'].includes(modernCodexModel(canonical)?.id??'')||/^(?:gpt-5|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-4-vision)/.test(canonical));
+}
+function sourceSupports(source:CompositeCapabilitySource,model:string):boolean{
+ if(source.platform==='openai'&&source.passthrough)return true;
+ if(Object.keys(source.mapping).length)return mappedTarget(source.mapping,model,source.platform)!==undefined;
+ if(source.platform==='deepseek')return ['deepseek-flash','deepseek-v4-pro','deepseek-v4-flash','deepseek-v4-flash-vision-exp','deepseek-v4-pro-0813'].includes(model.trim().toLowerCase().replace(/(?:\[1m\])+$/i,''));
+ if(source.platform==='openai'&&source.type==='oauth'){
+  const id=model.trim().toLowerCase().split('/').at(-1)!;
+  return !['k3','k3-256k'].includes(id)&&!['deepseek-','glm-','kimi-','moonshot-','qwen-','qwen2-','qwen3-','qwen4-','qwq-','minimax-','gemini-','gemma-','grok-','doubao-','hunyuan-','llama-','llama2-','llama3-','meta-llama','mistral-','mixtral-','baichuan-','ernie-','step-','seed-','yi-'].some(prefix=>id.startsWith(prefix));
+ }
+ return true;
+}
+function imageInput(input:CompositeCatalogSources,platform:string|undefined,model:string):boolean{
+ const candidates=(input.capability_sources??[]).filter(source=>source.platform===platform&&sourceSupports(source,model));
+ return candidates.length>0&&candidates.every(source=>sourceImageInput(source,mappedTarget(source.mapping,model,source.platform)??model));
+}
 export function compositeCodexCatalog(input:CompositeCatalogSources,allowlist?:ModelAllowlist){
  const catalog=compositeModelCatalog(input,allowlist,undefined,true) as {data:{id:string}[]};
  const models=[];
  for(const {id} of catalog.data){
   if(id.includes('*')||!codexCatalogDescriptor(id))continue;
   const route=selectedRoute(input,id),requested=route?.upstream_model||id;
-  const owners=new Set(input.sources.filter(source=>typeof source.mapping[requested]==='string'&&Object.hasOwn(source.mapping,requested)&&source.mapping[requested].trim()).map(source=>source.platform));
+  const metadataSources=input.capability_sources??input.sources;
+  const owners=new Set(metadataSources.filter(source=>typeof source.mapping[requested]==='string'&&Object.hasOwn(source.mapping,requested)&&source.mapping[requested].trim()).map(source=>source.platform));
   const platform=route?.platform??(owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
-  const targets=new Set(input.sources.filter(source=>source.platform===platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
+  const targets=new Set(metadataSources.filter(source=>source.platform===platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
   if(!route&&owners.size>1)targets.add('custom-model');
   const target=targets.size===1?[...targets][0]:targets.size>1?'custom-model':requested;
   const descriptor=codexCatalogDescriptor(defaultSolModel(target)??target);
   if(!descriptor)continue;
   if(descriptor.slug!==id){descriptor.slug=id;descriptor.display_name=id;descriptor.description='Custom model routed through sub2api-cloud.';}
+  descriptor.input_modalities=imageInput(input,platform,requested)?['text','image']:['text'];
   models.push(descriptor);
  }
  return {models};

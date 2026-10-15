@@ -90,3 +90,18 @@ test('Composite Codex metadata follows concrete ownership instead of unrelated p
  const owned=values.find(model=>model.slug==='claude-owned');assert.ok(owned.supported_reasoning_levels.some(level=>level.effort==='max'));assert.ok(!owned.supported_reasoning_levels.some(level=>level.effort==='none'));
  const direct=compositeCodexCatalog({sources:[source('openai'),source('grok',{'gpt-*':'grok-4.6'})],routes:[]}).models.find(model=>model.slug==='gpt-6.1-sol');assert.ok(!direct.supported_reasoning_levels.some(level=>level.effort==='none'));assert.ok(direct.model_messages.instructions_template.includes('GPT'));
 });
+test('Composite Codex image modalities intersect every persistent candidate and honor explicit text-only metadata',()=>{
+ const make=(type='oauth',modalities={},official=true)=>({platform:'openai',type,mapping:{},passthrough:true,official,modalities});
+ const input={sources:[source('openai')],capability_sources:[make()],routes:[{...route('vision-alias'),upstream_model:'gpt-6.1-sol'}]};
+ const find=id=>compositeCodexCatalog(input).models.find(model=>model.slug===id);
+ assert.deepEqual(find('vision-alias').input_modalities,['text','image']);
+ input.capability_sources.push(make('apikey',{'gpt-6.1-sol':['text']},false));assert.deepEqual(find('vision-alias').input_modalities,['text']);
+ input.capability_sources=[make('oauth',{'gpt-6-astra':['text']})];assert.deepEqual(find('gpt-6-astra').input_modalities,['text','image']);
+ input.capability_sources=[make('apikey',{'gpt-6-astra':['text']},false)];assert.deepEqual(find('gpt-6-astra').input_modalities,['text']);
+ input.capability_sources=[];assert.deepEqual(find('vision-alias').input_modalities,['text']);
+});
+
+test('persistent exact ownership prevents a temporarily unavailable foreign account from borrowing OpenAI image flags',()=>{
+ const input={sources:[source('openai')],capability_sources:[{platform:'openai',type:'oauth',mapping:{},passthrough:true,official:true,modalities:{}},{platform:'anthropic',type:'apikey',mapping:{'gpt-6.1-sol':'claude-fable-5'},passthrough:false,official:false,modalities:{}}],routes:[]};
+ assert.deepEqual(compositeCodexCatalog(input).models.find(model=>model.slug==='gpt-6.1-sol').input_modalities,['text']);
+});

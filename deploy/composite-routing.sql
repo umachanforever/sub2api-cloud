@@ -58,13 +58,40 @@ BEGIN
  IF target IS NULL THEN RETURN jsonb_build_object('error','composite_model_unresolved','status',400); END IF;
  RETURN jsonb_build_object('platform',target,'upstream_model',model,'source','detector');
 END $$;
+-- Capability intersections retain accounts under temporary cooldown, matching Go.
+CREATE OR REPLACE FUNCTION s2a_private.composite_capability_sources(p_group bigint) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT coalesce(jsonb_agg(jsonb_build_object(
+  'platform',a.platform,'type',a.type,
+  'passthrough',a.platform='openai' AND CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END,
+  'official',CASE WHEN a.platform='openai' AND a.type='oauth' THEN true
+   WHEN a.platform='openai' THEN coalesce(nullif(btrim(c.value->>'base_url'),''),'https://api.openai.com') ~* '^https?://api[.]openai[.]com[.]?(:[0-9]+)?(/|$)'
+   WHEN a.platform='grok' THEN coalesce(nullif(btrim(c.value->>'base_url'),''),'https://api.x.ai') ~* '^https?://(([a-z0-9-]+[.])*api[.]x[.]ai|cli-chat-proxy[.]grok[.]com)[.]?(:[0-9]+)?(/|$)'
+   ELSE false END,
+  'mapping',coalesce((SELECT jsonb_object_agg(m.key,m.value) FROM jsonb_each(
+   CASE WHEN jsonb_typeof(c.value->'model_mapping')='object' THEN c.value->'model_mapping' ELSE '{}'::jsonb END) m
+   WHERE jsonb_typeof(m.value)='string' AND btrim(m.value#>>'{}')<>''),'{}'::jsonb),
+  'modalities',coalesce((SELECT jsonb_object_agg(m.key,m.value->'input_modalities') FROM jsonb_each(
+   CASE WHEN jsonb_typeof(a.extra->'upstream_model_metadata'->'models')='object' THEN a.extra->'upstream_model_metadata'->'models' ELSE '{}'::jsonb END) m
+   WHERE jsonb_typeof(m.value->'input_modalities')='array'),'{}'::jsonb)
+ ) ORDER BY a.platform,a.priority,a.id),'[]'::jsonb)
+ FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
+ JOIN public.groups g ON g.id=ag.group_id
+ CROSS JOIN LATERAL (SELECT s2a_private.account_credentials(a.id) AS value) c
+ WHERE ag.group_id=p_group AND g.platform='composite' AND g.deleted_at IS NULL
+  AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
+  AND a.platform IN ('anthropic','openai','gemini','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go');
+$$;
+ALTER FUNCTION s2a_private.composite_capability_sources(bigint) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.composite_capability_sources(bigint) FROM PUBLIC,anon,authenticated,service_role;
 -- Public catalog inputs exclude provider credentials and account identifiers.
 CREATE OR REPLACE FUNCTION s2a_private.composite_catalog_sources(p_group bigint) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT jsonb_build_object(
+  'capability_sources',s2a_private.composite_capability_sources(p_group),
   'sources',coalesce((SELECT jsonb_agg(jsonb_build_object(
    'platform',a.platform,
-   'passthrough',a.platform='openai' AND coalesce((a.extra->>'openai_passthrough')::boolean,false),
+   'passthrough',a.platform='openai' AND CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END,
    'mapping',coalesce((SELECT jsonb_object_agg(m.key,m.value) FROM jsonb_each(
     CASE WHEN jsonb_typeof(s2a_private.account_credentials(a.id)->'model_mapping')='object'
      THEN s2a_private.account_credentials(a.id)->'model_mapping' ELSE '{}'::jsonb END) m
