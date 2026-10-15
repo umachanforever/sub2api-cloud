@@ -1,9 +1,19 @@
-// Model spellings and reasoning constraints from the pinned Go OpenAI helpers.
+// Unqualified Sol-era GPT versions default to the Sol variant.
+export function defaultSolModel(model: string): string | undefined {
+  const canonical = model.trim().split('/').at(-1)!.trim().toLowerCase().replace(/[_\s]+/g, '-').replace(/-+/g, '-');
+  const match = /^gpt-(\d+)(?:\.\d+)*$/.exec(canonical);
+  if (!match || (Number(match[1]) < 6 && canonical !== 'gpt-5.6')) return;
+  return canonical + '-sol';
+}
+
+// Explicit variants retain their identity; reasoning constraints stay model-specific.
 export function modernCodexModel(model: string): { id: string; effort?: string } | undefined {
-  const canonical = model.trim().split('/').at(-1)!.trim().toLowerCase()
+  let canonical = model.trim().split('/').at(-1)!.trim().toLowerCase()
     .replace(/[_\s]+/g, '-').replace(/-+/g, '-');
-  if (canonical === 'gpt-6') return { id: 'gpt-6-astra' };
-  for (const id of ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra']) {
+  canonical = defaultSolModel(canonical) ?? canonical;
+  const sol = /^(gpt-\d+(?:\.\d+)*-sol)(?:$|-)/.exec(canonical)?.[1];
+  const future = sol && defaultSolModel(sol.slice(0, -4)) === sol ? [sol] : [];
+  for (const id of new Set(['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra', ...future])) {
     if (canonical === id) return { id };
     if (!canonical.startsWith(id + '-')) continue;
     const suffix = canonical.slice(id.length + 1);

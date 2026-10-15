@@ -1,7 +1,7 @@
 import {requestBodyLimit} from './request_limits.ts';
 import { currentCodexIdentity } from "./codex_identity.ts";
 import { upstreamErrorCode } from "./upstream_errors.ts";
-import { validateCodexReasoning } from "./codex_models.ts";
+import { defaultSolModel, validateCodexReasoning } from "./codex_models.ts";
 import { grokOAuthRequest } from './grok_oauth.ts';
 import { accountFetch } from "./account_proxy.ts";
 import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
@@ -190,7 +190,8 @@ export async function proxy(
       upstream_model?:string;
       model_sources?:ModelSources;
     };
-    const upstreamModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
+    const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
+    const upstreamModel = (account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel;
     let dispatchedModel = upstreamModel;
     const forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
     const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));

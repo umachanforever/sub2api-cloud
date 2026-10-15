@@ -1,4 +1,4 @@
-import { normalizeModernCodexResponses } from "./codex_models.ts";
+import { defaultSolModel, normalizeModernCodexResponses } from "./codex_models.ts";
 export type Platform = "openai" | "anthropic" | "gemini" | "antigravity" | "grok";
 export type ApiKeyCredentials = { api_key: string; base_url?: string };
 export type AccountCredentials = OAuthCredentials | ApiKeyCredentials;
@@ -177,6 +177,15 @@ export function modelListFromManifest(input: unknown) {
         : {}),
     };
   }).filter((model) => model !== null);
+  for (const model of [...data]) {
+    if (!model.id.endsWith("-sol")) continue;
+    const alias = model.id.slice(0, -4);
+    if (defaultSolModel(alias) !== model.id) continue;
+    const entry = { ...model, id: alias };
+    const index = data.findIndex(value => value.id === alias);
+    if (index >= 0) data[index] = entry;
+    else data.push(entry);
+  }
   return { object: "list", data };
 }
 

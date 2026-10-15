@@ -83,7 +83,8 @@ function compatModel(model:string) {
   for (const [from,to] of [["gpt-5.4mini","gpt-5.4-mini"],["gpt-5.4nano","gpt-5.4-nano"],["gpt-5.3-codexspark","gpt-5.3-codex-spark"],["gpt-5.3codexspark","gpt-5.3-codex-spark"],["gpt-5.3codex","gpt-5.3-codex"]]) canonical=canonical.replaceAll(from,to);
   const mapped = CODEX_ALIASES[canonical] ?? (canonical.endsWith("-openai-compact") ? CODEX_ALIASES[canonical.slice(0,-15)] : undefined);
   if (mapped) return mapped;
-  if (canonical === "gpt-6" || canonical === "gpt-6-astra") return "gpt-6-astra";
+  if (canonical === "gpt-6") return "gpt-6-sol";
+  if (canonical === "gpt-6-astra") return "gpt-6-astra";
   for (const family of ["gpt-5.6-sol","gpt-5.6-terra","gpt-5.6-luna"]) if (canonical.includes(family)) return family;
   if (canonical === "gpt-5.6" || /^gpt-5\.6-(?:max|none|minimal|low|medium|high|xhigh|\d{4}-\d{2}-\d{2})$/.test(canonical)) return "gpt-5.6-sol";
   if (!canonical.startsWith("gpt-5.6-")) {
