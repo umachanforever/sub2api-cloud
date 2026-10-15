@@ -51,13 +51,13 @@ async function fetchStableVersion(db: Database): Promise<string | undefined> {
   })[0];
 }
 const attempts = new WeakMap<Database, { until: number; pending?: Promise<void>; saved?: { version?: string; synced_at?: string } }>();
-export async function currentCodexIdentity(db: Database, account: { codex_settings?: CodexSettings }, credentials: OAuthCredentials): Promise<CodexIdentity> {
+export async function currentCodexIdentity(db: Database, account: { codex_settings?: CodexSettings }, credentials: OAuthCredentials, force = false): Promise<CodexIdentity> {
   const settings = { ...account.codex_settings };
   if (db.config.dataModel !== 'native' || !account.codex_settings || settings.auto_sync === 'false') return resolveCodexIdentity(settings, credentials);
   const synced = Date.parse(settings.synced_at ?? '');
-  if (Number.isFinite(synced) && Date.now() - synced < 6 * 3600000) return resolveCodexIdentity(settings, credentials);
+  if (!force && Number.isFinite(synced) && Date.now() - synced < 6 * 3600000) return resolveCodexIdentity(settings, credentials);
   const cached = attempts.get(db);
-  if (!cached || cached.until <= Date.now()) {
+  if (!cached || cached.until <= Date.now() || (force && !cached.pending)) {
     const state: { until: number; pending?: Promise<void>; saved?: { version?: string; synced_at?: string } } = { until: Date.now() + 60000 };
     state.pending = (async () => {
       try {
@@ -69,6 +69,7 @@ export async function currentCodexIdentity(db: Database, account: { codex_settin
     })();
     attempts.set(db, state);
     await state.pending;
+    delete state.pending;
   } else if (cached.pending) await cached.pending;
   const saved = attempts.get(db)?.saved;
   if (saved?.version) { settings.synced = saved.version; settings.synced_at = saved.synced_at; }

@@ -82,3 +82,17 @@ test('cloud release fallback excludes other components and prereleases and selec
   assert.deepEqual(paths,['/repos/openai/codex/releases/latest','/repos/openai/codex/releases?per_page=30']);
  }
 });
+
+
+test('scheduled synchronization refreshes a recent identity without waiting for traffic', async () => {
+ let releases=0;
+ const db=new Database({url:'https://db.test',serviceKey:'secret',encryptionKey:'',adminIds:[],dataModel:'native'},async url=>{
+  if(new URL(url).hostname==='api.github.com'){releases++;return Response.json({tag_name:'rust-v0.163.0',draft:false,prerelease:false});}
+  return Response.json({version:'0.163.0',synced_at:new Date().toISOString()});
+ });
+ const account={codex_settings:{synced:'0.162.1',synced_at:new Date().toISOString()}};
+ assert.equal((await currentCodexIdentity(db,account,{access_token:''})).version,'0.162.1');
+ assert.equal(releases,0);
+ for(let index=0;index<2;index++)assert.equal((await currentCodexIdentity(db,account,{access_token:''},true)).version,'0.163.0');
+ assert.equal(releases,2);
+});

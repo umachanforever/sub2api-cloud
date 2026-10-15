@@ -65,5 +65,5 @@ test('scheduler signatures are bound to the privacy scope and expire within nine
 });
 
 test('canonical gateway does not reactivate retired-table scheduled jobs',async()=>{
- await configureJobScheduler({SUB2API_DATA_MODEL:'native'},undefined,()=>{throw Error('Retired scheduler called');});
+ await configureJobScheduler({SUB2API_DATA_MODEL:'native',GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64:Buffer.alloc(32,7).toString('base64'),SUPABASE_URL:'https://project.supabase.co',SUPABASE_SERVICE_ROLE_KEY:'private-key'},undefined,async(url,init)=>{assert.ok(url.endsWith('/s2a_codex_scheduler_configure'));assert.equal(JSON.parse(init.body).p_enabled,true);return Response.json({enabled:true});});
 });

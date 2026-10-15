@@ -65,7 +65,7 @@ END IF; END $provision$;`);
  const compose=['compose','-p','sub2api-supabase'];
  if(env.S2A_SKIP_MANAGEMENT_BUILD!=='1')await command([...compose,'build','management'],env,undefined,true);
  await command([...compose,'run','--rm','--no-deps','management','-migrate'],env);
- for(const path of ['account-vault.sql','gateway-proxy.sql','personal-gateway.sql','usage-access.sql'])await sql(await readFile(new URL('../deploy/'+path,import.meta.url),'utf8'));
+ for(const path of ['account-vault.sql','gateway-proxy.sql','personal-gateway.sql','usage-access.sql','codex-scheduler.sql'])await sql(await readFile(new URL('../deploy/'+path,import.meta.url),'utf8'));
  for(const id of env.SUB2API_ADMIN_USER_IDS.split(',').map(value=>value.trim())){
   if(!/^[a-f0-9-]{36}$/i.test(id))throw Error('Invalid administrator Auth UUID');
   const response=await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${id}`,{headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`},signal:AbortSignal.timeout(20000)});
@@ -81,7 +81,7 @@ COMMIT;`);
  }
  await sql(`BEGIN; SET LOCAL ROLE s2a_management;
 INSERT INTO public.settings(key,value) VALUES('api_base_url',${literal(env.SUPABASE_URL+'/functions/v1/subscription-api')}) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE btrim(settings.value)='' OR settings.value ~* '^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?(/|$)';
-INSERT INTO public.settings(key,value) VALUES('site_name','sub2api-supabase') ON CONFLICT(key) DO NOTHING;
+INSERT INTO public.settings(key,value) VALUES('site_name','sub2api-supabase') ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE lower(btrim(settings.value))='sub2api';
 COMMIT;`);
  console.log('Management schema, encrypted credentials, and cloud identity are ready.');
 }

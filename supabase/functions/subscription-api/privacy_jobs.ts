@@ -23,7 +23,7 @@ function equalBytes(a:Uint8Array,b:Uint8Array) {
   return difference===0;
 }
 
-export async function authorizeJob(request:Request,db:Database,scope:'privacy'|'quota-reset'|'mail') {
+export async function authorizeJob(request:Request,db:Database,scope:'privacy'|'quota-reset'|'mail'|'codex') {
   const supplied=request.headers.get("authorization")?.match(/^Bearer (\S+)$/i)?.[1]??"";
   const digest=async(value:string)=>new Uint8Array(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(value)));
   let authorized=!!supplied && !!db.config.serviceKey && equalBytes(await digest(supplied),await digest(db.config.serviceKey));
@@ -32,7 +32,8 @@ export async function authorizeJob(request:Request,db:Database,scope:'privacy'|'
     const parts=ticket.match(/^(\d{10}):([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):([0-9a-f]{64})$/);
     const now=Math.floor(Date.now()/1000);
     if(parts && Number(parts[1])>=now && Number(parts[1])<=now+90) {
-      const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(db.config.serviceKey),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
+      const signingKey=scope==='codex' ? db.config.jobSigningKey ?? db.config.serviceKey : db.config.serviceKey;
+      const key=await crypto.subtle.importKey("raw",new TextEncoder().encode(signingKey),{name:"HMAC",hash:"SHA-256"},false,["sign"]);
       const signature=new Uint8Array(await crypto.subtle.sign("HMAC",key,new TextEncoder().encode(`s2a-${scope}:${parts[1]}:${parts[2]}`)));
       authorized=equalBytes(signature,new Uint8Array(parts[3].match(/../g)!.map(byte=>parseInt(byte,16))));
     }

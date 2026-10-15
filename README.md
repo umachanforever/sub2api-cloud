@@ -70,6 +70,8 @@ Use the gateway endpoint displayed in the console:
 https://<project-ref>.supabase.co/functions/v1/subscription-api
 ```
 
+Codex client identity follows the official stable release automatically. Supabase Cron checks every six hours, even when local services are stopped; request handling also refreshes stale versions. The console automatic synchronization switch controls both paths, and an explicit client version retains precedence. Model availability also depends on the upstream account.
+
 Create a provider account, bind it to a matching provider group, and create an API key in the original console. Choose a model from `/v1/models`; account model mappings can preserve an application's existing model names.
 
 ```sh
@@ -92,7 +94,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 For full agent API access, run `npm run agent:access` while the local console is running. Configure the administrator credentials and an existing `GPT_SUBSCRIPTION_GATEWAY_KEY` in `.env.local`. The command creates a normal `sk-` API key in the same provider group and saves `base_url`, `api_key`, model, and usage URLs in private `.local/agent-access.json`. This key supports AI requests, model discovery, and usage queries, and can be managed in the console. Any previous usage-only token in `.local/agent-usage.json` is revoked and that configuration is updated.
 
-Run `npm run verify:cloud` to check the deployed gateway using `.local/agent-access.json`. It verifies authentication, model discovery, ordinary and streaming Chat Completions, and usage without the local management services. The check makes two short AI requests.
+Run `npm run verify:cloud` to check the deployed gateway using `.local/agent-access.json`. It verifies authentication, model discovery, ordinary and streaming Responses and Chat Completions, returned model identity, and usage without the local management services. The check makes four short AI requests.
 
 For optional usage-only access, run `npm run usage:access`. This saves a private `.local/agent-usage.json`. The generated `sk-usage-` token can read usage but cannot make AI requests or access management APIs. It inherits the linked inference key's group, expiration, status, and IP restrictions. Revoke it by setting its `revoked_at` in `s2a_private.usage_tokens`; disabling or deleting the linked inference key also blocks it.
 

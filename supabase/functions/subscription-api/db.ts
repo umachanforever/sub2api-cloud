@@ -11,6 +11,7 @@ export class HttpError extends Error {
 export type Config = {
   url: string;
   serviceKey: string;
+  jobSigningKey?: string;
   encryptionKey: string;
   adminIds: string[];
   dataModel?: "native";

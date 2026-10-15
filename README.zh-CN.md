@@ -66,6 +66,8 @@ npm run up -- --cloud
 https://<project-ref>.supabase.co/functions/v1/subscription-api
 ```
 
+Codex 客户端标识会自动跟随官方稳定版。Supabase Cron 每 6 小时检查一次，本地服务关闭后仍会执行；请求处理也会刷新过期版本。界面中的自动同步开关同时控制两条更新路径，手动指定的客户端版本优先生效。实际模型可用性还取决于上游账号。
+
 在原版控制台创建供应商账号，绑定对应平台的分组，再创建 API Key。从 `/v1/models` 选择可用模型；也可使用账号的模型映射，保留现有应用使用的模型名。
 
 ```sh
@@ -88,7 +90,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 需要完整 API 能力的 Agent，可在本地控制台运行时执行 `npm run agent:access`；在 `.env.local` 配置管理员登录信息和已有的 `GPT_SUBSCRIPTION_GATEWAY_KEY`。命令会在同一供应商分组创建标准 `sk-` 调用 Key，将 `base_url`、`api_key`、模型和用量地址保存到私有文件 `.local/agent-access.json`。这个 Key 支持 AI 请求、模型列表和用量查询，可在控制台管理。如果 `.local/agent-usage.json` 中有旧的只读 Key，会将其撤销并更新该配置。
 
-执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Chat Completions 以及用量接口，无需启动本地管理服务。验收会发送两次简短的 AI 请求。
+执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性以及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求。
 
 仅需查看用量时，可选用 `npm run usage:access` 生成 `sk-usage-` 只读 Key，配置保存在 `.local/agent-usage.json`。它无法调用 AI 或访问管理接口，并继承关联调用 Key 的分组、有效期、启用状态和 IP 限制。在 `s2a_private.usage_tokens` 设置对应记录的 `revoked_at` 可撤销授权；停用或删除关联调用 Key 也会阻止访问。
 
