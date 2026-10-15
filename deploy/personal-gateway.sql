@@ -95,6 +95,7 @@ DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accoun
     group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text; normalized_model text;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
+    native_gemini_catalog boolean;
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -109,7 +110,9 @@ BEGIN
     IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
     SELECT * INTO k FROM public.api_keys WHERE id=(identity->>'key_id')::bigint;
     SELECT * INTO g FROM public.groups WHERE id=k.group_id;
+    native_gemini_catalog:=p_model='__models__' AND coalesce(p_billing_context->>'inbound_endpoint','') ~ '^/v1beta/models(/[^/]+)?$';
     target_platform:=g.platform; routed_model:=p_model;
+    IF native_gemini_catalog AND g.platform='composite' THEN target_platform:='gemini'; END IF;
     IF g.platform='composite' AND p_model<>'__models__' THEN
         SELECT l.composite_route INTO route FROM s2a_private.personal_gateway_leases l
             WHERE l.request_id=p_request_id AND l.key_id=k.id ORDER BY l.created_at DESC LIMIT 1;
@@ -155,7 +158,7 @@ BEGIN
     ELSIF jsonb_array_length(coalesce(k.ip_blacklist, '[]'::jsonb)) > 0 THEN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
     END IF;
-    IF p_model='__models__' AND g.platform='composite' THEN
+    IF p_model='__models__' AND g.platform='composite' AND NOT native_gemini_catalog THEN
         IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$'
             THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
         RETURN jsonb_build_object('composite_catalog',s2a_private.composite_catalog_sources(g.id),'model_allowlist',g.model_allowlist);
@@ -232,7 +235,15 @@ BEGIN
                 AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp()
                 AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
                 AND (NOT g.require_privacy_set OR (accounts.platform<>'openai' OR accounts.extra->>'privacy_mode'='training_off'))
-            ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
+            ORDER BY CASE WHEN native_gemini_catalog THEN CASE
+                WHEN accounts.type='apikey' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'api_key',''))<>'' THEN 0
+                WHEN accounts.type='apikey' THEN 9
+                WHEN accounts.type='oauth' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'project_id',''))='' THEN 1
+                WHEN accounts.type='oauth' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'oauth_type',''))='ai_studio' THEN 2
+                WHEN accounts.type='oauth' THEN 3
+                WHEN accounts.type='service_account' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'auth_mode',''))='apikey' THEN 12
+                WHEN accounts.type='service_account' THEN 11 ELSE 10 END ELSE 0 END,
+                accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
             FOR UPDATE OF accounts LOOP
             IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',routed_model) THEN CONTINUE; END IF;
             now_at:=clock_timestamp();
@@ -261,7 +272,7 @@ BEGIN
         END IF;
     END IF;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
-        'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true))
+        'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
 END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;

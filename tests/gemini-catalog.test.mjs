@@ -56,3 +56,20 @@ test('native Gemini scope fallback passes through gateway catalog filtering and 
  assert.deepEqual(result.models.map(model=>model.name),['models/gemini-3.1-pro-preview-customtools']);
  assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
 });
+
+test('native Gemini catalog preserves upstream metadata and opaque pagination through the gateway',async()=>{
+ const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
+ const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);
+ const value={models:[{name:'models/gemini-future',extension:{newCapability:true}}],nextPageToken:'opaque-next',extension:'native'};
+ const app=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_acquire')){
+   assert.equal(JSON.parse(init.body).p_billing_context.inbound_endpoint,'/v1beta/models');
+   return Response.json({lease_id:'lease',model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
+  }
+  if(String(url).includes('/rpc/'))return Response.json({applied:true});
+  const target=new URL(url);assert.equal(target.searchParams.get('pageToken'),'opaque-first');assert.equal(target.searchParams.get('pageSize'),'2');
+  return Response.json(value);
+ });
+ const response=await app(new Request('https://gateway/v1beta/models?pageToken=opaque-first&pageSize=2',{headers:{authorization:'Bearer sk-client'}}));
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),value);
+});

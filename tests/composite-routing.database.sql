@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; ts bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
+DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; gem_oauth bigint; ts bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
 BEGIN
  IF has_function_privilege('service_role','s2a_private.composite_resolve(bigint,text,text)','EXECUTE') THEN RAISE EXCEPTION 'private resolver exposed'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('composite-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
@@ -57,6 +57,14 @@ BEGIN
  -- Scheduling and forwarding must normalize the same Gemini alias.
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Composite Gemini','gemini','apikey','{"api_key":"synthetic","model_mapping":{"gemini-3.1-pro-preview":"upstream-exact"}}',10) RETURNING id INTO gem;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(gem,g);
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Gemini catalog OAuth','gemini','oauth','{"access_token":"synthetic"}',10,-100) RETURNING id INTO gem_oauth;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(gem_oauth,g);
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1beta/models"}');
+ IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text OR acquired ? 'composite_catalog' THEN RAISE EXCEPTION 'Native Composite Gemini catalog did not select a Gemini account'; END IF;
+ IF acquired->'model_sources'->'mapping' IS DISTINCT FROM '{}'::jsonb THEN RAISE EXCEPTION 'Native Gemini catalog unexpectedly rewrites provider metadata'; END IF;
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1beta/models/gemini-3.1-pro-preview"}');
+ IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text THEN RAISE EXCEPTION 'Native Composite Gemini detail unavailable'; END IF;
+ UPDATE public.accounts SET schedulable=false WHERE id=gem_oauth;
  INSERT INTO public.composite_model_routes(group_id,public_model,target_platform,upstream_model,endpoint) VALUES(g,'gemini-public','gemini','gemini-3.1-pro-preview-customtools','responses');
  acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text OR acquired->>'upstream_model' IS DISTINCT FROM 'upstream-exact' THEN RAISE EXCEPTION 'Composite Gemini normalization lost mapped target'; END IF;
