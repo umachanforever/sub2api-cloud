@@ -67,7 +67,7 @@ END IF; END $provision$;`);
  const compose=['compose','-p','sub2api-cloud'];
  if(env.S2A_SKIP_MANAGEMENT_BUILD!=='1')await command([...compose,'build','management'],env,undefined,true);
  await command([...compose,'run','--rm','--no-deps','management','-migrate'],env);
- for(const path of ['account-vault.sql','gateway-proxy.sql','personal-gateway.sql','artifact-storage.sql','usage-access.sql','codex-scheduler.sql','gemini-cache-scheduler.sql'])await sql(await readFile(new URL('../deploy/'+path,import.meta.url),'utf8'));
+ for(const path of ['account-vault.sql','gateway-proxy.sql','personal-gateway.sql','image-tasks.sql','artifact-storage.sql','usage-access.sql','codex-scheduler.sql','gemini-cache-scheduler.sql'])await sql(await readFile(new URL('../deploy/'+path,import.meta.url),'utf8'));
  for(const id of env.SUB2API_ADMIN_USER_IDS.split(',').map(value=>value.trim())){
   if(!/^[a-f0-9-]{36}$/i.test(id))throw Error('Invalid administrator Auth UUID');
   const response=await fetch(`${env.SUPABASE_URL}/auth/v1/admin/users/${id}`,{headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`},signal:AbortSignal.timeout(20000)});

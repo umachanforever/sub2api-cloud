@@ -712,6 +712,9 @@ try {
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/tests/gemini-cache-scheduler.database.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/image-tasks.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/image-tasks.sql", "utf8"));
+    sql(readFileSync(root + "/tests/image-tasks.database.sql", "utf8"));
     sql(readFileSync(root + "/deploy/usage-access.sql", "utf8"));
     sql(readFileSync(root + "/deploy/usage-access.sql", "utf8"));
     sql(readFileSync(root + "/tests/usage-access.database.sql", "utf8"));

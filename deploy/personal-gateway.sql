@@ -30,7 +30,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
-    allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; bound_account_id bigint;
+    allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -86,6 +86,12 @@ BEGIN
         IF p_model IS DISTINCT FROM video_binding->>'model' THEN RETURN jsonb_build_object('error','video_task_model_mismatch','status',400); END IF;
         IF bound_account_id IS NOT NULL AND bound_account_id<>(video_binding->>'account_id')::bigint THEN RETURN jsonb_build_object('error','resource_account_mismatch','status',400); END IF;
         bound_account_id:=(video_binding->>'account_id')::bigint;
+    END IF;
+    IF p_billing_context ? 'image_task' THEN
+        image_binding:=public.s2a_personal_image_job_admit(p_billing_context->>'image_task',(p_billing_context->>'image_job_lease')::uuid,p_key_hash,p_model,p_client_ip);
+        IF image_binding ? 'error' THEN RETURN image_binding; END IF;
+        IF image_binding->>'user_id' IS DISTINCT FROM k.user_id::text OR image_binding->>'key_id' IS DISTINCT FROM k.id::text OR image_binding->>'group_id' IS DISTINCT FROM g.id::text
+            THEN RETURN jsonb_build_object('error','image_task_key_unavailable','status',403); END IF;
     END IF;
     fingerprint:=encode(sha256(convert_to(jsonb_build_array(p_key_hash,p_model,p_client_ip,p_billing_context)::text,'UTF8')),'hex');
     SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE request_id=p_request_id ORDER BY created_at DESC LIMIT 1;
