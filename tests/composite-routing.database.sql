@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; u bigint; a bigint; b bigint; h text; decision jsonb; acquired jsonb;
+DECLARE g bigint; u bigint; a bigint; b bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
 BEGIN
  IF has_function_privilege('service_role','s2a_private.composite_resolve(bigint,text,text)','EXECUTE') THEN RAISE EXCEPTION 'private resolver exposed'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('composite-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
@@ -18,6 +18,14 @@ BEGIN
  (g,'alias-long','exact','openai','gpt-6','any',100),
  (g,'alias-long','exact','grok','grok-4.6','responses',200),
  (g,'alias-','prefix','openai','gpt-6','chat_completions',100);
+ catalog:=s2a_private.composite_catalog_sources(g);
+ IF jsonb_array_length(catalog->'sources')<>2 OR jsonb_array_length(catalog->'routes')<>4 THEN RAISE EXCEPTION 'Composite catalog sources missing'; END IF;
+ IF catalog::text LIKE '%synthetic%' OR catalog::text LIKE '%api_key%' OR catalog::text LIKE '%credential%' THEN RAISE EXCEPTION 'Composite catalog leaked provider credentials'; END IF;
+ IF has_function_privilege('service_role','s2a_private.composite_catalog_sources(bigint)','EXECUTE') OR has_function_privilege('authenticated','s2a_private.composite_catalog_sources(bigint)','EXECUTE') THEN RAISE EXCEPTION 'private catalog exposed'; END IF;
+ IF s2a_private.composite_catalog_sources(-1) IS DISTINCT FROM '{"sources":[],"routes":[]}'::jsonb THEN RAISE EXCEPTION 'Composite catalog group isolation failed'; END IF;
+ UPDATE s2a_private.accounts SET schedulable=false WHERE id=b;
+ IF jsonb_array_length(s2a_private.composite_catalog_sources(g)->'sources')<>1 THEN RAISE EXCEPTION 'disabled account included in catalog'; END IF;
+ UPDATE s2a_private.accounts SET schedulable=true WHERE id=b;
  decision:=s2a_private.composite_resolve(g,'alias-long','responses');
  IF decision->>'platform'<>'grok' OR decision->>'upstream_model'<>'grok-4.6' THEN RAISE EXCEPTION 'endpoint specificity failed'; END IF;
  decision:=s2a_private.composite_resolve(g,'alias-long','chat_completions');

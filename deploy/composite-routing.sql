@@ -58,6 +58,40 @@ BEGIN
  IF target IS NULL THEN RETURN jsonb_build_object('error','composite_model_unresolved','status',400); END IF;
  RETURN jsonb_build_object('platform',target,'upstream_model',model,'source','detector');
 END $$;
+-- Public catalog inputs exclude provider credentials and account identifiers.
+CREATE OR REPLACE FUNCTION s2a_private.composite_catalog_sources(p_group bigint) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT jsonb_build_object(
+  'sources',coalesce((SELECT jsonb_agg(jsonb_build_object(
+   'platform',a.platform,
+   'passthrough',a.platform='openai' AND coalesce((a.extra->>'openai_passthrough')::boolean,false),
+   'mapping',coalesce((SELECT jsonb_object_agg(m.key,m.value) FROM jsonb_each(
+    CASE WHEN jsonb_typeof(s2a_private.account_credentials(a.id)->'model_mapping')='object'
+     THEN s2a_private.account_credentials(a.id)->'model_mapping' ELSE '{}'::jsonb END) m
+    WHERE jsonb_typeof(m.value)='string' AND btrim(m.value#>>'{}')<>''),'{}'::jsonb)
+   ) ORDER BY a.platform,a.priority,a.id)
+   FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
+   JOIN public.groups g ON g.id=ag.group_id
+   WHERE ag.group_id=p_group AND g.platform='composite' AND g.deleted_at IS NULL
+    AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
+    AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=now(),false)
+    AND coalesce(a.overload_until,'-infinity')<=now()
+    AND coalesce(a.rate_limit_reset_at,'-infinity')<=now()
+    AND coalesce(a.temp_unschedulable_until,'-infinity')<=now()
+    AND (NOT g.require_oauth_only OR a.type<>'apikey')
+    AND (NOT g.require_privacy_set OR a.platform<>'openai' OR a.extra->>'privacy_mode'='training_off')
+  ),'[]'::jsonb),
+  'routes',coalesce((SELECT jsonb_agg(jsonb_build_object('model',btrim(r.public_model),
+    'match_type',r.match_type,'platform',r.target_platform,'endpoint',r.endpoint,
+    'upstream_model',coalesce(nullif(btrim(r.upstream_model),''),btrim(r.public_model)))
+    ORDER BY (r.match_type='exact') DESC,length(btrim(r.public_model)) DESC,r.priority,r.id)
+   FROM public.composite_model_routes r JOIN public.groups g ON g.id=r.group_id
+   WHERE r.group_id=p_group AND g.platform='composite' AND g.deleted_at IS NULL
+    AND r.deleted_at IS NULL AND r.enabled AND btrim(r.public_model)<>''),'[]'::jsonb)
+ );
+$$;
+ALTER FUNCTION s2a_private.composite_catalog_sources(bigint) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.composite_catalog_sources(bigint) FROM PUBLIC,anon,authenticated,service_role;
 ALTER FUNCTION s2a_private.composite_detect_platform(text) OWNER TO s2a_management;
 ALTER FUNCTION s2a_private.composite_resolve(bigint,text,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.composite_detect_platform(text),s2a_private.composite_resolve(bigint,text,text) FROM PUBLIC,anon,authenticated,service_role;
