@@ -46,6 +46,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: npm ci --ignore-scripts
+        working-directory: ${{ github.workspace }}
       - run: go build ./cmd/server
 
       - name: Verify native management and cloud gateway integration
