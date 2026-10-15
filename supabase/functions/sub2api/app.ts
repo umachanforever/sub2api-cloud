@@ -1,4 +1,5 @@
-import {batchImageJobs} from './batch_image_jobs.ts';
+import {batchImageRoute} from './batch_image_routes.ts';
+import {batchImageJobs,kickBatchImageJobs} from './batch_image_jobs.ts';
 import {imageJobs,kickImageJobs} from './image_jobs.ts';
 import {imageTaskSubmit,ImageTaskSubmitError} from './image_task_submit.ts';
 import {imageTaskRead} from './image_task_read.ts';
@@ -37,6 +38,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:(?:generations|edits)(?:\/async)?|tasks\/[^/]+))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
+      if (/^\/images\/batches(?:\/|$)/.test(pathname)) pathname='/v1'+pathname;
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
@@ -77,6 +79,12 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (request.method==='POST' && pathname==='/v1beta/cachedContents') return await geminiCacheCreate(request,token,db);
       if (['DELETE','PATCH'].includes(request.method) && /^\/v1beta\/cachedContents\/[^/]+$/.test(pathname)) return await geminiCacheMutation(request,pathname,token,db);
       if (request.method === 'GET' && /^\/v1beta\/cachedContents(?:\/[^/]+)?$/.test(pathname)) return await geminiCacheRead(request,pathname,token,db);
+      if (/^\/v1\/images\/batches(?:\/|$)/.test(pathname)) {
+        errorContext.endpoint='/v1/images/batches';
+        const response=await batchImageRoute(request,pathname,token,db);
+        if(['POST','DELETE'].includes(request.method)&&response.ok)kickBatchImageJobs(db);
+        return response;
+      }
       const imageSubmit=/^\/v1\/images\/(generations|edits)\/async$/.exec(pathname);
       if(imageSubmit&&request.method==='POST'){const response=await imageTaskSubmit(request,imageSubmit[1] as 'generations'|'edits',token,db);kickImageJobs(db);return response;}
       const imageRead=/^\/v1\/images\/tasks\/([^/]+)$/.exec(pathname);

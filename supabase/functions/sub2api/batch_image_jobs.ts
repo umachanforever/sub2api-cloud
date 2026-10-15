@@ -15,3 +15,11 @@ export async function batchImageJobs(request:Request,db:Database,options:BatchRu
  if(runtime){runtime.waitUntil(dispatch().catch(()=>console.warn('batch_image_dispatch_failed')));return json(202,{accepted:true});}
  return json(200,await dispatch());
 }
+
+export function kickBatchImageJobs(db:Database):void{
+ const runtime=(globalThis as typeof globalThis&{EdgeRuntime?:{waitUntil(promise:Promise<unknown>):void}}).EdgeRuntime;
+ if(runtime)runtime.waitUntil(Promise.all([
+  runBatchImageJobs(db,{vertex:db.config.vertexBatch}),
+  cleanupBatchImages(db,batchProviderCleanup(db,{vertex:db.config.vertexBatch})),
+ ]).catch(()=>console.warn('batch_image_dispatch_failed')));
+}
