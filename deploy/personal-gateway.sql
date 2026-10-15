@@ -49,8 +49,9 @@ END $$;
 ALTER FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 
+DROP FUNCTION IF EXISTS s2a_private.account_mapping_accepts(text,jsonb,jsonb,text);
 -- Explicit account mappings also define the scheduler's model allowlist.
-CREATE OR REPLACE FUNCTION s2a_private.account_mapping_accepts(platform text,extra jsonb,mapping jsonb,model text)
+CREATE OR REPLACE FUNCTION s2a_private.account_mapping_accepts(platform text,account_type text,extra jsonb,mapping jsonb,model text)
 RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
 DECLARE normalized text; pattern text;
 BEGIN
@@ -59,8 +60,21 @@ BEGIN
      WHEN jsonb_typeof(extra->'openai_passthrough')='boolean' THEN (extra->>'openai_passthrough')::boolean
      WHEN jsonb_typeof(extra->'openai_oauth_passthrough')='boolean' THEN (extra->>'openai_oauth_passthrough')::boolean
      ELSE false END) THEN RETURN true; END IF;
- IF jsonb_typeof(mapping) IS DISTINCT FROM 'object' THEN RETURN true; END IF;
- IF NOT EXISTS(SELECT 1 FROM jsonb_each(mapping) WHERE jsonb_typeof(value)='string') THEN RETURN true; END IF;
+ IF jsonb_typeof(mapping) IS DISTINCT FROM 'object' THEN mapping:='{}'::jsonb; END IF;
+ IF NOT EXISTS(SELECT 1 FROM jsonb_each(mapping) WHERE jsonb_typeof(value)='string') THEN
+  IF platform='openai' AND account_type='oauth' THEN
+   normalized:=lower(btrim(regexp_replace(btrim(model),'^.*/','')));
+   IF normalized IN ('k3','k3-256k') THEN RETURN false; END IF;
+   FOREACH pattern IN ARRAY ARRAY['deepseek-','glm-','kimi-','moonshot-','qwen-','qwen2-','qwen3-','qwen4-','qwq-','minimax-','gemini-','gemma-','grok-','doubao-','hunyuan-','llama-','llama2-','llama3-','meta-llama','mistral-','mixtral-','baichuan-','ernie-','step-','seed-','yi-'] LOOP
+    IF starts_with(normalized,pattern) THEN RETURN false; END IF;
+   END LOOP;
+  ELSIF platform='deepseek' THEN
+   normalized:=lower(btrim(model));
+   WHILE length(normalized)>4 AND right(normalized,4)='[1m]' LOOP normalized:=left(normalized,-4); END LOOP;
+   RETURN normalized='' OR normalized IN ('deepseek-flash','deepseek-v4-pro','deepseek-v4-flash','deepseek-v4-flash-vision-exp','deepseek-v4-pro-0813');
+  END IF;
+  RETURN true;
+ END IF;
  normalized:=btrim(model);
  IF platform IN ('gemini','antigravity') AND normalized='gemini-3.1-pro-preview-customtools' THEN normalized:='gemini-3.1-pro-preview'; END IF;
  FOR pattern IN SELECT key FROM jsonb_each(mapping) WHERE jsonb_typeof(value)='string' LOOP
@@ -69,8 +83,8 @@ BEGIN
  END LOOP;
  RETURN false;
 END $$;
-ALTER FUNCTION s2a_private.account_mapping_accepts(text,jsonb,jsonb,text) OWNER TO s2a_management;
-REVOKE ALL ON FUNCTION s2a_private.account_mapping_accepts(text,jsonb,jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
+ALTER FUNCTION s2a_private.account_mapping_accepts(text,text,jsonb,jsonb,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.account_mapping_accepts(text,text,jsonb,jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
 
 CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_key_hash text,p_model text,p_request_id uuid,p_excluded bigint[] DEFAULT '{}',
@@ -196,7 +210,7 @@ BEGIN
                 AND (NOT g.require_privacy_set OR (accounts.platform<>'openai' OR accounts.extra->>'privacy_mode'='training_off'))
             ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
             FOR UPDATE OF accounts LOOP
-            IF NOT s2a_private.account_mapping_accepts(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',p_model) THEN CONTINUE; END IF;
+            IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',p_model) THEN CONTINUE; END IF;
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
             INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket)

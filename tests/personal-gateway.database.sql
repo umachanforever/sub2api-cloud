@@ -413,13 +413,22 @@ SET LOCAL ROLE s2a_management;
 DO $$
 DECLARE u bigint; g bigint; a bigint; b bigint; h text; r jsonb;
 BEGIN
- IF NOT s2a_private.account_mapping_accepts('gemini','{}','{"gemini-3.1-pro-preview":"target"}','gemini-3.1-pro-preview-customtools')
-     OR NOT s2a_private.account_mapping_accepts('openai','{}','{"gpt-6*":"target"}','gpt-6.1')
-     OR s2a_private.account_mapping_accepts('openai','{}','{"gpt-6*":"target"}','GPT-6.1')
-     OR NOT s2a_private.account_mapping_accepts('openai','{"openai_passthrough":true}','{"only":"target"}','other')
-     OR s2a_private.account_mapping_accepts('openai','{"openai_passthrough":false,"openai_oauth_passthrough":true}','{"only":"target"}','other')
-     OR NOT s2a_private.account_mapping_accepts('openai','{}','{"only":"target"}','__models__')
+ IF NOT s2a_private.account_mapping_accepts('gemini','apikey','{}','{"gemini-3.1-pro-preview":"target"}','gemini-3.1-pro-preview-customtools')
+     OR NOT s2a_private.account_mapping_accepts('openai','apikey','{}','{"gpt-6*":"target"}','gpt-6.1')
+     OR s2a_private.account_mapping_accepts('openai','apikey','{}','{"gpt-6*":"target"}','GPT-6.1')
+     OR NOT s2a_private.account_mapping_accepts('openai','apikey','{"openai_passthrough":true}','{"only":"target"}','other')
+     OR s2a_private.account_mapping_accepts('openai','apikey','{"openai_passthrough":false,"openai_oauth_passthrough":true}','{"only":"target"}','other')
+     OR NOT s2a_private.account_mapping_accepts('openai','apikey','{}','{"only":"target"}','__models__')
      THEN RAISE EXCEPTION 'account mapping rules mismatch'; END IF;
+ IF s2a_private.account_mapping_accepts('openai','oauth','{}','{}','vendor/DeepSeek-v4-pro')
+  OR s2a_private.account_mapping_accepts('openai','oauth','{}','{}','vendor/k3-256k')
+  OR NOT s2a_private.account_mapping_accepts('openai','oauth','{}','{}','custom-future-model')
+  OR NOT s2a_private.account_mapping_accepts('openai','apikey','{}','{}','deepseek-flash')
+  OR NOT s2a_private.account_mapping_accepts('openai','oauth','{}','{"deepseek-flash":"gpt-6-sol"}','deepseek-flash')
+  OR NOT s2a_private.account_mapping_accepts('openai','oauth','{"openai_passthrough":true}','{}','deepseek-flash')
+  OR NOT s2a_private.account_mapping_accepts('deepseek','apikey','{}','{}','DeepSeek-flash[1M][1m]')
+  OR s2a_private.account_mapping_accepts('deepseek','apikey','{}','{}','unknown-future-model')
+  THEN RAISE EXCEPTION 'unmapped provider model defaults mismatch'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('mapping-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
  INSERT INTO public.groups(name,platform) VALUES('Mapping fixture','openai') RETURNING id INTO g;
  INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Mapping') RETURNING s2a_key_hash INTO h;
@@ -430,6 +439,11 @@ BEGIN
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'scheduler selected unsupported mapped account'; END IF;
  IF EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE account_id=a) THEN RAISE EXCEPTION 'unsupported account consumed a slot'; END IF;
  IF public.s2a_personal_acquire(h,'unmapped-model',gen_random_uuid())->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'scheduler ignored explicit account allowlists'; END IF;
+ UPDATE public.accounts SET type='oauth',credentials='{"access_token":"synthetic"}'::jsonb WHERE id=a;
+ UPDATE public.accounts SET credentials='{"api_key":"synthetic","model_mapping":{"deepseek-*":"deepseek-flash"}}'::jsonb WHERE id=b;
+ r:=public.s2a_personal_acquire(h,'deepseek-flash',gen_random_uuid());
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'foreign model stuck on OpenAI OAuth account'; END IF;
+ IF EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE account_id=a) THEN RAISE EXCEPTION 'foreign model consumed OAuth slot'; END IF;
 END $$;
 ROLLBACK;
 
