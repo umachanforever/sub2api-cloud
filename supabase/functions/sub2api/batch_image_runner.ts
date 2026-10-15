@@ -51,6 +51,7 @@ export async function runBatchImageJobs(db:Database,options:BatchRunnerOptions):
     uploadInput:async(input,signal)=>({input_ref:await client.uploadJSONL(buildGeminiBatchJSONL(input),job.batch_id,signal),output_ref:'gemini:pending'}),
     createUploadedBatch:(model,name,checkpoint,signal)=>client.createBatch(model,checkpoint.input_ref,name,signal),
     getBatch:(name,signal)=>client.getBatch(name,signal),
+    cancelBatch:(name,signal)=>client.cancelBatch(name,signal),
    };
   }
   if(await executeBatchImageJob(db,job,{

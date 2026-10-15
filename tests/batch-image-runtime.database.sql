@@ -119,3 +119,27 @@ BEGIN
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'auto provider replay mismatch'; END IF;
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint;g bigint;a bigint;h text;ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');r jsonb;lease uuid;
+BEGIN
+ INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-cancel-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch cancel fixture','gemini',true) RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-cancel-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING s2a_key_hash INTO h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Cancel batch','gemini','apikey','{"api_key":"fixture"}',4) RETURNING id INTO a;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ PERFORM public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images');
+ PERFORM public.s2a_batch_image_ready(h,ident,repeat('a',64));
+ lease:=(public.s2a_batch_image_runtime_claim()->0->>'lease_id')::uuid;
+ r:=public.s2a_batch_image_cancel(h,ident);
+ IF r->>'status' IS DISTINCT FROM 'cancelled' OR r->>'cancelled_count' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'queued cancellation failed'; END IF;
+ IF public.s2a_batch_image_runtime_dispatch(ident,lease)->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'cancelled worker dispatched'; END IF;
+ IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cancelled task reclaimed'; END IF;
+ IF public.s2a_batch_image_cancel(h,ident)->>'status' IS DISTINCT FROM 'cancelled' THEN RAISE EXCEPTION 'cancel replay'; END IF;
+ UPDATE s2a_private.batch_image_runtime SET stage='poll',provider_job_name='batches/one',input_ref='files/in',create_dispatched_at=clock_timestamp(),cancel_requested=false WHERE batch_id=ident;
+ UPDATE public.batch_image_jobs SET status='running' WHERE batch_id=ident;
+ r:=public.s2a_batch_image_cancel(h,ident);
+ IF r->>'status' IS DISTINCT FROM 'running' OR NOT EXISTS(SELECT 1 FROM s2a_private.batch_image_runtime WHERE batch_id=ident AND cancel_requested AND stage='poll') THEN RAISE EXCEPTION 'upstream cancel falsely completed'; END IF;
+END $$;
+ROLLBACK;

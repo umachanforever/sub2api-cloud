@@ -23,3 +23,9 @@ test('failed receipt storage leaves uncertain creation for recovery and rejects 
  const {calls,db,deps}=setup();deps.saveCreated=async()=>{throw Error('storage down');};assert.equal(await executeBatchImageJob(db,job,deps),false);assert.equal(calls.filter(value=>value==='create').length,1);assert.ok(!calls.includes('s2a_batch_image_runtime_created'));
  await assert.rejects(executeBatchImageJob(db,{...job,lease_id:'bad'},deps),/invalid_batch_runtime_job/);
 });
+test('batch cancellation is sent to the pinned provider and followed by authoritative polling',async()=>{
+ for(const rejected of [false,true]){
+  const {calls,db,deps}=setup();deps.provider.cancelBatch=async()=>{calls.push('cancel');if(rejected)throw Error('already cancelled');};deps.provider.getBatch=async()=>{calls.push('poll');return {name:'batches/one',status:'cancelled',error_code:'GEMINI_BATCH_CANCELLED'};};
+  assert.equal(await executeBatchImageJob(db,{...job,stage:'poll',provider_job_name:'batches/one',cancel_requested:true},deps),true);assert.deepEqual(calls,['cancel','poll','s2a_batch_image_runtime_observed']);
+ }
+});

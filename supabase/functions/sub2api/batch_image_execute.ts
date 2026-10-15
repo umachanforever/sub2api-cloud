@@ -1,10 +1,11 @@
 import {Database,HttpError} from './db.ts';
 import type {GeminiBatchInput,GeminiBatchStatus} from './gemini_batch.ts';
-export type BatchExecutionJob={batch_id:string;lease_id:string;stage:'upload'|'create'|'poll'|'index';recover_create:boolean;input_ref?:string|null;output_ref?:string|null;provider_job_name?:string|null};
+export type BatchExecutionJob={batch_id:string;lease_id:string;stage:'upload'|'create'|'poll'|'index';recover_create:boolean;cancel_requested?:boolean;input_ref?:string|null;output_ref?:string|null;provider_job_name?:string|null};
 export type BatchExecutionProvider={
  uploadInput(input:GeminiBatchInput,signal:AbortSignal):Promise<{input_ref:string;output_ref:string}>;
  createUploadedBatch(model:string,displayName:string,checkpoint:{input_ref:string;output_ref:string},signal:AbortSignal):Promise<GeminiBatchStatus>;
  getBatch(name:string,signal:AbortSignal):Promise<GeminiBatchStatus>;
+ cancelBatch?(name:string,signal:AbortSignal):Promise<void>;
 };
 export type BatchExecutionDependencies={
  provider:BatchExecutionProvider;
@@ -26,6 +27,11 @@ export async function executeBatchImageJob(db:Database,job:BatchExecutionJob,dep
   if(job.stage==='index')return await deps.index(signal);
   if(job.stage==='poll'){
    if(!job.provider_job_name)throw new HttpError(503,'invalid_batch_runtime_job');
+   if(job.cancel_requested){
+    if(!deps.provider.cancelBatch)throw new HttpError(503,'batch_cancellation_unavailable');
+    // Cancellation can already have completed upstream; always poll its authoritative state.
+    try{await deps.provider.cancelBatch(job.provider_job_name,signal);}catch{console.warn('batch_image_cancel_pending');}
+   }
    const observed=await deps.provider.getBatch(job.provider_job_name,signal);
    await rpc(db,'s2a_batch_image_runtime_observed',job,{p_state:observed.status,p_output:observed.output_ref??null,p_error:observed.error_code??null});return true;
   }

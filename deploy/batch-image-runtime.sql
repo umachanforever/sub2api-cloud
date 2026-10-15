@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS s2a_private.batch_image_runtime (
     CHECK(stage NOT IN ('poll','index','completed') OR provider_job_name IS NOT NULL),
     CHECK(stage='upload' OR stage='failed' OR input_ref IS NOT NULL)
 );
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cancel_requested boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS credential_version bigint;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS client_ip text;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS ready boolean NOT NULL DEFAULT true;
@@ -91,6 +92,7 @@ BEGIN
         lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
     UPDATE public.batch_image_jobs SET status=native_status,last_error_code=p_error,last_error_message=NULL,
         started_at=CASE WHEN p_state='running' THEN coalesce(started_at,clock_timestamp()) ELSE started_at END,
+        cancelled_count=CASE WHEN p_state='cancelled' THEN item_count ELSE cancelled_count END,
         finished_at=CASE WHEN next_stage='failed' THEN coalesce(finished_at,clock_timestamp()) ELSE finished_at END,
         updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true,'stage',next_stage);
@@ -302,8 +304,24 @@ BEGIN
     IF item.status<>'success' OR item.provider_source_object IS NULL THEN RETURN jsonb_build_object('error','batch_image_item_failed','status',409); END IF;
     RETURN jsonb_build_object('custom_id',item.custom_id,'path',item.provider_source_object,'image_count',item.image_count);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_cancel(p_key_hash text,p_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE snapshot jsonb; task s2a_private.batch_image_runtime%ROWTYPE;
+BEGIN
+    snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+    IF snapshot ? 'error' THEN RETURN snapshot; END IF;
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF task.stage IN ('completed','failed') THEN RETURN snapshot; END IF;
+    IF task.stage IN ('upload','create') AND task.create_dispatched_at IS NULL THEN
+        UPDATE s2a_private.batch_image_runtime SET stage='failed',cancel_requested=true,error_code='BATCH_CANCELLED',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
+        UPDATE public.batch_image_jobs SET status='cancelled',cancelled_count=item_count,finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE batch_id=p_id;
+    ELSE
+        UPDATE s2a_private.batch_image_runtime SET cancel_requested=true,due_at=clock_timestamp(),updated_at=clock_timestamp() WHERE batch_id=p_id;
+    END IF;
+    RETURN public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);
