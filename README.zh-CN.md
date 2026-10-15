@@ -92,6 +92,8 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性以及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求。
 
+执行 `npm run verify:independence`，可暂时停止本项目的本地控制台、管理服务和 Redis，再运行云端验收，最后恢复原本运行的容器。命令会先确认容器归属，验收失败或中断时也会恢复服务，其他 Docker 项目继续运行。
+
 仅需查看用量时，可选用 `npm run usage:access` 生成 `sk-usage-` 只读 Key，配置保存在 `.local/agent-usage.json`。它无法调用 AI 或访问管理接口，并继承关联调用 Key 的分组、有效期、启用状态和 IP 限制。在 `s2a_private.usage_tokens` 设置对应记录的 `revoked_at` 可撤销授权；停用或删除关联调用 Key 也会阻止访问。
 
 控制台的仪表板、用量、账号详情、设置等成功的数据查询统一在当前标签页内存缓存 60 秒。修改数据或切换登录身份会清空缓存；认证、OAuth 流程、导出和流式接口直接请求，携带 `Cache-Control: no-cache` 可强制重新读取。

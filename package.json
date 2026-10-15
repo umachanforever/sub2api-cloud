@@ -20,7 +20,8 @@
     "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down",
     "management:setup": "node --env-file=.env.local scripts/management.mjs",
     "usage:access": "node --env-file=.env.local scripts/usage-access.mjs",
-    "agent:access": "node --env-file=.env.local scripts/agent-access.mjs"
+    "agent:access": "node --env-file=.env.local scripts/agent-access.mjs",
+    "verify:independence": "node scripts/verify-independence.mjs"
   },
   "dependencies": {
     "nodemailer": "10.1.1"
