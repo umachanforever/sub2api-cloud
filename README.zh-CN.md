@@ -116,3 +116,5 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 ## 开源许可
 
 基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)，使用 LGPL-3.0-or-later 许可证。原版许可证和作者声明保存在 [LICENSE](LICENSE)、[COPYING](COPYING) 与 [NOTICE](NOTICE)。
+
+请求体默认上限为 256 MiB，与原版 Sub2API 一致；embeddings、搜索和 systemone 专用文本路由上限为 32 MiB。部署前可通过 `SERVER_MAX_REQUEST_BODY_SIZE`、`GATEWAY_MAX_BODY_SIZE` 和 `GATEWAY_TEXT_MAX_BODY_SIZE` 按字节配置。服务器上限设为 `0` 仅关闭全局限制，网关限制仍然生效。Supabase 运行内存及上游服务限制可能使大型附件的实际可用上限更低。

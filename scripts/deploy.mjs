@@ -1,3 +1,4 @@
+import {requestLimitSecrets} from '../supabase/functions/sub2api/request_limits.ts';
 import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {provisionManagement} from './management.mjs';
 import {googleOAuthClients,googleOAuthVariables} from '../supabase/functions/sub2api/google_oauth_config.ts';
@@ -37,7 +38,7 @@ export function deploymentConfig(env) {
   if (Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key) throw new Error('The credential encryption key must be 32 bytes encoded as Base64');
   return {
     ref: new URL(project.supabase_url).hostname.split('.')[0],
-    secrets: `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
+    secrets: requestLimitSecrets(env)+`GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
   };
 }
 

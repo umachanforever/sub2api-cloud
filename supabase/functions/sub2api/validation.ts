@@ -1,3 +1,4 @@
+import { DEFAULT_REQUEST_LIMITS } from './request_limits.ts';
 import { grokOrigin } from './grok_config.ts';
 import { quotaDisplaySnapshot, quotaWindowMetadata } from "./openai_quota_values.ts";
 import { autoResetThreshold } from "./openai_auto_reset_values.ts";
@@ -144,29 +145,31 @@ export function parseCredentials(source: unknown): OAuthCredentials {
 }
 export async function readBody(
   request: Request,
+  maxBytes = DEFAULT_REQUEST_LIMITS.gateway,
 ): Promise<Record<string, unknown>> {
   const reader = request.body?.getReader();
   if (!reader) throw new HttpError(400, "invalid_request");
   let bytes = 0;
-  const chunks: Uint8Array[] = [];
+  const chunks: string[] = [];
+  const decoder = new TextDecoder();
   try {
+    const length = request.headers.get('content-length');
+    if (length && /^\d+$/.test(length) && Number(length) > maxBytes) {
+      await reader.cancel();
+      throw new HttpError(413, 'request_too_large');
+    }
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       bytes += value.byteLength;
-      if (bytes > 1_048_576) {
+      if (bytes > maxBytes) {
         await reader.cancel();
         throw new HttpError(413, "request_too_large");
       }
-      chunks.push(value);
+      chunks.push(decoder.decode(value, { stream: true }));
     }
-    const data = new Uint8Array(bytes);
-    let offset = 0;
-    for (const chunk of chunks) {
-      data.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    const body = JSON.parse(new TextDecoder().decode(data));
+    chunks.push(decoder.decode());
+    const body = JSON.parse(chunks.join(''));
     if (!body || typeof body !== "object" || Array.isArray(body)) {
       throw new HttpError(400, "invalid_request");
     }

@@ -1,3 +1,4 @@
+import {resolveRequestLimits} from './request_limits.ts';
 import {jobSigningKey} from './job_signing.ts';
 import { createHandler } from "./app.ts";
 import { googleOAuthClients, googleOAuthVariables } from "./google_oauth_config.ts";
@@ -23,6 +24,7 @@ Deno.serve(
     url: url.replace(/\/$/, ""),
     serviceKey,
     encryptionKey,
+    requestLimits: resolveRequestLimits(Deno.env.toObject()),
     jobSigningKey: await jobSigningKey(encryptionKey),
     adminIds,
     googleOAuth: googleOAuthClients(Object.fromEntries(googleOAuthVariables.map(key => [key, Deno.env.get(key)]))),

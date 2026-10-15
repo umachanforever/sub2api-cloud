@@ -1,3 +1,4 @@
+import {requestLimitSecrets} from '../supabase/functions/sub2api/request_limits.ts';
 import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {provisionManagement} from './management.mjs';
 import {configureJobScheduler} from './job-scheduler.mjs';
@@ -99,7 +100,7 @@ async function up() {
   await run('docker', ['compose', '-p', 'sub2api-supabase', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
   if (mode === 'local') {
     const file = new URL('../.local/functions.env', import.meta.url);
-    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env)+oauthSecrets(env), { mode: 0o600 });
+    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env)+oauthSecrets(env)+requestLimitSecrets(env), { mode: 0o600 });
     console.log('Local Supabase mode. Keep this terminal running; stop with npm run down -- --local. Administrator credentials: .local/admin.json');
     // Docker Desktop can share the project while macOS's system temp directory is unavailable.
     const temp = fileURLToPath(new URL('../.local/tmp/', import.meta.url));

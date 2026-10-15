@@ -1,3 +1,4 @@
+import {requestBodyLimit} from './request_limits.ts';
 import { currentCodexIdentity } from "./codex_identity.ts";
 import { upstreamErrorCode } from "./upstream_errors.ts";
 import { validateCodexReasoning } from "./codex_models.ts";
@@ -116,7 +117,7 @@ export async function proxy(
   let stream = true, includeUsage = false;
   if (!models) {
     try {
-      const raw = await readBody(request);
+      const raw = await readBody(request, requestBodyLimit(path, db.config.requestLimits));
       if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
         throw new HttpError(400, "invalid_stream");
       }

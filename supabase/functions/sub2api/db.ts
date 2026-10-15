@@ -13,6 +13,7 @@ export type Config = {
   serviceKey: string;
   jobSigningKey?: string;
   encryptionKey: string;
+  requestLimits?: import("./request_limits.ts").RequestLimits;
   adminIds: string[];
   dataModel?: "native";
   googleOAuth?: import("./google_oauth.ts").GoogleOAuthClients;
