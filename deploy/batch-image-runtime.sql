@@ -129,9 +129,10 @@ $$;
 ALTER FUNCTION s2a_private.batch_model_supported(jsonb,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.batch_model_supported(jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
 DROP FUNCTION IF EXISTS public.s2a_batch_image_prepare(text,text,text,text,text,integer,text,text);
-CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL,p_vertex_enabled boolean DEFAULT false)
+DROP FUNCTION IF EXISTS public.s2a_batch_image_prepare(text,text,text,text,text,integer,text,text,boolean);
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL,p_vertex_enabled boolean DEFAULT false,p_parent text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE; a s2a_private.accounts%ROWTYPE; pattern text; allowed boolean:=false;
+DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE; a s2a_private.accounts%ROWTYPE; pattern text; allowed boolean:=false; parent_id text; parent_snapshot jsonb;
 BEGIN
     policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
     IF policy ? 'error' THEN RETURN policy; END IF;
@@ -148,6 +149,13 @@ BEGIN
     END IF;
     identity:=public.s2a_gateway_key_lookup(p_key_hash);
     IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    parent_id:=nullif(p_parent,'');
+    IF parent_id IS NOT NULL THEN
+        IF parent_id=p_id OR parent_id !~ '^imgbatch_[a-f0-9]{32}$' THEN RETURN jsonb_build_object('error','invalid_parent_batch','status',400); END IF;
+        parent_snapshot:=public.s2a_batch_image_read(p_key_hash,parent_id,p_client_ip);
+        IF parent_snapshot ? 'error' THEN RETURN parent_snapshot; END IF;
+        parent_id:=coalesce(parent_snapshot->>'parent_batch_id',parent_id);
+    END IF;
     PERFORM 1 FROM public.users WHERE id=(identity->>'user_id')::bigint FOR UPDATE;
     SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
     IF FOUND THEN
@@ -167,8 +175,8 @@ BEGIN
         AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp() AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
         ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id LIMIT 1 FOR UPDATE OF accounts;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','no_available_batch_account','status',503); END IF;
-    INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count,task_name,request_hash)
-        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,CASE WHEN a.type='service_account' THEN 'vertex' ELSE 'gemini_api' END,p_model,p_count,p_name,p_hash);
+    INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count,task_name,request_hash,parent_batch_id)
+        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,CASE WHEN a.type='service_account' THEN 'vertex' ELSE 'gemini_api' END,p_model,p_count,p_name,p_hash,parent_id);
     INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,ready,credential_version,client_ip)
         VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,(identity->>'group_id')::bigint,a.id,p_key_hash,p_hash,false,a.s2a_credential_version,p_client_ip);
     RETURN jsonb_build_object('id',p_id,'ready',false);
@@ -329,7 +337,7 @@ BEGIN
     SELECT coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('custom_id',custom_id,'status',status,'image_count',image_count,
         'mime_type',mime_type,'file_extension',file_extension,'error_code',error_code)) ORDER BY id),'[]'::jsonb) INTO items FROM public.batch_image_items WHERE job_id=p_id;
     RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
-        'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
+        'parent_batch_id',native.parent_batch_id,'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
         'estimated_cost',native.estimated_cost,'hold_amount',native.hold_amount,'actual_cost',native.actual_cost,
         'submitted_at',native.submitted_at,'settled_at',native.settled_at,'output_deleted_at',native.output_deleted_at,

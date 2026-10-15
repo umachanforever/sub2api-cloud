@@ -103,6 +103,14 @@ BEGIN
  IF public.s2a_batch_image_read(h,ident)->>'downloaded_at' IS NULL THEN RAISE EXCEPTION 'download timestamp hidden'; END IF;
  IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":true}'::jsonb)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'downloaded filter mismatch'; END IF;
  IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":false}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'undownloaded filter mismatch'; END IF;
+ UPDATE public.groups SET model_allowlist='{"enabled":false,"models":[]}' WHERE id=g;
+ r:=public.s2a_batch_image_prepare(h,'imgbatch_'||repeat('b',32),repeat('b',64),'gemini-image','gemini_api',1,'retry',p_parent=>ident);
+ IF r ? 'error' THEN RAISE EXCEPTION 'child prepare failed: %',r; END IF;
+ IF public.s2a_batch_image_read(h,'imgbatch_'||repeat('b',32))->>'parent_batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'parent binding lost'; END IF;
+ r:=public.s2a_batch_image_prepare(h,'imgbatch_'||repeat('d',32),repeat('d',64),'gemini-image','gemini_api',1,'nested retry',p_parent=>'imgbatch_'||repeat('b',32));
+ IF r ? 'error' OR public.s2a_batch_image_read(h,'imgbatch_'||repeat('d',32))->>'parent_batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'nested retry not grouped under original parent'; END IF;
+ IF public.s2a_batch_image_prepare(other_hash,'imgbatch_'||repeat('c',32),repeat('c',64),'gemini-image','gemini_api',1,'retry',p_parent=>ident)->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key parent accepted'; END IF;
+
 
 END $$;
 ROLLBACK;

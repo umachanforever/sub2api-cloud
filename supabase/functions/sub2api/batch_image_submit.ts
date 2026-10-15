@@ -28,7 +28,7 @@ export async function submitBatchImage(db:Database,keyHash:string,input:unknown,
  }
  if(automaticName)await restoreName();
  let hash=await imageBytesHash(new TextEncoder().encode(JSON.stringify(normalized)));
- const prepare=async()=>checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket),p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
+ const prepare=async()=>checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_parent:normalized.parent_batch_id||null,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket),p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
  let prepared:Record<string,unknown>;
  try{prepared=await prepare();}
  catch(error){
