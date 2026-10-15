@@ -87,6 +87,7 @@ The gateway supports Responses, Chat Completions, Anthropic Messages, and Gemini
 Gemini `cachedContent` references are scoped to their owning key and group and stay pinned to the account that created the cache. Unknown, expired, foreign, or model-mismatched cache names are rejected before provider dispatch.
 
 `GET /v1beta/cachedContents` lists active caches owned by the current key and group, with `pageSize` and `pageToken` pagination. `GET /v1beta/cachedContents/{id}` returns the public cache metadata without exposing provider resource names or account identifiers.
+`DELETE /v1beta/cachedContents/{id}` deletes an owned cache through its bound API-key account and removes its local binding only after the provider confirms absence.
 
 ### Subscription usage
 

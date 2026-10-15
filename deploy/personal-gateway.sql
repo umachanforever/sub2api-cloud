@@ -374,5 +374,32 @@ END $$;
 ALTER FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) TO service_role;
+-- Complete deletion only under the active owning account reservation.
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_deleted(p_key_hash text,p_name text,p_lease_id uuid,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; lease s2a_private.personal_gateway_leases%ROWTYPE; item public.gemini_cached_contents%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'gemini' THEN RETURN jsonb_build_object('error','gemini_cache_requires_gemini_group','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    IF p_name IS NULL OR p_name !~ '^cachedContents/[a-zA-Z0-9_-]{1,64}$' THEN RETURN jsonb_build_object('error','invalid_cached_content','status',400); END IF;
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
+    IF NOT FOUND OR lease.finished_at IS NOT NULL OR lease.expires_at<=clock_timestamp()
+        OR lease.user_id<>(identity->>'user_id')::bigint OR lease.key_id<>(identity->>'key_id')::bigint
+        OR lease.group_id<>(identity->>'group_id')::bigint OR NOT lease.count_only THEN
+        RETURN jsonb_build_object('error','invalid_cache_reservation','status',409);
+    END IF;
+    SELECT * INTO item FROM public.gemini_cached_contents WHERE public_id=substring(p_name FROM 16)
+        AND user_id=lease.user_id AND api_key_id=lease.key_id AND group_id=lease.group_id
+        AND account_id=lease.account_id AND model=lease.model FOR UPDATE;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','cached_content_not_found','status',403); END IF;
+    UPDATE public.gemini_cached_contents SET deleted_at=coalesce(deleted_at,clock_timestamp()),updated_at=clock_timestamp() WHERE id=item.id;
+    RETURN jsonb_build_object('deleted',true);
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

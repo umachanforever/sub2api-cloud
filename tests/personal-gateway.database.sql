@@ -146,6 +146,14 @@ BEGIN
     acquired:=public.s2a_personal_acquire(h,'gemini-cache',request,'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture"}');
     IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM cache_account::text THEN RAISE EXCEPTION 'cache account not pinned: %',acquired; END IF;
     result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,200,'completed',10,2,NULL,8,0,1,NULL,'gemini-upstream');
+    IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_cache_reservation' THEN RAISE EXCEPTION 'cache deletion accepted missing reservation'; END IF;
+    acquired:=public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture","count_only":true}');
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'cache delete admission failed: %',acquired; END IF;
+    IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid)->>'deleted' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache deletion failed'; END IF;
+    IF public.s2a_personal_cache_read(h)<>'{}'::jsonb THEN RAISE EXCEPTION 'deleted cache listed'; END IF;
+    PERFORM public.s2a_personal_finish((acquired->>'lease_id')::uuid,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gemini-upstream');
+    IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'invalid_cache_reservation' THEN RAISE EXCEPTION 'finished reservation deleted cache'; END IF;
+    UPDATE public.gemini_cached_contents SET deleted_at=NULL WHERE public_id='cache-fixture';
     UPDATE public.accounts SET status='inactive' WHERE id=cache_account;
     IF public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture"}')->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'unavailable cache fell back'; END IF;
     UPDATE public.gemini_cached_contents SET expire_time=now()-interval '1 second' WHERE public_id='cache-fixture';
