@@ -1,5 +1,6 @@
 import { accountFetch } from "./account_proxy.ts";
 import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
+import { googleOAuthCatalog, googleOAuthRequest, normalizeCodeAssist } from "./google_oauth.ts";
 import { recordOpsError, type ErrorContext } from "./ops_errors.ts";
 import { mappedCatalog, mappedTarget, type ModelSources } from "./model_mapping.ts";
 import { quotaHeaderWindows } from "./openai_quota_pause.ts";
@@ -256,11 +257,19 @@ export async function proxy(
         );
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
-      } else if (platform === "anthropic") {
+      } else if (platform === "anthropic" || platform === "gemini") {
         let credentials = await credentialsFor(db, account);
-        const forward = () => {
-          native = anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
-          return accountFetch(db, account, native.url, native.init);
+        const forward = async () => {
+          const outgoing = platform === "gemini"
+            ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
+            : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
+          native = outgoing;
+          if (platform === "gemini" && models) {
+            const catalog = googleOAuthCatalog(credentials, forwardedPath, request);
+            if (catalog) return catalog;
+          }
+          const response = await accountFetch(db, account, outgoing.url, outgoing.init);
+          return "codeAssist" in outgoing && outgoing.codeAssist ? normalizeCodeAssist(response, outgoing.streaming) : response;
         };
         providerDispatched = true;
         upstream = await forward();

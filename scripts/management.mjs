@@ -56,7 +56,7 @@ IF EXISTS(SELECT FROM pg_authid WHERE rolname='s2a_management' AND rolpassword I
 ALTER ROLE s2a_management PASSWORD ${literal(password)};
 END IF; END $provision$;`);
  const runtime={AUTO_SETUP:'true',DATABASE_URL:database.href,DATABASE_HOST:database.hostname,DATABASE_PORT:database.port,DATABASE_USER:decodeURIComponent(database.username),DATABASE_PASSWORD:password,DATABASE_DBNAME:'postgres',DATABASE_SSLMODE:local?'disable':'require',SUPABASE_URL:local?'http://host.docker.internal:54321':env.SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY:env.SUPABASE_PUBLISHABLE_KEY,SUPABASE_JWT_ISSUER:env.SUPABASE_URL+'/auth/v1',ADMIN_EMAIL:env.SUB2API_LOCAL_ADMIN_EMAIL||'admin@sub2api.local',ADMIN_PASSWORD:config.setup_password,JWT_SECRET:config.jwt,TOTP_ENCRYPTION_KEY:config.totp};
- for(const key of ['ANTIGRAVITY_OAUTH_CLIENT_ID','ANTIGRAVITY_OAUTH_CLIENT_SECRET','GEMINI_CLI_OAUTH_CLIENT_ID','GEMINI_CLI_OAUTH_CLIENT_SECRET'])if(env[key])runtime[key]=env[key];
+ for(const key of ['ANTIGRAVITY_OAUTH_CLIENT_ID','ANTIGRAVITY_OAUTH_CLIENT_SECRET','GEMINI_CLI_OAUTH_CLIENT_ID','GEMINI_CLI_OAUTH_CLIENT_SECRET','GEMINI_OAUTH_CLIENT_ID','GEMINI_OAUTH_CLIENT_SECRET'])if(env[key])runtime[key]=env[key];
  for(const value of Object.values(runtime))if(/[\r\n]/.test(value))throw Error('Management runtime configuration must be single-line');
  const runtimePath=new URL('management.env',privateDir);
  await writeFile(runtimePath,Object.entries(runtime).map(([key,value])=>`${key}=${value}`).join('\n')+'\n',{mode:0o600});await chmod(runtimePath,0o600);

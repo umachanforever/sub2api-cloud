@@ -5,7 +5,7 @@ import { randomBytes } from 'node:crypto';
 import { appendFile, chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { validateConfig } from './console.mjs';
-import { deploy, mailSecrets } from './deploy.mjs';
+import { deploy, mailSecrets, oauthSecrets } from './deploy.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 export function deploymentMode(env, args) {
@@ -98,7 +98,7 @@ async function up() {
   await run('docker', ['compose', '-p', 'sub2api-supabase', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
   if (mode === 'local') {
     const file = new URL('../.local/functions.env', import.meta.url);
-    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env), { mode: 0o600 });
+    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env)+oauthSecrets(env), { mode: 0o600 });
     console.log('Local Supabase mode. Keep this terminal running; stop with npm run down -- --local. Administrator credentials: .local/admin.json');
     // Docker Desktop can share the project while macOS's system temp directory is unavailable.
     const temp = fileURLToPath(new URL('../.local/tmp/', import.meta.url));

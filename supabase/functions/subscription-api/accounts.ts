@@ -1,5 +1,6 @@
 import { proxyFetcher } from "./account_proxy.ts";
 import { refreshAnthropicCredentials } from "./anthropic_oauth.ts";
+import { refreshGoogleCredentials } from "./google_oauth.ts";
 import {
   decryptCredentials,
   encryptCredentials,
@@ -89,10 +90,10 @@ export async function credentialsFor(
   );
   if (acquired) {
     try {
-      const refreshed = await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(
-        current,
-        proxyFetcher(db, account.proxy_id, isVaultCredentials(account)),
-      );
+      const fetcher = proxyFetcher(db, account.proxy_id, isVaultCredentials(account));
+      const refreshed = account.platform === "gemini"
+        ? await refreshGoogleCredentials(current, fetcher, db.config.googleOAuth)
+        : await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(current, fetcher);
       const encrypted = isVaultCredentials(account)
         ? null
         : await encryptCredentials(refreshed, db.config.encryptionKey);

@@ -1,4 +1,5 @@
 import {provisionManagement} from './management.mjs';
+import {googleOAuthClients,googleOAuthVariables} from '../supabase/functions/subscription-api/google_oauth_config.ts';
 import {configureJobScheduler} from './job-scheduler.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -8,6 +9,11 @@ import { fileURLToPath } from 'node:url';
 import { validateConfig } from './console.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
+
+export function oauthSecrets(env) {
+  googleOAuthClients(env);
+  return googleOAuthVariables.filter(key=>env[key]?.trim()).map(key=>`${key}=${env[key].trim()}\n`).join('');
+}
 
 export function mailSecrets(env) {
   const key=env.RESEND_API_KEY?.trim()||'',from=env.SUB2API_MAIL_FROM?.trim()||'';
@@ -30,7 +36,7 @@ export function deploymentConfig(env) {
   if (Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key) throw new Error('The credential encryption key must be 32 bytes encoded as Base64');
   return {
     ref: new URL(project.supabase_url).hostname.split('.')[0],
-    secrets: `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
+    secrets: `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
   };
 }
 

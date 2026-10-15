@@ -1,4 +1,5 @@
 import { createHandler } from "./app.ts";
+import { googleOAuthClients, googleOAuthVariables } from "./google_oauth_config.ts";
 
 const url = Deno.env.get("SUPABASE_URL")?.trim();
 const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.trim();
@@ -22,6 +23,7 @@ Deno.serve(
     serviceKey,
     encryptionKey,
     adminIds,
+    googleOAuth: googleOAuthClients(Object.fromEntries(googleOAuthVariables.map(key => [key, Deno.env.get(key)]))),
     ...(dataModel === "native" ? {dataModel} : {}),
     ...(mailKey && mailFrom ? { mail: { apiKey: mailKey, from: mailFrom } } : {}),
   }),

@@ -14,6 +14,7 @@ export type Config = {
   encryptionKey: string;
   adminIds: string[];
   dataModel?: "native";
+  googleOAuth?: import("./google_oauth.ts").GoogleOAuthClients;
   mail?: { apiKey: string; from: string };
 };
 
