@@ -19,6 +19,11 @@ export async function imageForm(request:Request,maxBytes:number):Promise<{form:F
   return {form,body};
 }
 export function validateImageEdit(body:Record<string,unknown>):void{
-  if(!Array.isArray(body.images)||!body.images.some(image=>image&&typeof image.image_url==='string'&&image.image_url.trim())||body.images.some(image=>image&&'file_id' in image))throw new HttpError(400,'image_input_required');
-  if(body.mask&&typeof body.mask==='object'&&'file_id' in body.mask)throw new HttpError(400,'invalid_image_mask');
+  const imageReference=(value:unknown):boolean=>{
+    if(!value||typeof value!=='object'||Array.isArray(value))return false;
+    const image=value as Record<string,unknown>;
+    return !('file_id' in image)&&typeof image.image_url==='string'&&image.image_url.trim().length>0;
+  };
+  if(!Array.isArray(body.images)||!body.images.length||!body.images.every(imageReference))throw new HttpError(400,'image_input_required');
+  if(body.mask!==undefined&&!imageReference(body.mask))throw new HttpError(400,'invalid_image_mask');
 }

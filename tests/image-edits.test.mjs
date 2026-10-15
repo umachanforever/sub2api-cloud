@@ -100,3 +100,13 @@ test('OAuth JSON image fallback emits edit completion and records aggregate usag
  assert.equal(events.length,2);assert.ok(events.every(event=>event.type==='image_edit.completed'&&event.url==='data:image/png;base64,'+event.b64_json&&event.model==='image-alias'));
  assert.equal(events[0].usage,undefined);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_input_tokens,12);assert.equal(value.finishes[0].p_output_tokens,7);
 });
+
+test('Malformed edit image and mask references fail before account reservation',async()=>{
+ const valid={image_url:'https://example.com/image.png'};
+ const cases=[...['text',1,null,[],{}, {image_url:''},{file_id:'file-private'}].flatMap(image=>[{images:[image]},{images:[valid,image]}]),...['mask',1,null,[],{}, {image_url:' '},{file_id:'file-private'}].map(mask=>({images:[valid],mask}))];
+ for(const fields of cases){
+  const value=await fixture(()=>{throw Error('Invalid input reached provider');});
+  const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({prompt:'Edit',...fields})}));
+  assert.equal(response.status,400,JSON.stringify(fields));assert.equal(value.leases.length,0);assert.equal(value.finishes.length,0);
+ }
+});
