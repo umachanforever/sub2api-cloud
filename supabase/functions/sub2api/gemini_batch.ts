@@ -80,7 +80,8 @@ export class GeminiBatchClient{
  constructor(db:Database,account:BatchAccount,credentials:ApiKeyCredentials,options:{maxResultBytes?:number}={}){
   const resultLimit=options.maxResultBytes??0;if(!Number.isSafeInteger(resultLimit)||resultLimit<0)throw new HttpError(500,'invalid_batch_result_limit');this.#maxResultBytes=resultLimit;
   if(account.platform!=='gemini'||account.type!=='apikey')throw new HttpError(400,'batch_provider_account_unsupported');
-  const validated=parseAccountCredentials(credentials,'gemini','apikey') as ApiKeyCredentials;
+  const {model_mapping:_,...authentication}=credentials as ApiKeyCredentials&{model_mapping?:unknown};
+  const validated=parseAccountCredentials(authentication,'gemini','apikey') as ApiKeyCredentials;
   if(validated.base_url&&validated.base_url!==origin)throw new HttpError(400,'invalid_batch_provider_origin');
   this.#db=db;this.#account=account;this.#apiKey=validated.api_key;
  }

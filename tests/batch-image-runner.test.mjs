@@ -10,11 +10,11 @@ test('batch runner connects native admission, private request and receipt storag
   const value=String(url);calls.push(value);
   if(value.includes('/rest/v1/rpc/')){
    const name=value.split('/').at(-1);if(name.endsWith('_claim'))return Response.json([{batch_id:id,lease_id:lease,stage:'upload',recover_create:false}]);
-   if(name.endsWith('_admit'))return Response.json({provider:'gemini_api',model:'gemini-image',request_hash:hash,account:{id:'1',platform:'gemini',type:'apikey',credential_storage:'vault',credential_version:1,credentials:{api_key:'provider-token'}}});
+   if(name.endsWith('_admit'))return Response.json({provider:'gemini_api',model:'gemini-image',request_hash:hash,account:{id:'1',platform:'gemini',type:'apikey',credential_storage:'vault',credential_version:1,credentials:{api_key:'provider-token',model_mapping:{'gemini-image':'gemini-3.1-flash-image'}}}});
    return Response.json(name.endsWith('_dispatch')?{dispatched:true}:{applied:true});
   }
   if(value.startsWith('https://generativelanguage.googleapis.com')){
-   assert.equal(new Headers(init.headers).get('x-goog-api-key'),'provider-token');return Response.json(value.includes('/upload/')?{file:{name:'files/uploaded'}}:{name:'batches/created',state:'JOB_STATE_PENDING'});
+   assert.equal(new Headers(init.headers).get('x-goog-api-key'),'provider-token');if(!value.includes('/upload/'))assert.ok(value.endsWith('/models/gemini-3.1-flash-image:batchGenerateContent'));return Response.json(value.includes('/upload/')?{file:{name:'files/uploaded'}}:{name:'batches/created',state:'JOB_STATE_PENDING'});
   }
   const path=new URL(url).pathname.replace('/object/authenticated/','/object/');if(init.method==='POST'){files.set(path,new Uint8Array(init.body));return Response.json({});}return new Response(files.get(path));
  });

@@ -1,3 +1,4 @@
+import {mappedTarget} from './model_mapping.ts';
 import {indexBatchImageResults} from './batch_image_index.ts';
 import {Database,HttpError} from './db.ts';
 import type {Account} from './accounts.ts';
@@ -32,6 +33,9 @@ export async function runBatchImageJobs(db:Database,options:BatchRunnerOptions):
   }
   if(!['gemini_api','vertex'].includes(admission.provider)||!admission.account||admission.account.platform!=='gemini'||admission.account.credential_storage!=='vault'||typeof admission.account.id!=='string'||!admission.account.credentials||typeof admission.model!=='string'||!/^[a-f0-9]{64}$/.test(admission.request_hash))throw new HttpError(503,'invalid_batch_runtime_admission');
   const binding={batchID:job.batch_id,requestHash:admission.request_hash,provider:admission.provider};
+  const mapping=admission.account.credentials.model_mapping;
+  const upstreamModel=mapping&&typeof mapping==='object'&&!Array.isArray(mapping)?mappedTarget(mapping as Record<string,string>,admission.model,'gemini')??admission.model:admission.model;
+  if(typeof upstreamModel!=='string'||!upstreamModel||/[\r\n]/.test(upstreamModel))throw new HttpError(503,'invalid_batch_model_mapping');
   let provider:BatchExecutionProvider;
   let resultChunks:(signal:AbortSignal)=>AsyncIterable<Uint8Array>;
   if(admission.provider==='vertex'){
@@ -54,6 +58,8 @@ export async function runBatchImageJobs(db:Database,options:BatchRunnerOptions):
     cancelBatch:(name,signal)=>client.cancelBatch(name,signal),
    };
   }
+  const create=provider.createUploadedBatch.bind(provider);
+  provider.createUploadedBatch=(_model,name,checkpoint,signal)=>create(upstreamModel,name,checkpoint,signal);
   if(await executeBatchImageJob(db,job,{
    provider,
    loadInput:async(signal)=>{
