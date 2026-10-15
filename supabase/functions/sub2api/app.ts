@@ -25,13 +25,13 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (/^\/(?:models(?:\/[^/]+)?|chat\/completions|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
+      if (/^\/(?:models(?:\/[^/]+)?|chat\/completions|web_search|x_search|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);

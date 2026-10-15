@@ -3,7 +3,7 @@ SET LOCAL ROLE s2a_management;
 DO $$
 DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::bigint;
     k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
-    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid;
+    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text;
 BEGIN
     IF has_function_privilege('anon','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_key_policy(text,text)','EXECUTE')
@@ -102,6 +102,14 @@ BEGIN
     IF acquired ? 'error' THEN RAISE EXCEPTION 'failed search admission failed'; END IF;
     result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,403,'failed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
     IF EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text) THEN RAISE EXCEPTION 'failed search counted as success'; END IF;
+    FOREACH search_kind IN ARRAY ARRAY['web_search','x_search'] LOOP
+        request:=gen_random_uuid();
+        acquired:=public.s2a_personal_acquire(h,'alias',request,'{}',true,NULL,jsonb_build_object('web_search',true,'search_operation',search_kind));
+        IF acquired ? 'error' THEN RAISE EXCEPTION 'standalone search admission failed'; END IF;
+        result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,200,'completed',12,7,NULL,NULL,0,1,NULL,'grok-4.6');
+        IF NOT EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text AND input_tokens=12 AND output_tokens=7 AND actual_cost=0
+            AND s2a_personal_details->>'operation'=search_kind AND s2a_personal_details->>'web_search_calls'='1') THEN RAISE EXCEPTION 'standalone search usage mismatch'; END IF;
+    END LOOP;
     UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE id=k;
     IF public.s2a_personal_key_billing(h)->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'billing ignored IP allowlist'; END IF;
     IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'ip_forbidden' OR public.s2a_personal_key_policy(h,'192.0.2.5') ? 'error' THEN RAISE EXCEPTION 'discovery ignored IP allowlist'; END IF;

@@ -1,3 +1,4 @@
+import {grokSearchInput,grokSearchBody,grokSearchOutput,type GrokSearch} from './grok_search.ts';
 import {imageResponses} from './image_responses.ts';
 import {oauthImageRequest,oauthImageOutput,directModels} from './oauth_images.ts';
 import {imageForm,validateImageEdit} from './image_input.ts';
@@ -87,6 +88,9 @@ export async function proxy(
     ) throw new HttpError(400, "invalid_model_id");
   }
   const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";
+  const grokSearchKind=/^\/(?:v1\/)?(web_search|x_search)$/.exec(path)?.[1] as GrokSearch['kind']|undefined;
+  const grokSearch=!!grokSearchKind&&request.method==='POST';
+  let grokSearchOptions:GrokSearch|undefined;
   const codexModels = path === "/backend-api/codex/models";
   const models = (codexModels || path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
@@ -123,7 +127,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -145,10 +149,11 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = embeddings || inputTokens || messageTokens || search ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = embeddings || inputTokens || messageTokens || search || grokSearch ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
+      if(grokSearch){grokSearchOptions=grokSearchInput(raw,grokSearchKind!);raw.model='grok-4.6';raw.stream=false;}
       if(images && (raw.model===undefined || typeof raw.model==="string" && !raw.model.trim()))raw.model="gpt-image-2";
       const requestedModel = gemini ? gemini[1] : raw.model;
       if (
@@ -182,6 +187,11 @@ export async function proxy(
   const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  if(grokSearch){
+    const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
+    if(policy.error)throw new HttpError(policy.status??403,policy.error);
+    if(policy.platform!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
+  }
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const excluded: string[] = [];
   // One timeout covers all retries and the stream; the database lease lasts longer.
@@ -201,7 +211,7 @@ export async function proxy(
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(policyModel),
         ...(inputTokens || messageTokens ? {count_only:true} : {}),
-        ...(search ? {web_search:true} : {}),
+        ...(search || grokSearch ? {web_search:true,search_operation:grokSearch?grokSearchKind:'alpha_search'} : {}),
         service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
         stream: models ? false : stream,
         native_stream: search ? false : gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true,
@@ -220,7 +230,8 @@ export async function proxy(
     const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
     const upstreamModel = (account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel;
     let dispatchedModel = upstreamModel;
-    const forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    let forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    if(grokSearch)forwardedBody=grokSearchBody(grokSearchOptions!,upstreamModel);
     const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
     const forwardedPath=aliasCatalog?path.replace(/\/models\/[^/]+$/,"/models"):gemini?`/v1beta/models/${encodeURIComponent(upstreamModel.replace(/^models\//,""))}:${gemini[2]}`:path;
     Object.assign(errorContext, { accountId: account.id, leaseId: lease_id, platform: account.platform ?? "openai", upstreamModel, stream: account.type === "apikey" ? models ? false : gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true : stream });
@@ -303,6 +314,7 @@ export async function proxy(
       }
       if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (images && (account.platform ?? "openai") !== "openai") throw new HttpError(501, "provider_protocol_unsupported");
+      if(grokSearch&&(account.platform??'openai')!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
       let native: ReturnType<typeof apiKeyRequest> | undefined;
@@ -474,6 +486,11 @@ export async function proxy(
       }
       responseAccepted = native ? native.streaming : stream;
       if (native) {
+        if(grokSearch){
+          const value=await upstream.json();
+          if(value?.status&&value.status!=='completed')throw new HttpError(502,'search_upstream_failed');
+          upstream=Response.json(value,{status:upstream.status});
+        }
         if(images&&!apiKey&&!directModels.has(String(forwardedBody?.model)))upstream=await imageResponses(upstream,native.streaming);
         return await nativeResponse(
           upstream,
@@ -488,7 +505,7 @@ export async function proxy(
           model_sources,
           aliasCatalog?decodeURIComponent(modelId!):undefined,
           errorContext.started,
-          images && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
+          grokSearch ? (value)=>grokSearchOutput(value,grokSearchOptions!) : images && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
         );
       }
       if (models) {

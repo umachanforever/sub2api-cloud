@@ -14,7 +14,7 @@ export function resolveRequestLimits(env: Record<string, string | undefined>): R
   return limits;
 }
 export function requestBodyLimit(path: string, limits = DEFAULT_REQUEST_LIMITS): number {
-  const route = path === "/backend-api/codex/alpha/search" || /^(?:\/v1)?\/(?:embeddings|alpha\/search|systemone)$/.test(path) ? limits.text : limits.gateway;
+  const route = path === "/backend-api/codex/alpha/search" || /^(?:\/v1)?\/(?:embeddings|alpha\/search|web_search|x_search|systemone)$/.test(path) ? limits.text : limits.gateway;
   return limits.server > 0 ? Math.min(limits.server, route) : route;
 }
 export function requestLimitSecrets(env: Record<string, string | undefined>): string {

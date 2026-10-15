@@ -144,6 +144,8 @@ Image responses support `b64_json` and MIME-aware data URLs with `response_forma
 Other OAuth image models use the Responses `image_generation` bridge, including image inputs, masks, partial-image events, and completion usage. The bridge keeps image model selection separate from the Responses driver.
 
 
+Grok groups support `POST /v1/web_search` and `/v1/x_search`, plus their root aliases, with API-key and OAuth accounts. Requests accept `query` or `input` and up to 20 results; X search also accepts handle, date, image, and video filters. Returned summaries are matched to actual provider sources before results are exposed.
+
 Codex standalone web search is available at `POST /v1/alpha/search`, `/alpha/search`, and `/backend-api/codex/alpha/search`. OpenAI OAuth and API-key accounts use their native endpoints; personal access tokens use the hosted Responses web-search fallback. Successful searches record one uncharged search call, while failed searches do not create successful usage records.
 
 
