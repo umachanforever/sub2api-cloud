@@ -1,3 +1,4 @@
+import {batchImageModels} from './batch_image_models.ts';
 import {Database,HttpError} from './db.ts';
 import {hashKey,readBody} from './validation.ts';
 import {requestBodyLimit} from './request_limits.ts';
@@ -36,6 +37,7 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
  if(!token)throw new HttpError(401,'unauthorized');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
  const path=pathname.replace(/^\/images\//,'/v1/images/'),url=new URL(request.url),base='/v1/images/batches',keyHash=await hashKey(token),clientIP=imageTaskClientIP(request),args={p_key_hash:keyHash,p_client_ip:clientIP};
+ if(path===base+'/models'){if(request.method!=='GET')throw new HttpError(405,'method_not_allowed');return json(200,await batchImageModels(db,keyHash,clientIP));}
  if(path===base){
   if(request.method==='GET')return json(200,await call(db,'s2a_batch_image_list',{...args,p_limit:number(url.searchParams.get('limit'),20,1,100),p_offset:number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),p_filters:listFilters(url)}));
   if(request.method==='POST'){

@@ -164,6 +164,26 @@ BEGIN
     RETURN jsonb_build_object('id',p_id,'ready',false);
 EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_model_sources(p_key_hash text,p_client_ip text DEFAULT NULL,p_vertex_enabled boolean DEFAULT false)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; sources jsonb;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform'<>'gemini' OR NOT coalesce((policy->>'allow_batch_image_generation')::boolean,false) THEN RETURN jsonb_build_object('error','batch_image_generation_forbidden','status',403); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    SELECT coalesce(jsonb_agg(jsonb_build_object('provider',CASE WHEN a.type='service_account' THEN 'vertex' ELSE 'gemini_api' END,
+        'mapping',coalesce(s2a_private.account_credentials(a.id)->'model_mapping','{}'::jsonb))),'[]'::jsonb) INTO sources
+        FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id JOIN public.groups g ON g.id=ag.group_id
+        WHERE g.id=(identity->>'group_id')::bigint AND a.platform='gemini' AND a.type IN ('apikey','service_account')
+        AND (a.type<>'service_account' OR coalesce(p_vertex_enabled,false)) AND (NOT g.require_oauth_only OR a.type<>'apikey')
+        AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
+        AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=clock_timestamp(),false)
+        AND coalesce(a.overload_until,'-infinity')<=clock_timestamp() AND coalesce(a.rate_limit_reset_at,'-infinity')<=clock_timestamp()
+        AND coalesce(a.temp_unschedulable_until,'-infinity')<=clock_timestamp();
+    RETURN jsonb_build_object('sources',sources,'model_allowlist',policy->'model_allowlist');
+END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_ready(p_key_hash text,p_id text,p_hash text,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE;
@@ -383,7 +403,7 @@ BEGIN
     RETURN jsonb_build_object('applied',true);
 END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

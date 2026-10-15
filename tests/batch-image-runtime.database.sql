@@ -125,6 +125,9 @@ BEGIN
  INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-auto-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING s2a_key_hash INTO h;
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Vertex batch auto','gemini','service_account','{"service_account":{"project_id":"fixture"}}',4) RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ IF jsonb_array_length(public.s2a_batch_image_model_sources(h)->'sources')<>0 THEN RAISE EXCEPTION 'unconfigured Vertex listed'; END IF;
+ r:=public.s2a_batch_image_model_sources(h,NULL,true);
+ IF jsonb_array_length(r->'sources')<>1 OR r->'sources'->0->>'provider'<>'vertex' OR r::text LIKE '%project_id%' OR r::text LIKE '%credentials%' THEN RAISE EXCEPTION 'unsafe model sources: %',r; END IF;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images')->>'error' IS DISTINCT FROM 'no_available_batch_account' THEN RAISE EXCEPTION 'unconfigured Vertex auto-selected'; END IF;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','vertex',1,'images')->>'error' IS DISTINCT FROM 'vertex_managed_bucket_required' THEN RAISE EXCEPTION 'unconfigured Vertex accepted'; END IF;
  IF EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident) THEN RAISE EXCEPTION 'unconfigured task persisted'; END IF;
