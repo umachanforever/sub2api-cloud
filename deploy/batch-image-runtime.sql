@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS s2a_private.batch_image_runtime (
     CHECK(stage NOT IN ('poll','index','completed') OR provider_job_name IS NOT NULL),
     CHECK(stage='upload' OR stage='failed' OR input_ref IS NOT NULL)
 );
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS ready boolean NOT NULL DEFAULT true;
 ALTER TABLE s2a_private.batch_image_runtime OWNER TO s2a_management;
 ALTER TABLE s2a_private.batch_image_runtime ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.batch_image_runtime FROM PUBLIC,anon,authenticated,service_role;
@@ -21,7 +22,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE task s2a_private.batch_image_runtime%ROWTYPE;
 BEGIN
     SELECT * INTO task FROM s2a_private.batch_image_runtime
-        WHERE stage IN ('upload','create','poll','index') AND due_at<=clock_timestamp()
+        WHERE ready AND stage IN ('upload','create','poll','index') AND due_at<=clock_timestamp()
         AND (lease_until IS NULL OR lease_until<=clock_timestamp())
         ORDER BY due_at,batch_id FOR UPDATE SKIP LOCKED LIMIT 1;
     IF NOT FOUND THEN RETURN '[]'::jsonb; END IF;
@@ -105,8 +106,67 @@ BEGIN
     UPDATE public.batch_image_jobs SET status='failed',last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE; a s2a_private.accounts%ROWTYPE; pattern text; allowed boolean:=false;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform'<>'gemini' OR NOT coalesce((policy->>'allow_batch_image_generation')::boolean,false) THEN RETURN jsonb_build_object('error','batch_image_generation_forbidden','status',403); END IF;
+    IF p_id IS NULL OR p_id !~ '^imgbatch_[a-f0-9]{32}$' OR p_hash IS NULL OR p_hash !~ '^[a-f0-9]{64}$'
+        OR p_model IS NULL OR p_model !~ '^[A-Za-z0-9._-]{1,128}$' OR p_provider IS NULL OR p_provider NOT IN ('gemini_api','vertex')
+        OR p_count IS NULL OR p_count NOT BETWEEN 1 AND 200 OR p_name IS NULL OR octet_length(p_name)>255 OR p_name ~ '[[:cntrl:]]'
+        THEN RETURN jsonb_build_object('error','invalid_batch_image_request','status',400); END IF;
+    IF coalesce((policy->'model_allowlist'->>'enabled')::boolean,false) THEN
+        FOR pattern IN SELECT jsonb_array_elements_text(coalesce(policy->'model_allowlist'->'models','[]'::jsonb)) LOOP
+            IF lower(p_model)=lower(pattern) OR (right(pattern,1)='*' AND starts_with(lower(p_model),lower(left(pattern,-1)))) THEN allowed:=true; END IF;
+        END LOOP;
+        IF NOT allowed THEN RETURN jsonb_build_object('error','model_not_allowed','status',403); END IF;
+    END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    PERFORM 1 FROM public.users WHERE id=(identity->>'user_id')::bigint FOR UPDATE;
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
+    IF FOUND THEN
+        IF task.user_id<>(identity->>'user_id')::bigint OR task.key_id<>(identity->>'key_id')::bigint OR task.group_id<>(identity->>'group_id')::bigint OR task.key_hash<>p_key_hash OR task.request_hash<>p_hash
+            OR NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=p_id AND provider=p_provider AND model=p_model AND item_count=p_count AND task_name=p_name)
+            THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
+        RETURN jsonb_build_object('id',p_id,'ready',task.ready);
+    END IF;
+    SELECT accounts.* INTO a FROM s2a_private.accounts accounts JOIN public.account_groups ag ON ag.account_id=accounts.id
+        JOIN public.groups g ON g.id=ag.group_id WHERE g.id=(identity->>'group_id')::bigint AND accounts.platform='gemini'
+        AND accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END
+        AND accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
+        AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
+        AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp() AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
+        AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp() AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
+        ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id LIMIT 1 FOR UPDATE OF accounts;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','no_available_batch_account','status',503); END IF;
+    INSERT INTO public.batch_image_jobs(batch_id,user_id,api_key_id,account_id,provider,model,item_count,task_name,request_hash)
+        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,a.id,p_provider,p_model,p_count,p_name,p_hash);
+    INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,ready)
+        VALUES(p_id,(identity->>'user_id')::bigint,(identity->>'key_id')::bigint,(identity->>'group_id')::bigint,a.id,p_key_hash,p_hash,false);
+    RETURN jsonb_build_object('id',p_id,'ready',false);
+EXCEPTION WHEN unique_violation THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_ready(p_key_hash text,p_id text,p_hash text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform'<>'gemini' OR NOT coalesce((policy->>'allow_batch_image_generation')::boolean,false) THEN RETURN jsonb_build_object('error','batch_image_generation_forbidden','status',403); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_not_found','status',404); END IF;
+    IF task.key_hash IS DISTINCT FROM p_key_hash OR task.request_hash IS DISTINCT FROM p_hash OR task.user_id<>(identity->>'user_id')::bigint OR task.key_id<>(identity->>'key_id')::bigint OR task.group_id<>(identity->>'group_id')::bigint
+        THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
+    UPDATE s2a_private.batch_image_runtime SET ready=true,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    RETURN jsonb_build_object('id',p_id,'ready',true);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

@@ -41,3 +41,29 @@ BEGIN
 
 END $$;
 ROLLBACK;
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint;g bigint;k bigint;a bigint;h text;r jsonb; ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');
+BEGIN
+ INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('batch-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform,allow_batch_image_generation) VALUES('Batch fixture','gemini',false) RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING id,s2a_key_hash INTO k,h;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'batch_image_generation_forbidden' THEN RAISE EXCEPTION 'group permission bypassed'; END IF;
+ UPDATE public.groups SET allow_batch_image_generation=true WHERE id=g;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'no_available_batch_account' THEN RAISE EXCEPTION 'empty group admitted'; END IF;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Batch account','gemini','apikey','{"api_key":"fixture-batch"}',4) RETURNING id INTO a;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ r:=public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images');
+ IF r->>'id' IS DISTINCT FROM ident OR r->>'ready' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'prepare failed: %',r; END IF;
+ IF NOT EXISTS(SELECT 1 FROM s2a_private.batch_image_runtime WHERE batch_id=ident AND user_id=u AND key_id=k AND group_id=g AND account_id=a AND NOT ready) THEN RAISE EXCEPTION 'frozen binding mismatch'; END IF;
+ IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'unpersisted request claimed'; END IF;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'prepare replay'; END IF;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('b',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'request overwritten'; END IF;
+ IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
+ IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
+ IF public.s2a_batch_image_runtime_claim()->0->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'persisted request not claimable'; END IF;
+ UPDATE public.groups SET model_allowlist='{"enabled":true,"models":["allowed-*"]}' WHERE id=g;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'allowlist bypass'; END IF;
+END $$;
+ROLLBACK;
