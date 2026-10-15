@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; u bigint; a bigint; b bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
+DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
 BEGIN
  IF has_function_privilege('service_role','s2a_private.composite_resolve(bigint,text,text)','EXECUTE') THEN RAISE EXCEPTION 'private resolver exposed'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('composite-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
@@ -47,5 +47,18 @@ BEGIN
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'Composite detector did not select Grok'; END IF;
  acquired:=public.s2a_personal_acquire(h,'public-openai',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'Composite exact account alias failed'; END IF;
+ -- Scheduling and forwarding must normalize the same Gemini alias.
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Composite Gemini','gemini','apikey','{"api_key":"synthetic","model_mapping":{"gemini-3.1-pro-preview":"upstream-exact"}}',10) RETURNING id INTO gem;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(gem,g);
+ INSERT INTO public.composite_model_routes(group_id,public_model,target_platform,upstream_model,endpoint) VALUES(g,'gemini-public','gemini','gemini-3.1-pro-preview-customtools','responses');
+ acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
+ IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text OR acquired->>'upstream_model' IS DISTINCT FROM 'upstream-exact' THEN RAISE EXCEPTION 'Composite Gemini normalization lost mapped target'; END IF;
+ UPDATE public.accounts SET credentials='{"api_key":"synthetic","model_mapping":{"gemini-3.1-pro-preview":"normalized","gemini-3.1-pro-preview-custom*":"raw-wildcard"}}' WHERE id=gem;
+ acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
+ IF acquired->>'upstream_model' IS DISTINCT FROM 'raw-wildcard' THEN RAISE EXCEPTION 'Composite raw mapping must precede normalized fallback'; END IF;
+ UPDATE public.accounts SET credentials='{"api_key":"synthetic","model_mapping":{"gemini-3.1-pro-preview":"antigravity-normalized"}}',platform='antigravity' WHERE id=gem;
+ UPDATE public.composite_model_routes SET target_platform='antigravity' WHERE group_id=g AND public_model='gemini-public';
+ acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
+ IF acquired->>'upstream_model' IS DISTINCT FROM 'antigravity-normalized' THEN RAISE EXCEPTION 'Composite Antigravity normalized mapping failed'; END IF;
 END $$;
 ROLLBACK;

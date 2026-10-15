@@ -92,7 +92,7 @@ CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
-    group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text;
+    group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text; normalized_model text;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
 BEGIN
@@ -249,10 +249,14 @@ BEGIN
     SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
     IF route IS NOT NULL THEN
         route_mapping:=account->'credentials'->'model_mapping';
+        normalized_model:=btrim(routed_model);
+        IF a.platform IN ('gemini','antigravity') AND normalized_model='gemini-3.1-pro-preview-customtools'
+            THEN normalized_model:='gemini-3.1-pro-preview'; END IF;
         IF jsonb_typeof(route_mapping)='object' THEN
-            SELECT value#>>'{}' INTO route_target FROM jsonb_each(route_mapping)
-            WHERE jsonb_typeof(value)='string' AND (key=routed_model OR (right(key,1)='*' AND starts_with(routed_model,left(key,-1))))
-            ORDER BY (key=routed_model) DESC,octet_length(key) DESC,key COLLATE "C" LIMIT 1;
+            SELECT m.value#>>'{}' INTO route_target FROM jsonb_each(route_mapping) m
+            CROSS JOIN (VALUES(routed_model,0),(normalized_model,1)) candidate(model,rank)
+            WHERE jsonb_typeof(m.value)='string' AND (m.key=candidate.model OR (right(m.key,1)='*' AND starts_with(candidate.model,left(m.key,-1))))
+            ORDER BY candidate.rank,(m.key=candidate.model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1;
         END IF;
     END IF;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
