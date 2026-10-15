@@ -1,3 +1,4 @@
+import {withBatchDownloadPermit} from './batch_image_download_permit.ts';
 import {publicBatchImage,publicBatchImageItem} from './batch_image_public.ts';
 import {trackBatchDownload} from './batch_image_downloaded.ts';
 import {batchImageModels} from './batch_image_models.ts';
@@ -65,11 +66,11 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
   await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:false});
   return json(200,publicBatchImage(await call(db,'s2a_batch_image_read',{...args,p_id:id})));
  }
- if(operation==='download'&&!match[3]&&request.method==='GET')return trackBatchDownload(await downloadBatchImages(db,keyHash,id,clientIP,{maxItems:number(url.searchParams.get('max_items'),200,0,1000000),signal:request.signal}),db,keyHash,id,clientIP);
+ if(operation==='download'&&!match[3]&&request.method==='GET')return withBatchDownloadPermit(db,keyHash,id,clientIP,request.signal,async signal=>trackBatchDownload(await downloadBatchImages(db,keyHash,id,clientIP,{maxItems:number(url.searchParams.get('max_items'),200,0,1000000),signal}),db,keyHash,id,clientIP));
  if(operation==='items'&&request.method==='GET'){
   if(match[3]){
    let customID:string;try{customID=decodeURIComponent(match[3]);}catch{throw new HttpError(400,'invalid_batch_custom_id');}
-   return trackBatchDownload(await batchImageContent(db,keyHash,id,customID,number(url.searchParams.get('image_index'),0,0,1000000),clientIP),db,keyHash,id,clientIP);
+   return withBatchDownloadPermit(db,keyHash,id,clientIP,request.signal,async signal=>trackBatchDownload(await batchImageContent(db,keyHash,id,customID,number(url.searchParams.get('image_index'),0,0,1000000),clientIP,signal),db,keyHash,id,clientIP));
   }
   const snapshot=await call(db,'s2a_batch_image_read',{...args,p_id:id});
   if(!Array.isArray(snapshot.items))throw new HttpError(503,'invalid_batch_response');

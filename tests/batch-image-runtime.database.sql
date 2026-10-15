@@ -100,6 +100,17 @@ BEGIN
  r:=public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,jsonb_build_array(jsonb_build_object('custom_id','cover','status','failed','image_count',0,'error_code','EMPTY_IMAGE_OUTPUT','usage',jsonb_build_object('input_tokens',12,'output_tokens',0))));
  IF r->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'batch usage completion failed: %',r; END IF;
  IF public.s2a_batch_image_read(h,ident)->'items'->0->>'prompt_preview' IS DISTINCT FROM 'blue square' THEN RAISE EXCEPTION 'preview lost during indexing'; END IF;
+ r:=public.s2a_batch_image_download_acquire(h,ident);
+ IF r->>'lease_id' IS NULL THEN RAISE EXCEPTION 'download permit missing'; END IF;
+ IF public.s2a_batch_image_download_acquire(h,ident)->>'status' IS DISTINCT FROM '429' THEN RAISE EXCEPTION 'concurrent download admitted'; END IF;
+ IF public.s2a_batch_image_download_release(gen_random_uuid())->>'released' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'foreign download lease released'; END IF;
+ IF public.s2a_batch_image_download_release((r->>'lease_id')::uuid)->>'released' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'download release failed'; END IF;
+ r:=public.s2a_batch_image_download_acquire(h,ident);
+ UPDATE s2a_private.batch_image_download_permits SET expires_at=clock_timestamp()-interval '1 second' WHERE user_id=u;
+ r:=public.s2a_batch_image_download_acquire(h,ident);
+ IF r->>'lease_id' IS NULL THEN RAISE EXCEPTION 'expired permit not recovered'; END IF;
+ PERFORM public.s2a_batch_image_download_release((r->>'lease_id')::uuid);
+
  IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident AND user_id=u AND api_key_id=k AND account_id=a AND input_tokens=12 AND output_tokens=0 AND actual_cost=0 AND NOT (s2a_personal_details->'usage' ? 'cache_read_tokens')) THEN RAISE EXCEPTION 'batch usage identity or unknown values lost'; END IF;
  PERFORM public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,'[]'::jsonb);
  IF (SELECT count(*) FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident)<>1 THEN RAISE EXCEPTION 'batch usage duplicated'; END IF;

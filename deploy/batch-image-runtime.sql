@@ -476,8 +476,37 @@ BEGIN
         status=CASE WHEN status='completed' THEN 'output_deleted' ELSE status END,updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
+CREATE TABLE IF NOT EXISTS s2a_private.batch_image_download_permits (
+    user_id bigint PRIMARY KEY REFERENCES public.users(id) ON DELETE CASCADE,
+    lease_id uuid NOT NULL UNIQUE,expires_at timestamptz NOT NULL
+);
+ALTER TABLE s2a_private.batch_image_download_permits OWNER TO s2a_management;
+ALTER TABLE s2a_private.batch_image_download_permits ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON s2a_private.batch_image_download_permits FROM PUBLIC,anon,authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_download_acquire(p_key_hash text,p_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE snapshot jsonb; owner_id bigint; granted uuid;
+BEGIN
+    snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+    IF snapshot ? 'error' THEN RETURN snapshot; END IF;
+    IF snapshot->>'status'<>'completed' THEN RETURN jsonb_build_object('error','batch_image_not_completed','status',409); END IF;
+    SELECT user_id INTO owner_id FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
+    INSERT INTO s2a_private.batch_image_download_permits(user_id,lease_id,expires_at)
+        VALUES(owner_id,gen_random_uuid(),clock_timestamp()+interval '11 minutes')
+        ON CONFLICT(user_id) DO UPDATE SET lease_id=EXCLUDED.lease_id,expires_at=EXCLUDED.expires_at
+        WHERE s2a_private.batch_image_download_permits.expires_at<=clock_timestamp()
+        RETURNING lease_id INTO granted;
+    IF granted IS NULL THEN RETURN jsonb_build_object('error','batch_image_download_limited','status',429); END IF;
+    RETURN jsonb_build_object('lease_id',granted);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_download_release(p_lease uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    DELETE FROM s2a_private.batch_image_download_permits WHERE lease_id=p_lease;
+    RETURN jsonb_build_object('released',FOUND);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_mark_downloaded','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_mark_downloaded','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish','s2a_batch_image_download_acquire','s2a_batch_image_download_release') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);
