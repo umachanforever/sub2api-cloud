@@ -1,3 +1,4 @@
+import {usageEndpoint} from './usage_endpoint.ts';
 import {responsesWebSocketMode} from './responses_ws_mode.ts';
 import {bridgeInput,bridgeResponses,type BridgeHistory} from './responses_http_bridge.ts';
 import NodeWebSocket,{type ClientOptions} from 'ws';
@@ -30,6 +31,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  let pending=0,pendingBytes=0,sequence=Promise.resolve(),events=Promise.resolve();
  let active:{reservation:Reservation;started:number;usage:Usage;settled?:Promise<void>;resolve:()=>void;done:Promise<void>}|undefined;
  let resolveLifetime!:()=>void;const lifetime=new Promise<void>(resolve=>{resolveLifetime=resolve;});
+ let upstreamEndpoint:string|null=null;
  const finish=(status:number,outcome:Usage['outcome']):Promise<void>=>{
   const turn=active;if(!turn)return Promise.resolve();
   if(turn.settled)return turn.settled;
@@ -37,7 +39,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
    try{
     let saved=false;const durationMs=Math.min(2147483647,Math.max(0,Date.now()-turn.started));
     for(let attempt=0;attempt<2;attempt++){
-     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_duration_ms:durationMs,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
+     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
     }
     if(!saved)throw new HttpError(503,'usage_persistence_failed');
    }finally{if(active===turn)active=undefined;turn.resolve();}
@@ -67,7 +69,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   }else{
    const credentials=await credentialsFor(db,account);headers=buildHeaders(credentials,await currentCodexIdentity(db,account,credentials));target=new URL(CODEX_RESPONSES_URL);
   }
-  target.protocol='wss:';headers.set('openai-beta','responses_websockets=2026-02-06');headers.delete('content-type');headers.delete('accept');
+  upstreamEndpoint=usageEndpoint(target.href);target.protocol='wss:';headers.set('openai-beta','responses_websockets=2026-02-06');headers.delete('content-type');headers.delete('accept');
   for(const name of ['session-id','thread-id','x-codex-window-id','x-codex-installation-id','x-client-request-id','x-codex-beta-features']){const value=request.headers.get(name);if(value&&value.length<=2000&&!/[\r\n]/.test(value))headers.set(name,value);}
   const transport=await resolveProxy(db,account.proxy_id,true);
   if(transport){const endpoint=new URL(`${transport.protocol}://${transport.host.includes(':')?'['+transport.host+']':transport.host}:${transport.port}`);endpoint.username=transport.username;endpoint.password=transport.password;agent=new ProxyAgent({getProxyForUrl:()=>endpoint.href});}
@@ -113,7 +115,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   pinned??=reservation.account;
   if(mode==='http_bridge'){
     const bridged=bridgeInput(body,history);if(new TextEncoder().encode(JSON.stringify(bridged)).length>MAX)throw new HttpError(413,'websocket_context_too_large');
-    history=await bridgeResponses(db,reservation.account,bridged,request,signal,deliver)??history;
+    history=await bridgeResponses(db,reservation.account,bridged,request,signal,deliver,url=>{upstreamEndpoint=usageEndpoint(url);})??history;
     return;
   }
   if(!upstream)await connect(reservation,body);

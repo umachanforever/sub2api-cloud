@@ -759,7 +759,7 @@ for (const dataModel of [undefined,'native']) test(`a transient settlement failu
   assert.equal(response.status,200);await response.json();
   assert.equal(forwards,1);assert.equal(settlements.length,2);assert.deepEqual(settlements[0],settlements[1]);
   assert.equal(settlements[1].p_cache_read_tokens,20);
-  if(dataModel){assert.ok(Number.isInteger(settlements[0].p_duration_ms));assert.ok(settlements[0].p_duration_ms>=0);}
+  if(dataModel){assert.ok(Number.isInteger(settlements[0].p_duration_ms));assert.ok(settlements[0].p_duration_ms>=0);assert.equal(settlements[0].p_upstream_endpoint,'/v1/responses');}
 });
 
 for (const stream of [false, true]) test(`OpenAI API-key Messages bridge preserves tools, limits and usage (stream=${stream})`, async () => {

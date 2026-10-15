@@ -181,11 +181,12 @@ ALTER TABLE public.usage_logs
 -- Remove the old signature so PostgREST sees one unambiguous RPC.
 DROP FUNCTION IF EXISTS public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text);
 DROP FUNCTION IF EXISTS public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text);
+DROP FUNCTION IF EXISTS public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer);
 CREATE OR REPLACE FUNCTION public.s2a_personal_finish(
     p_lease_id uuid,p_status integer,p_outcome text,p_input_tokens bigint,p_output_tokens bigint,
     p_cache_creation_tokens bigint,p_cache_read_tokens bigint,p_cooldown_seconds integer,
     p_credential_version bigint,p_first_token_ms integer DEFAULT NULL,p_upstream_model text DEFAULT NULL,
-    p_duration_ms integer DEFAULT NULL
+    p_duration_ms integer DEFAULT NULL,p_upstream_endpoint text DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE lease s2a_private.personal_gateway_leases; payload jsonb; digest text; usage_id bigint; now_at timestamptz;
 BEGIN
@@ -193,6 +194,7 @@ BEGIN
         OR p_outcome IS NULL OR p_outcome NOT IN ('completed','failed','cancelled','interrupted')
         OR coalesce(p_input_tokens,0)<0 OR coalesce(p_output_tokens,0)<0
         OR coalesce(p_cache_creation_tokens,0)<0 OR coalesce(p_cache_read_tokens,0)<0
+        OR (p_upstream_endpoint IS NOT NULL AND (length(p_upstream_endpoint) NOT BETWEEN 1 AND 128 OR p_upstream_endpoint !~ '^/[a-zA-Z0-9_/:.%-]+$'))
         OR coalesce(p_duration_ms,0)<0 OR (p_duration_ms IS NOT NULL AND p_first_token_ms>p_duration_ms)
         OR coalesce(p_first_token_ms,0)<0 OR p_cooldown_seconds IS NULL OR p_cooldown_seconds NOT BETWEEN 0 AND 3600
         OR (p_upstream_model IS NOT NULL AND (length(p_upstream_model) NOT BETWEEN 1 AND 200 OR p_upstream_model ~ '[[:cntrl:]]')) THEN
@@ -200,7 +202,7 @@ BEGIN
     END IF;
     payload:=jsonb_build_object('status',p_status,'outcome',p_outcome,'input',p_input_tokens,'output',p_output_tokens,
         'cacheCreation',p_cache_creation_tokens,'cacheRead',p_cache_read_tokens,'firstTokenMs',p_first_token_ms,
-        'cooldown',p_cooldown_seconds,'credentialVersion',p_credential_version,'upstreamModel',p_upstream_model,'durationMs',p_duration_ms);
+        'cooldown',p_cooldown_seconds,'credentialVersion',p_credential_version,'upstreamModel',p_upstream_model,'durationMs',p_duration_ms,'upstreamEndpoint',p_upstream_endpoint);
     digest:=encode(sha256(convert_to(payload::text,'UTF8')),'hex');
     SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','lease_not_found','status',404); END IF;
@@ -212,12 +214,12 @@ BEGIN
     IF NOT lease.count_only AND lease.model<>'__models__' AND (p_outcome='completed' OR greatest(coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0))>0) THEN
         INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,upstream_model,
             input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,stream,request_type,duration_ms,first_token_ms,
-            billing_mode,s2a_personal_details,inbound_endpoint,ip_address)
+            billing_mode,s2a_personal_details,inbound_endpoint,ip_address,upstream_endpoint)
         VALUES(lease.user_id,lease.key_id,lease.account_id,lease.group_id,lease.request_id::text,lease.model,lease.model,
             coalesce(p_upstream_model,lease.model),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),
             coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.responses_websocket THEN 3 WHEN lease.stream THEN 2 ELSE 1 END,
             coalesce(p_duration_ms,least(2147483647,greatest(coalesce(p_first_token_ms,0),floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer),p_first_token_ms,
-            'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation',coalesce(lease.search_operation,'alpha_search')) ELSE '{}'::jsonb END,lease.inbound_endpoint,lease.client_ip) RETURNING id INTO usage_id;
+            'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation',coalesce(lease.search_operation,'alpha_search')) ELSE '{}'::jsonb END,lease.inbound_endpoint,lease.client_ip,p_upstream_endpoint) RETURNING id INTO usage_id;
     END IF;
     IF p_cooldown_seconds>0 THEN
         UPDATE s2a_private.accounts SET temp_unschedulable_until=greatest(temp_unschedulable_until,now_at+make_interval(secs=>p_cooldown_seconds)),
@@ -228,9 +230,9 @@ BEGIN
         WHERE id=p_lease_id;
     RETURN jsonb_build_object('applied',true,'usage_log_id',usage_id::text);
 END $$;
-ALTER FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) OWNER TO s2a_management;
-REVOKE ALL ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) TO service_role;
+ALTER FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text) TO service_role;
 
 -- Preserve provider quota headers for the original account console.
 CREATE OR REPLACE FUNCTION public.s2a_personal_windows_save(

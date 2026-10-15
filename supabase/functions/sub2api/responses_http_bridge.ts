@@ -19,7 +19,7 @@ export function bridgeInput(body:Item,history?:BridgeHistory):Item{
  }
  return result;
 }
-export async function bridgeResponses(db:Database,account:Account&{type:string},body:Item,request:Request,signal:AbortSignal,emit:(event:Item,text:string)=>Promise<void>):Promise<BridgeHistory|undefined>{
+export async function bridgeResponses(db:Database,account:Account&{type:string},body:Item,request:Request,signal:AbortSignal,emit:(event:Item,text:string)=>Promise<void>,onDispatch:(url:string)=>void=()=>{}):Promise<BridgeHistory|undefined>{
  const platform=account.platform??'openai';let url:string,init:RequestInit;
  if(account.type==='apikey')({url,init}=apiKeyRequest(platform,await decryptApiKeyCredentials(account,db.config.encryptionKey),'responses','/v1/responses',body,request,signal));
  else{
@@ -27,6 +27,7 @@ export async function bridgeResponses(db:Database,account:Account&{type:string},
   if(platform==='grok')({url,init}=grokOAuthRequest(credentials,'responses','/v1/responses',body,request,signal));
   else{url=CODEX_RESPONSES_URL;init={method:'POST',headers:buildHeaders(credentials,await currentCodexIdentity(db,account,credentials)),body:JSON.stringify(body),signal,redirect:'error'};}
  }
+ onDispatch(url);
  const response=await accountFetch(db,account,url,init);
  if(!response.ok){await response.body?.cancel();throw new HttpError(response.status===429?429:502,'upstream_http');}
  if(!response.body)throw new HttpError(502,'invalid_upstream_response');

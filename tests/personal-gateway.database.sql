@@ -10,7 +10,7 @@ BEGIN
         OR NOT has_function_privilege('service_role','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
-        OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text)','EXECUTE')
         OR has_table_privilege('service_role','s2a_private.personal_gateway_leases','SELECT') THEN RAISE EXCEPTION 'personal gateway ACL mismatch'; END IF;
     IF u IS NULL THEN INSERT INTO public.users(email,password_hash) VALUES('gateway-fixture-'||gen_random_uuid()::text||'@example.invalid','!fixture') RETURNING id INTO u; END IF;
     IF k IS NULL THEN INSERT INTO public.api_keys(user_id,key,name) VALUES(u,'synthetic-gateway-'||gen_random_uuid()::text,'Gateway fixture') RETURNING id INTO k; END IF;
@@ -296,8 +296,8 @@ BEGIN
  r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid(),p_client_ip=>'203.0.113.8',p_billing_context=>'{"inbound_endpoint":"/v1/systemone"}'::jsonb);
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'TypeSafe admission rejected'; END IF;
  IF public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint,2000,'jev-latest',1500)->>'error' IS DISTINCT FROM 'invalid_usage' THEN RAISE EXCEPTION 'Duration shorter than first token accepted'; END IF;
- PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint,2000,'jev-latest',2500);
- IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0 AND inbound_endpoint='/v1/systemone' AND ip_address='203.0.113.8' AND request_type=1 AND first_token_ms=2000 AND duration_ms=2500) THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint,2000,'jev-latest',2500,'/v1/systemone');
+ IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0 AND inbound_endpoint='/v1/systemone' AND ip_address='203.0.113.8' AND request_type=1 AND first_token_ms=2000 AND duration_ms=2500 AND upstream_endpoint='/v1/systemone') THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
  r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid());
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',1099511627776,2147483648,2147483649,2147483650,0,(r->'account'->>'credential_version')::bigint,p_upstream_model=>'jev-latest');
  IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=1099511627776 AND output_tokens=2147483648 AND cache_creation_tokens=2147483649 AND cache_read_tokens=2147483650 AND s2a_personal_details->>'input'='1099511627776') THEN RAISE EXCEPTION 'Large provider token counts lost'; END IF;

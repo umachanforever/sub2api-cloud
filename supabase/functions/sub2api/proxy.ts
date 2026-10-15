@@ -1,3 +1,4 @@
+import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
 import {imageGenerationIntent} from './image_policy.ts';
@@ -307,6 +308,7 @@ async function proxyWithIdentity(
     const mappedModel=voice||systemOne?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
+    let upstreamEndpoint:string|null=null;
     let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
     if(geminiTokens&&forwardedBody?.generateContentRequest?.model)forwardedBody.generateContentRequest={...forwardedBody.generateContentRequest,model:'models/'+upstreamModel.replace(/^models\//,'')};
     if(cacheBinding)forwardedBody=rewriteGeminiCache(forwardedBody!,cacheBinding);
@@ -339,7 +341,7 @@ async function proxyWithIdentity(
         for (let retry = 0; retry < 2; retry++) {
           try {
             const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
-              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel,p_duration_ms:durationMs} : {}),
+              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint} : {}),
               p_lease_id: lease_id,
               p_status: status,
               p_outcome: db.config.dataModel === "native" && usage.outcome === "incomplete" ? "interrupted" : usage.outcome,
@@ -416,6 +418,7 @@ async function proxyWithIdentity(
         if(platform!=='grok')throw new HttpError(400,'grok_voice_requires_grok_group');
         const outbound=account.type==='apikey'?apiKeyRequest('grok',await decryptApiKeyCredentials(account,db.config.encryptionKey),'voice','/v1/realtime',undefined,request,signal):grokOAuthRequest(await credentialsFor(db,account),'voice','/v1/realtime',undefined,request,signal);
         const target=new URL(outbound.url);target.searchParams.set('model',upstreamModel);
+        upstreamEndpoint=usageEndpoint(target.href);
         const transport=await resolveProxy(db,account.proxy_id,db.config.dataModel==='native');
         providerDispatched=true;
         return await relayGrokRealtime(request,target.href,new Headers(outbound.init.headers),transport,signal,finish);
@@ -457,6 +460,7 @@ async function proxyWithIdentity(
           native={...native,init:{...native.init,headers,body:imageMultipart}};
         }
         providerDispatched = true;
+        upstreamEndpoint=usageEndpoint(native.url);
         upstream = await accountFetch(db, account, native.url, native.init);
         // Reuse the Responses-to-Messages stream and usage pipeline below.
         if (bridgeMessages) native = undefined;
@@ -471,6 +475,7 @@ async function proxyWithIdentity(
               attemptContext.upstreamModel = dispatchedModel;
             }
             native = outgoing;
+            upstreamEndpoint=usageEndpoint(outgoing.url);
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }
           const outgoing = platform === "grok"
@@ -479,6 +484,7 @@ async function proxyWithIdentity(
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
             : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
           native = outgoing;
+            upstreamEndpoint=usageEndpoint(outgoing.url);
           if(voice){
             const headers=new Headers(outgoing.init.headers);headers.set('accept','application/json, audio/*');
             if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');outgoing.init.body=voiceBytes as BodyInit;}
@@ -507,6 +513,7 @@ async function proxyWithIdentity(
         const identity=await currentCodexIdentity(db,account,credentials);
         const forward=async()=>{
           native=await oauthImageRequest(credentials,identity,forwardedPath,forwardedBody!,imageMultipart,signal);
+          upstreamEndpoint=usageEndpoint(native.url);
           return accountFetch(db,account,native.url,native.init);
         };
         providerDispatched=true;
@@ -545,6 +552,7 @@ async function proxyWithIdentity(
         const forward = () => {
           const headers = buildHeaders(credentials, identity);
           if (models) headers.set("accept", "application/json");
+          upstreamEndpoint=usageEndpoint(models?CODEX_MODELS_URL:CODEX_RESPONSES_URL);
           return accountFetch(db, account,
             models
               ? `${CODEX_MODELS_URL}?client_version=${
