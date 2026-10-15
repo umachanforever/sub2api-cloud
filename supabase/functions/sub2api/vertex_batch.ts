@@ -1,3 +1,6 @@
+import {VertexServiceAccountToken} from './vertex_auth.ts';
+import {accountFetch} from './account_proxy.ts';
+import type {Database} from './db.ts';
 import {HttpError} from './db.ts';
 import {buildGeminiBatchJSONL} from './gemini_batch.ts';
 import type {GeminiBatchInput,GeminiBatchStatus} from './gemini_batch.ts';
@@ -118,4 +121,11 @@ export class VertexBatchClient{
   if(result.name!==name)throw new VertexBatchRequestError('VERTEX_INVALID_RESPONSE');return result;
  }
  async cancelBatch(name:string,signal:AbortSignal):Promise<void>{await this.#request(this.#resourceURL(name)+':cancel','POST',signal);}
+}
+
+export function vertexBatchAccountClient(db:Database,account:{platform?:string;type?:string;proxy_id?:number|string|null;credential_storage?:string},credentials:Record<string,unknown>,location='global'):VertexBatchClient{
+ if(account.platform!=='gemini'||account.type!=='service_account')throw new HttpError(400,'vertex_batch_account_required');
+ const fetcher:typeof fetch=(input,init)=>accountFetch(db,account,input,init);
+ const tokens=new VertexServiceAccountToken(credentials,fetcher);
+ return new VertexBatchClient(tokens.project,location,()=>tokens.accessToken(),fetcher);
 }
