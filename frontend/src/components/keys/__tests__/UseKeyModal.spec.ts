@@ -202,7 +202,7 @@ describe('UseKeyModal', () => {
 
     const parsed = JSON.parse(wrapper.find('pre code').text())
     expect(parsed.provider.grok.npm).toBe('@ai-sdk/openai-compatible')
-    expect(parsed.provider.grok.name).toBe('Grok via sub2api-supabase')
+    expect(parsed.provider.grok.name).toBe('Grok via sub2api-cloud')
     expect(parsed.provider.grok.options).toEqual({
       baseURL: 'https://example.com/v1',
       apiKey: 'sk-grok-test'
@@ -861,7 +861,7 @@ describe('UseKeyModal', () => {
     const unixConfig = wrapper.findAll('pre code')
       .map((code) => code.text())
       .find((content) => content.includes('[model_providers.supabase_gateway]'))
-    expect(unixConfig).toContain('[model_providers.supabase_gateway]\nname = "sub2api-supabase Composite"\nbase_url = "https://example.com/v1"\nmodel_catalog_url = "https://example.com/v1/models"')
+    expect(unixConfig).toContain('[model_providers.supabase_gateway]\nname = "sub2api-cloud Composite"\nbase_url = "https://example.com/v1"\nmodel_catalog_url = "https://example.com/v1/models"')
     expect(unixConfig).not.toContain('model_catalog_json')
     expect(unixConfig).toContain('env_key = "SUPABASE_GATEWAY_API_KEY"')
     expect(fetchMock).not.toHaveBeenCalled()

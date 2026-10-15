@@ -63,7 +63,7 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		log.Printf("sub2api-supabase %s (commit: %s, built: %s)\n", Version, Commit, Date)
+		log.Printf("sub2api-cloud %s (commit: %s, built: %s)\n", Version, Commit, Date)
 		return
 	}
 	if *migrateOnly {
@@ -122,7 +122,7 @@ func runSetupServer() {
 	// This allows users to run setup on a different address if needed
 	addr := config.GetServerAddress()
 	log.Printf("Setup wizard available at http://%s", addr)
-	log.Println("Complete the setup wizard to configure sub2api-supabase")
+	log.Println("Complete the setup wizard to configure sub2api-cloud")
 
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)

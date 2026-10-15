@@ -13,7 +13,7 @@ export async function smtpTransport(config, message, createTransport) {
     try {
       if (!message) { await transport.verify(); return; }
       const result = await transport.sendMail({ from: { name: config.smtp_from_name, address: config.smtp_from_email }, to: message.to,
-        subject: message.subject, text: message.text, messageId: `<${message.id}@sub2api-supabase.local>` });
+        subject: message.subject, text: message.text, messageId: `<${message.id}@sub2api-cloud.local>` });
       if (!result.accepted?.includes(message.to)) throw Object.assign(Error('smtp_recipient_rejected'), { responseCode: 550 });
       return;
     } catch (error) {

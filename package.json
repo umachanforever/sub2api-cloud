@@ -1,5 +1,5 @@
 {
-  "name": "sub2api-supabase",
+  "name": "sub2api-cloud",
   "description": "A developer-friendly AI API gateway for OpenAI, Anthropic, Gemini, and other supported providers, with free-tier Supabase cloud deployment and the original Vue console.",
   "version": "0.3.0",
   "private": true,

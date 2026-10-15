@@ -10,7 +10,7 @@ test('Compose resolves fresh-checkout services before management secrets are pro
  const directory=await mkdtemp(join(tmpdir(),'s2a-compose-'));
  try{
   await copyFile(new URL('../compose.yaml',import.meta.url),join(directory,'compose.yaml'));
-  const result=spawnSync('docker',['compose','-p','sub2api-supabase-check','-f',join(directory,'compose.yaml'),'config','--services'],{
+  const result=spawnSync('docker',['compose','-p','sub2api-cloud-check','-f',join(directory,'compose.yaml'),'config','--services'],{
    encoding:'utf8',timeout:10000,
    env:{...process.env,SUPABASE_URL:'https://example.supabase.co',SUPABASE_PUBLISHABLE_KEY:'sb_publishable_build_placeholder'},
   });

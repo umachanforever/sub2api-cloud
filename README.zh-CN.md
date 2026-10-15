@@ -1,4 +1,4 @@
-# sub2api-supabase
+# sub2api-cloud
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 

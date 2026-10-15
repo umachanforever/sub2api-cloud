@@ -68,14 +68,14 @@ async function up() {
   const args = process.argv.slice(2), mode = deploymentMode(process.env, args);
   let env = { ...process.env, SUPABASE_MODE: mode, SUB2API_DATA_MODEL: process.env.SUB2API_DATA_MODEL || 'native' };
   if (args.includes('--down')) {
-    await run('docker', ['compose', '-p', 'sub2api-supabase', 'down'], { ...env, SUPABASE_URL: env.SUPABASE_URL || 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_local_shutdown_placeholder' });
+    await run('docker', ['compose', '-p', 'sub2api-cloud', 'down'], { ...env, SUPABASE_URL: env.SUPABASE_URL || 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_local_shutdown_placeholder' });
     if (mode === 'local') await run('supabase', ['stop'], env);
     return;
   }
   await mkdir(new URL('../.local/', import.meta.url), { recursive: true, mode: 0o700 });
   if (mode === 'local') {
     // Build before starting the full local stack to reduce peak Docker memory use.
-    await run('docker', ['compose', '-p', 'sub2api-supabase', 'build'], { ...env, SUPABASE_URL: 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_build_placeholder' });
+    await run('docker', ['compose', '-p', 'sub2api-cloud', 'build'], { ...env, SUPABASE_URL: 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_build_placeholder' });
     console.log('Starting local Supabase (first run downloads Docker images)...');
     await run('supabase', ['start'], env, true);
     await run('supabase', ['migration', 'up', '--local'], env);
@@ -97,7 +97,7 @@ async function up() {
   }
   if (mode === 'cloud') { await chmod(new URL('../.env.local', import.meta.url), 0o600); await deploy(env); }
   if (mode === 'local') await provisionManagement(env);
-  await run('docker', ['compose', '-p', 'sub2api-supabase', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
+  await run('docker', ['compose', '-p', 'sub2api-cloud', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
   if (mode === 'local') {
     const file = new URL('../.local/functions.env', import.meta.url);
     await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env)+oauthSecrets(env)+requestLimitSecrets(env), { mode: 0o600 });
@@ -109,6 +109,6 @@ async function up() {
     const worker = spawn('supabase', ['functions', 'serve', '--env-file', fileURLToPath(file)], { cwd: root, env: { ...env, TMPDIR: temp, TMP: temp, TEMP: temp }, stdio: 'inherit', shell: false });
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => worker.kill(signal));
     await new Promise((resolve, reject) => { worker.on('error', reject); worker.on('exit', (code, signal) => code === 0 || signal ? resolve() : reject(Error('Local Edge runtime stopped'))); });
-  } else console.log('sub2api-supabase deployed: http://127.0.0.1:' + (env.CONSOLE_PORT || '3000'));
+  } else console.log('sub2api-cloud deployed: http://127.0.0.1:' + (env.CONSOLE_PORT || '3000'));
 }
 if (import.meta.main) up().catch(error => { console.error(error.message); process.exitCode = 1; });

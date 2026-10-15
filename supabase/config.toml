@@ -1,4 +1,4 @@
-project_id = "sub2api-supabase"
+project_id = "sub2api-cloud"
 
 [auth]
 site_url = "http://127.0.0.1:3000"

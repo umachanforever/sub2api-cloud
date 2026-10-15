@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { verifyCloud } from './verify-cloud.mjs';
 
-const containers = ['sub2api-supabase-console', 'sub2api-supabase-management', 'sub2api-supabase-redis'];
+const containers = ['sub2api-cloud-console', 'sub2api-cloud-management', 'sub2api-cloud-redis'];
 export async function verifyIndependence(config, run = docker, verify = verifyCloud) {
   const base = new URL(config.base_url);
   if (base.protocol !== 'https:' || !/^[a-z0-9-]+\.supabase\.co$/.test(base.hostname) || base.port || base.username || base.password || base.search || base.hash || !base.pathname.endsWith('/functions/v1/sub2api/v1') || !config.api_key || !config.model) throw Error('Configure a cloud base_url, api_key, and model before stopping local services');
@@ -12,7 +12,7 @@ export async function verifyIndependence(config, run = docker, verify = verifyCl
   for (const name of containers) {
     const entries = JSON.parse(await run(['inspect', name]));
     const entry = entries[0];
-    if (entries.length !== 1 || entry.Name !== '/' + name || entry.Config?.Labels?.['com.docker.compose.project'] !== 'sub2api-supabase') throw Error('Local container ownership could not be verified');
+    if (entries.length !== 1 || entry.Name !== '/' + name || entry.Config?.Labels?.['com.docker.compose.project'] !== 'sub2api-cloud') throw Error('Local container ownership could not be verified');
     if (entry.State?.Running) running.push(name);
   }
   const stopped = [];

@@ -34,7 +34,7 @@ function stableReleaseVersion(value: unknown): string | undefined {
 async function fetchStableVersion(db: Database): Promise<string | undefined> {
   const fetchRelease = async (path: string): Promise<unknown> => {
     try {
-      const response = await db.fetchImpl(`https://api.github.com/repos/openai/codex/releases${path}`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'sub2api-supabase' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
+      const response = await db.fetchImpl(`https://api.github.com/repos/openai/codex/releases${path}`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'sub2api-cloud' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
       if (!response.ok) { await response.body?.cancel(); return; }
       return await response.json();
     } catch { return; }

@@ -48,7 +48,7 @@ export async function provisionManagement(env=process.env){
  const config={...saved,database_url:database.href,password,jwt:saved.jwt||randomBytes(32).toString('hex'),totp:saved.totp||randomBytes(32).toString('hex'),setup_password:saved.setup_password||randomBytes(32).toString('hex')};
  await writeFile(configPath,JSON.stringify(config),{mode:0o600});await chmod(configPath,0o600);
  async function sql(query){
-  if(local){await command(['exec','-i','supabase_db_sub2api-supabase','psql','-X','-q','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'],env,query);return;}
+  if(local){await command(['exec','-i','supabase_db_sub2api-cloud','psql','-X','-q','-U','postgres','-d','postgres','-v','ON_ERROR_STOP=1'],env,query);return;}
   const response=await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`,{method:'POST',headers:{authorization:`Bearer ${env.SUPABASE_ACCESS_TOKEN}`,'content-type':'application/json'},body:JSON.stringify({query}),signal:AbortSignal.timeout(60000)});
   const body=await response.text();
   if(!response.ok){await writeFile(new URL('management-setup.log',privateDir),body,{mode:0o600});throw Error(`Management schema setup failed (${response.status}); inspect .local/management-setup.log`);}
@@ -64,7 +64,7 @@ END IF; END $provision$;`);
  Object.assign(runtime,Object.fromEntries(requestLimitSecrets(env).trim().split('\n').map(line=>line.split('='))));
  const runtimePath=new URL('management.env',privateDir);
  await writeFile(runtimePath,Object.entries(runtime).map(([key,value])=>`${key}=${value}`).join('\n')+'\n',{mode:0o600});await chmod(runtimePath,0o600);
- const compose=['compose','-p','sub2api-supabase'];
+ const compose=['compose','-p','sub2api-cloud'];
  if(env.S2A_SKIP_MANAGEMENT_BUILD!=='1')await command([...compose,'build','management'],env,undefined,true);
  await command([...compose,'run','--rm','--no-deps','management','-migrate'],env);
  for(const path of ['account-vault.sql','gateway-proxy.sql','personal-gateway.sql','usage-access.sql','codex-scheduler.sql'])await sql(await readFile(new URL('../deploy/'+path,import.meta.url),'utf8'));
@@ -83,7 +83,7 @@ COMMIT;`);
  }
  await sql(`BEGIN; SET LOCAL ROLE s2a_management;
 INSERT INTO public.settings(key,value) VALUES('api_base_url',${literal(env.SUPABASE_URL+'/functions/v1/sub2api')}) ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE btrim(settings.value)='' OR settings.value ~* '^https?://(localhost|127\\.0\\.0\\.1|\\[::1\\])(:[0-9]+)?(/|$)';
-INSERT INTO public.settings(key,value) VALUES('site_name','sub2api-supabase') ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE lower(btrim(settings.value))='sub2api';
+INSERT INTO public.settings(key,value) VALUES('site_name','sub2api-cloud') ON CONFLICT(key) DO UPDATE SET value=excluded.value WHERE lower(btrim(settings.value)) IN ('sub2api','sub2api-supabase');
 COMMIT;`);
  console.log('Management schema, encrypted credentials, and cloud identity are ready.');
 }

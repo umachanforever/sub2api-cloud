@@ -6,7 +6,7 @@ function fixture({foreign=false,stopFails=false,restoreFails=false}={}) {
  const calls=[];
  return {calls,run:async args=>{
   calls.push(args);
-  if(args[0]==='inspect')return JSON.stringify([{Name:'/'+args[1],Config:{Labels:{'com.docker.compose.project':foreign?'other-project':'sub2api-supabase'}},State:{Running:!args[1].endsWith('redis')}}]);
+  if(args[0]==='inspect')return JSON.stringify([{Name:'/'+args[1],Config:{Labels:{'com.docker.compose.project':foreign?'other-project':'sub2api-cloud'}},State:{Running:!args[1].endsWith('redis')}}]);
   if(stopFails && args[0]==='stop')throw Error('stop failed');
   if(restoreFails && args[0]==='start' && args[1].endsWith('management'))throw Error('restore failed');
   return '';
@@ -18,7 +18,7 @@ test('independence verification stops only running owned containers and restores
   assert.equal(calls.filter(x=>x[0]==='stop').length,2);
   throw Error('cloud failed');
  }),/cloud failed/);
- assert.deepEqual(calls.filter(x=>x[0]==='start').map(x=>x[1]),['sub2api-supabase-management','sub2api-supabase-console']);
+ assert.deepEqual(calls.filter(x=>x[0]==='start').map(x=>x[1]),['sub2api-cloud-management','sub2api-cloud-console']);
  assert.ok(!calls.some(x=>x[0]==='stop' && x.at(-1).endsWith('redis')));
 });
 test('independence verification validates cloud destination and container ownership before mutations',async()=>{

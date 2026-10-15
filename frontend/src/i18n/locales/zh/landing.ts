@@ -192,8 +192,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'sub2api-supabase 安装向导',
-    description: '配置您的 sub2api-supabase 实例',
+    title: 'sub2api-cloud 安装向导',
+    description: '配置您的 sub2api-cloud 实例',
     database: {
       title: '数据库配置',
       description: '连接到您的 PostgreSQL 数据库',

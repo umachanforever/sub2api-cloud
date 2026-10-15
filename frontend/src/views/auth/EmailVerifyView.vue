@@ -270,7 +270,7 @@ const aliyunCaptchaEnabled = ref<boolean>(false)
 const aliyunCaptchaSceneId = ref<string>('')
 const aliyunCaptchaPrefix = ref<string>('')
 const aliyunCaptchaRegion = ref<string>('cn')
-const siteName = ref<string>('sub2api-supabase')
+const siteName = ref<string>('sub2api-cloud')
 const registrationEmailSuffixWhitelist = ref<string[]>([])
 // Per-domain limited registration toggle: when enabled, non-allowlisted domains may register one account (determined by the backend); the frontend does not precheck the allowlist.
 const emailDomainQuotaEnabled = ref<boolean>(false)
@@ -372,7 +372,7 @@ onMounted(async () => {
     aliyunCaptchaSceneId.value = settings.aliyun_captcha_scene_id || ''
     aliyunCaptchaPrefix.value = settings.aliyun_captcha_prefix || ''
     aliyunCaptchaRegion.value = settings.aliyun_captcha_region || 'cn'
-    siteName.value = settings.site_name || 'sub2api-supabase'
+    siteName.value = settings.site_name || 'sub2api-cloud'
     registrationEmailSuffixWhitelist.value = normalizeRegistrationEmailSuffixWhitelist(
       settings.registration_email_suffix_whitelist || []
     )

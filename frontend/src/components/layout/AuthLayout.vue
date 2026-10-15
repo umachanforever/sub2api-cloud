@@ -69,7 +69,7 @@ import { sanitizeUrl } from '@/utils/url'
 
 const appStore = useAppStore()
 
-const siteName = computed(() => appStore.siteName || 'sub2api-supabase')
+const siteName = computed(() => appStore.siteName || 'sub2api-cloud')
 const siteLogo = computed(() => sanitizeUrl(appStore.siteLogo || '', { allowRelative: true, allowDataUrl: true }))
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI Gateway powered by Supabase')
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)

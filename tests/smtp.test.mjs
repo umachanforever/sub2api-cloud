@@ -36,7 +36,7 @@ test('real SMTP transport verifies and submits only to a local capture server',a
   const cfg={...smtpDefaults,smtp_host:'127.0.0.1',smtp_port:server.port,smtp_use_tls:false,smtp_password:'',smtp_from_email:'ops@example.com'};
   await smtpTransport(cfg);assert.equal(messages.length,0);
   await smtpTransport(cfg,{id:'fixture-delivery',to:'fixture@example.com',subject:'Fixture',text:'Local capture only'});
-  assert.equal(messages.length,1);assert.match(messages[0],/Message-ID: <fixture-delivery@sub2api-supabase.local>/i);assert.match(messages[0],/Local capture only/);
+  assert.equal(messages.length,1);assert.match(messages[0],/Message-ID: <fixture-delivery@sub2api-cloud.local>/i);assert.match(messages[0],/Local capture only/);
  } finally {await server.close();}
 });
 

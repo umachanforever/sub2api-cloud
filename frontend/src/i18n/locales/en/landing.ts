@@ -192,8 +192,8 @@ export default {
 
   // Setup Wizard
   setup: {
-    title: 'sub2api-supabase Setup',
-    description: 'Configure your sub2api-supabase instance',
+    title: 'sub2api-cloud Setup',
+    description: 'Configure your sub2api-cloud instance',
     database: {
       title: 'Database Configuration',
       description: 'Connect to your PostgreSQL database',

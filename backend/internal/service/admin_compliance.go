@@ -17,10 +17,10 @@ const (
 	AdminComplianceVersion        = "v2026.06.10"
 	AdminComplianceDocumentPathZH = "docs/legal/admin-compliance.zh.md"
 	AdminComplianceDocumentPathEN = "docs/legal/admin-compliance.en.md"
-	AdminComplianceDocumentURLZH  = "https://github.com/umachanforever/sub2api-supabase/blob/main/docs/legal/admin-compliance.zh.md"
-	AdminComplianceDocumentURLEN  = "https://github.com/umachanforever/sub2api-supabase/blob/main/docs/legal/admin-compliance.en.md"
-	AdminComplianceAckPhraseZH    = "我已阅读、理解并同意 sub2api-supabase 部署与运营合规承诺"
-	AdminComplianceAckPhraseEN    = "I have read, understood, and agree to the sub2api-supabase Deployment and Operation Compliance Commitment"
+	AdminComplianceDocumentURLZH  = "https://github.com/umachanforever/sub2api-cloud/blob/main/docs/legal/admin-compliance.zh.md"
+	AdminComplianceDocumentURLEN  = "https://github.com/umachanforever/sub2api-cloud/blob/main/docs/legal/admin-compliance.en.md"
+	AdminComplianceAckPhraseZH    = "我已阅读、理解并同意 sub2api-cloud 部署与运营合规承诺"
+	AdminComplianceAckPhraseEN    = "I have read, understood, and agree to the sub2api-cloud Deployment and Operation Compliance Commitment"
 
 	settingKeyAdminComplianceAcknowledgement = "admin_compliance_acknowledgement"
 )

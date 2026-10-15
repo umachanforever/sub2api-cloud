@@ -1,4 +1,5 @@
 // Derive a separate, deployment-independent key for scheduled job tickets.
+// Keep the original HKDF salt stable across project branding changes.
 export async function jobSigningKey(encryptionKey: string): Promise<string> {
   const bytes = Uint8Array.from(atob(encryptionKey), character => character.charCodeAt(0));
   if (bytes.length !== 32) throw Error('Invalid credential encryption key');

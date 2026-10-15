@@ -329,7 +329,7 @@ if (import.meta.main) {
     server.listen(
       4173,
       process.env.CONSOLE_HOST === "0.0.0.0" ? "0.0.0.0" : "127.0.0.1",
-      () => console.log("sub2api-supabase local API proxy: http://127.0.0.1:4173"),
+      () => console.log("sub2api-cloud local API proxy: http://127.0.0.1:4173"),
     );
   } catch (error) {
     console.error(error.message);

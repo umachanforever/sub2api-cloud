@@ -8,7 +8,7 @@ import type { SiteBillingMode } from '@/utils/siteBillingMode'
  * Prefer translating titleKey via i18n, falling back to the static routeTitle.
  */
 export function resolveDocumentTitle(routeTitle: unknown, siteName?: string, titleKey?: string): string {
-  const normalizedSiteName = typeof siteName === 'string' && siteName.trim() ? siteName.trim() : 'sub2api-supabase'
+  const normalizedSiteName = typeof siteName === 'string' && siteName.trim() ? siteName.trim() : 'sub2api-cloud'
 
   if (typeof titleKey === 'string' && titleKey.trim()) {
     const translated = i18n.global.t(titleKey)

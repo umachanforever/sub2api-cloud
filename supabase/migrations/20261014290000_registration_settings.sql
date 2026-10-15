@@ -3,7 +3,7 @@ create table public.s2a_settings (
  data jsonb not null check(jsonb_typeof(data)='object'),
  updated_at timestamptz not null default now()
 );
-insert into public.s2a_settings(data) values('{"registration_enabled":true,"invitation_code_enabled":false,"registration_email_suffix_whitelist":[],"default_balance":0,"default_concurrency":3,"default_user_rpm_limit":0,"default_subscriptions":[],"site_name":"sub2api-supabase","site_logo":"","site_subtitle":"A developer-friendly AI API gateway for multiple providers, powered by Supabase","compact_home_enabled":true,"api_base_url":"","contact_info":"","doc_url":"","home_content":""}');
+insert into public.s2a_settings(data) values('{"registration_enabled":true,"invitation_code_enabled":false,"registration_email_suffix_whitelist":[],"default_balance":0,"default_concurrency":3,"default_user_rpm_limit":0,"default_subscriptions":[],"site_name":"sub2api-cloud","site_logo":"","site_subtitle":"A developer-friendly AI API gateway for multiple providers, powered by Supabase","compact_home_enabled":true,"api_base_url":"","contact_info":"","doc_url":"","home_content":""}');
 alter table public.s2a_settings enable row level security;
 revoke all on public.s2a_settings from public,anon,authenticated;
 grant select on public.s2a_settings to service_role;

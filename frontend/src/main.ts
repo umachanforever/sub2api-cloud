@@ -45,7 +45,7 @@ async function bootstrap() {
   appStore.initFromInjectedConfig()
 
   // Set document title immediately after config is loaded
-  if (appStore.siteName && appStore.siteName !== 'sub2api-supabase') {
+  if (appStore.siteName && appStore.siteName !== 'sub2api-cloud') {
     document.title = `${appStore.siteName} - AI API Gateway`
   }
   updateFavicon(appStore.siteLogo)

@@ -7975,7 +7975,7 @@
                       v-model="form.payment_product_name_prefix"
                       type="text"
                       class="input"
-                      placeholder="sub2api-supabase"
+                      placeholder="sub2api-cloud"
                     />
                   </div>
                   <div>
@@ -7997,7 +7997,7 @@
                       class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300"
                     >
                       {{
-                        (form.payment_product_name_prefix || "sub2api-supabase") +
+                        (form.payment_product_name_prefix || "sub2api-cloud") +
                         " 100 " +
                         (form.payment_product_name_suffix || "CNY")
                       }}
@@ -9808,7 +9808,7 @@ const form = reactive<SettingsForm>({
   default_subscriptions: [],
   force_email_on_third_party_signup: false,
   default_user_rpm_limit: 0,
-  site_name: "sub2api-supabase",
+  site_name: "sub2api-cloud",
   site_logo: "",
   site_subtitle: "Subscription to API Conversion Platform",
   api_base_url: "",

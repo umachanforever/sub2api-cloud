@@ -1003,7 +1003,7 @@ export async function sendOpenAIReferralInvite(
  * and invite a retry that spends a second credit.
  */
 export async function resetOpenAIQuota(id: number): Promise<OpenAIQuotaResetResult> {
-  const storageKey = `sub2api-supabase:quota-reset:${id}`
+  const storageKey = `sub2api-cloud:quota-reset:${id}`
   const requestKey = localStorage.getItem(storageKey) || crypto.randomUUID()
   localStorage.setItem(storageKey, requestKey)
   const { data } = await apiClient.post<OpenAIQuotaResetResult>(

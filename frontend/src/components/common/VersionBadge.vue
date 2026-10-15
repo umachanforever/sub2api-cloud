@@ -651,7 +651,7 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import Icon from '@/components/icons/Icon.vue'
 
-const GITHUB_REPO = 'umachanforever/sub2api-supabase'
+const GITHUB_REPO = 'umachanforever/sub2api-cloud'
 
 
 const { t } = useI18n()
@@ -708,7 +708,7 @@ const manualTabs = computed(() => [
 const scriptRollbackCommand = computed(() => {
   if (!selectedRollbackVersion.value) return ''
   const tag = `v${selectedRollbackVersion.value}`
-  return `git fetch https://github.com/${GITHUB_REPO}.git tag ${tag}\ngit switch --detach ${tag}\nnpm ci\nnpm run deploy\ndocker compose --env-file .env.local -p sub2api-supabase up -d --build`
+  return `git fetch https://github.com/${GITHUB_REPO}.git tag ${tag}\ngit switch --detach ${tag}\nnpm ci\nnpm run deploy\ndocker compose --env-file .env.local -p sub2api-cloud up -d --build`
 })
 
 const dockerRollbackCommand = computed(() => {

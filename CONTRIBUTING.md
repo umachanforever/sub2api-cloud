@@ -1,6 +1,6 @@
 # Contributing
 
-sub2api-supabase is an independent TypeScript/Supabase port with the original Vue console. Read README.md, docs/PORTING.md and docs/FULL_MIGRATION.md before proposing changes. The remaining migration work is tracked in that checklist; do not describe unsupported upstream features as implemented.
+sub2api-cloud is an independent TypeScript/Supabase port with the original Vue console. Read README.md, docs/PORTING.md and docs/FULL_MIGRATION.md before proposing changes. The remaining migration work is tracked in that checklist; do not describe unsupported upstream features as implemented.
 
 ## Development
 
@@ -21,7 +21,7 @@ pnpm --dir frontend --ignore-workspace typecheck
 pnpm --dir frontend --ignore-workspace build
 ```
 
-For container changes also run `docker build -t sub2api-supabase:test .` and verify the UI and `/api/v1/settings/public` on a temporary loopback port. Clean up the temporary container afterwards.
+For container changes also run `docker build -t sub2api-cloud:test .` and verify the UI and `/api/v1/settings/public` on a temporary loopback port. Clean up the temporary container afterwards.
 
 ## Pull requests
 

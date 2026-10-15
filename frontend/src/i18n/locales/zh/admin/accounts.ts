@@ -133,7 +133,7 @@ export default {
         ungrouped: '未分组',
         hint: '显示格式为“分组名 / 基础分 / 粘性加分”。基础分按当前筛选条件限定的候选账号计算，包含优先级、负载、排队、错误率、首包延迟、重置窗口、额度余量、计费倍率等因子；粘性加分只在开启粘性加权时用于 previous_response_id 或 session_hash。分数越大越优先。'
       },
-      usageWindowsHint: '“5h / 7d”是上游账号（如 OpenAI ChatGPT、Claude）官方的滚动用量窗口限制，由上游对账号设定，并非 sub2api-supabase 配置，也与你映射的模型无关。窗口滚动到期后用量会自动重置，无法在 sub2api-supabase 端解除该限制。',
+      usageWindowsHint: '“5h / 7d”是上游账号（如 OpenAI ChatGPT、Claude）官方的滚动用量窗口限制，由上游对账号设定，并非 sub2api-cloud 配置，也与你映射的模型无关。窗口滚动到期后用量会自动重置，无法在 sub2api-cloud 端解除该限制。',
       ollamaCloud: {
         title: 'Ollama Cloud 用量',
         sessionSecurityHint: '浏览器会话会加密落库，且只发送到固定的 Ollama 官方设置页。',
@@ -184,7 +184,7 @@ export default {
         }
       },
       upstreamBilling: {
-        trustWarning: '此倍率由上游站点针对当前 API Key 自行声明。sub2api-supabase 无法验证该值是否与实际扣费一致；上游站点或中间代理可能返回伪造、过期或被篡改的数据。请结合账单、余额变化和实际用量自行核验。',
+        trustWarning: '此倍率由上游站点针对当前 API Key 自行声明。sub2api-cloud 无法验证该值是否与实际扣费一致；上游站点或中间代理可能返回伪造、过期或被篡改的数据。请结合账单、余额变化和实际用量自行核验。',
         autoProbe: '自动探测上游声明倍率',
         autoProbeHint: '启用后按全局周期刷新上游声明倍率；此开关本身不会修改账号倍率。',
         syncRate: '同步上游声明倍率',
@@ -524,7 +524,7 @@ export default {
         claude: 'Claude',
         grokRequests: '请求',
         grokTokens: 'Token',
-        grokFreeQuota24hHint: '按 sub2api-supabase 近 24 小时本地 Token 用量估算（上限 {limit}）',
+        grokFreeQuota24hHint: '按 sub2api-cloud 近 24 小时本地 Token 用量估算（上限 {limit}）',
         grokWeeklyUsage: '周额度已用 {percent}%',
         grokUsed: '已用 $',
         grokBalance: '余额 $',
@@ -887,8 +887,8 @@ export default {
         searchTestHint:
           '独立网页搜索探测（与网关 /v1/web_search 语义一致），不是带 tools 的自由对话。',
         ttsTextLabel: 'TTS 文本',
-        ttsTextPlaceholder: '例如：Hello from sub2api-supabase connectivity test.',
-        ttsTextDefault: 'Hello from sub2api-supabase account connectivity test.',
+        ttsTextPlaceholder: '例如：Hello from sub2api-cloud connectivity test.',
+        ttsTextDefault: 'Hello from sub2api-cloud account connectivity test.',
         ttsTestHint: '独立调用 /v1/tts（language=en）；成功时显示音频字节数。',
         sttTestHint: '独立调用 /v1/stt，使用合成静音 WAV；成功表示接口可达。',
         realtimeTestHint:

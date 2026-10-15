@@ -24,7 +24,7 @@ jobs:
       - run: pnpm --dir frontend --ignore-workspace typecheck
       - run: pnpm --dir frontend --ignore-workspace exec vitest run src/api/__tests__
       - run: pnpm --dir frontend --ignore-workspace build
-      - run: docker build -t sub2api-supabase:check .
+      - run: docker build -t sub2api-cloud:check .
 
   management:
     runs-on: ubuntu-latest
@@ -49,4 +49,4 @@ jobs:
       - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService|AccountCredentialExpiryFormats)'
       - run: go test ./internal/repository -run 'Test(SupabaseMigrationRole|ApplyMigrations)'
       - run: go test ./cmd/server -run TestManagementMigrationURL
-      - run: docker build -t sub2api-supabase-management:check .
+      - run: docker build -t sub2api-cloud-management:check .
