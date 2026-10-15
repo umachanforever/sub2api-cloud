@@ -23,9 +23,9 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  const keyHash=await hashKey(token),clientIp=request.headers.get('cf-connecting-ip')?.trim()||request.headers.get('x-real-ip')?.trim()||request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||null;
  const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
  if(!policy||policy.error)throw new HttpError(policy?.status??503,policy?.error??'database_unavailable');
- if(!['openai','grok'].includes(policy.platform??''))throw new HttpError(400,'responses_websocket_group_required');
+ if(!['openai','grok','composite'].includes(policy.platform??''))throw new HttpError(400,'responses_websocket_group_required');
  const {response,socket:client}=upgrade(request),signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
- let upstream:NodeWebSocket|undefined,agent:ProxyAgent|undefined,ended=false,model:string|undefined,upstreamModel:string|undefined,pinned:Account|undefined;
+ let upstream:NodeWebSocket|undefined,agent:ProxyAgent|undefined,ended=false,model:string|undefined,upstreamModel:string|undefined,pinned:Reservation['account']|undefined;
  let history:BridgeHistory|undefined,sessionMode:string|undefined;
  let eventBytes=0,eventCount=0;
  let pending=0,pendingBytes=0,sequence=Promise.resolve(),events=Promise.resolve();
@@ -105,7 +105,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   if(!reservation||reservation.error)throw new HttpError(reservation?.status??503,reservation?.error??'database_unavailable');
   let resolve!:()=>void;const done=new Promise<void>(r=>{resolve=r;});active={reservation,started:turnStarted,usage:{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'incomplete'},resolve,done};
   if(ended){await finish(499,'cancelled');return;}
-  if(reservation.account.platform!==policy.platform||!['apikey','oauth'].includes(reservation.account.type)||pinned&&(reservation.account.id!==pinned.id||reservation.account.credential_version!==pinned.credential_version))throw new HttpError(409,'websocket_account_changed');
+  if(!['openai','grok'].includes(reservation.account.platform??'')||(policy.platform!=='composite'&&reservation.account.platform!==policy.platform)||!['apikey','oauth'].includes(reservation.account.type)||pinned&&(reservation.account.id!==pinned.id||reservation.account.platform!==pinned.platform||reservation.account.type!==pinned.type||reservation.account.credential_version!==pinned.credential_version))throw new HttpError(409,'websocket_account_changed');
   const mapped=reservation.upstream_model??(reservation.model_sources?mappedTarget(reservation.model_sources.mapping,model,reservation.account.platform??'openai'):undefined)??model;
   const next=reservation.account.platform==='openai'?defaultSolModel(mapped)??mapped:mapped;if(upstreamModel&&next!==upstreamModel)throw new HttpError(409,'model_change_requires_reconnect');upstreamModel=next;
   let body:Record<string,unknown>={...payload,model:next};delete body.type;delete body.stream;

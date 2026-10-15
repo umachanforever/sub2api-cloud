@@ -14,8 +14,8 @@ async function setup(t,options={}){
  const server=new WebSocketServer({port:0,host:'127.0.0.1'});await once(server,'listening');t.after(async()=>{for(const socket of server.clients)socket.terminate();await new Promise(resolve=>server.close(resolve));});
  const client=new Client(),requests=[],finishes=[],stored=await encryptCredentials({api_key:'provider-private'},Buffer.alloc(32,7).toString('base64'));
  const db=new Database({url:'https://db.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),dataModel:'native'},async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:options.platform??'openai'});
-  if(String(url).endsWith('/s2a_personal_acquire')){requests.push(JSON.parse(init.body));return Response.json({lease_id:'lease-'+requests.length,account:{...stored,id:'1',type:'apikey',platform:options.platform??'openai',websocket_settings:options.settings,credential_version:1}});}
+  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:options.policyPlatform??options.platform??'openai'});
+  if(String(url).endsWith('/s2a_personal_acquire')){requests.push(JSON.parse(init.body));return Response.json({lease_id:'lease-'+requests.length,upstream_model:typeof options.upstreamModel==='function'?options.upstreamModel(requests.length):options.upstreamModel,account:{...stored,id:'1',type:'apikey',platform:options.platform??'openai',websocket_settings:options.settings,credential_version:1,...options.accountAtTurn?.(requests.length)}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));if(options.finishDelay)await new Promise(resolve=>setTimeout(resolve,options.finishDelay));return Response.json({applied:true});}
   if(options.fetch)return options.fetch(url,init);
   throw Error('Unexpected RPC');
@@ -50,17 +50,17 @@ test('Responses WebSocket cancellation records one cancelled active lease',async
  for(let i=0;i<20&&!f.finishes.length;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_outcome,'cancelled');
 });
 test('Responses WebSocket HTTP bridge preserves two-turn history for OpenAI and Grok',async t=>{
- for(const platform of ['openai','grok']){
-  let calls=0;const f=await setup(t,{platform,settings:{openai_apikey_responses_websockets_v2_mode:'http_bridge'},fetch:async(url,init)=>{
+ for(const platform of ['openai','grok'])for(const policyPlatform of [platform,'composite']){
+  let calls=0;const f=await setup(t,{platform,policyPlatform,upstreamModel:policyPlatform==='composite'?(platform==='openai'?'gpt-6.1-sol':'grok-4.6'):undefined,settings:{openai_apikey_responses_websockets_v2_mode:'http_bridge'},fetch:async(url,init)=>{
    assert.equal(url,platform==='openai'?'https://api.openai.com/v1/responses':'https://api.x.ai/v1/responses');assert.equal(new Headers(init.headers).get('authorization'),'Bearer provider-private');
-   const body=JSON.parse(init.body);calls++;assert.equal(body.stream,true);assert.equal(body.previous_response_id,undefined);
+   const body=JSON.parse(init.body);calls++;assert.equal(body.model,platform==='openai'?'gpt-6.1-sol':'grok-4.6');assert.equal(body.stream,true);assert.equal(body.previous_response_id,undefined);
    if(calls===2){assert.equal(body.input.length,3);assert.equal(body.input[1].role,'assistant');assert.equal(body.input[2].content,'Again');}
    const events=[{type:'response.output_text.delta',delta:'OK'},{type:'response.completed',response:{id:'resp_'+calls,output:[{type:'message',role:'assistant',content:[{type:'output_text',text:'OK'}]}],usage:{input_tokens:calls,output_tokens:1}}}];
    const wire=events.map(event=>'data: '+JSON.stringify(event)+'\n\n').join('');
    return platform==='openai'?new Response(new ReadableStream({start(controller){controller.enqueue(new TextEncoder().encode(wire));},cancel(){}})):new Response(wire,{headers:{'content-type':'text/event-stream'}});
   }});
   for(let turn=1;turn<=2;turn++){
-   const done=waitFor(f.client,event=>event.type==='response.completed');f.client.onmessage({data:JSON.stringify({model:platform==='openai'?'gpt-6.1':'grok-4.6',input:turn===1?'Hello':'Again',...(turn===2?{previous_response_id:'resp_1'}:{})})});await done;assert.equal(f.finishes.length,turn);assert.equal(f.finishes[turn-1].p_input_tokens,turn);
+   const done=waitFor(f.client,event=>event.type==='response.completed');f.client.onmessage({data:JSON.stringify({model:policyPlatform==='composite'?'bridge-alias':platform==='openai'?'gpt-6.1':'grok-4.6',input:turn===1?'Hello':'Again',...(turn===2?{previous_response_id:'resp_1'}:{})})});await done;assert.equal(f.finishes.length,turn);assert.equal(f.finishes[turn-1].p_input_tokens,turn);
   }
   assert.equal(calls,2);f.client.onclose();
  }
@@ -81,4 +81,38 @@ test('Responses WebSocket drains completed frames before a provider clean close'
  f.client.onmessage({data:JSON.stringify({model:'gpt-6.1',input:'Hello'})});
  await done;
  assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_outcome,'completed');
+});
+
+test('Composite Responses WebSocket forwards a resolved public alias and pins both turns',async t=>{
+ const f=await setup(t,{policyPlatform:'composite',upstreamModel:'gpt-6.1-sol'});let turns=0;
+ f.server.on('connection',socket=>socket.on('message',text=>{
+  const body=JSON.parse(text);assert.equal(body.model,'gpt-6.1-sol');turns++;
+  socket.send(JSON.stringify({type:'response.completed',response:{id:'composite_'+turns,usage:{input_tokens:10,output_tokens:1}}}));
+ }));
+ for(let turn=1;turn<=2;turn++){
+  const done=waitFor(f.client,e=>e.type==='response.completed');f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Hello',...(turn===2?{previous_response_id:'composite_1'}:{})})});await done;
+ }
+ assert.equal(f.requests.length,2);assert.equal(f.requests[0].p_model,'public-alias');assert.equal(f.requests[1].p_billing_context.websocket_account,'1');
+ assert.ok(f.finishes.every(x=>x.p_upstream_model==='gpt-6.1-sol'));f.client.onclose();
+});
+test('Composite Responses WebSocket refuses an upstream model change between turns',async t=>{
+ const f=await setup(t,{policyPlatform:'composite',upstreamModel:turn=>turn===1?'gpt-6.1-sol':'gpt-6-sol'});
+ f.server.on('connection',socket=>socket.on('message',()=>socket.send(JSON.stringify({type:'response.completed',response:{usage:{input_tokens:1,output_tokens:1}}}))));
+ let done=waitFor(f.client,e=>e.type==='response.completed');f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Hello'})});await done;
+ done=waitFor(f.client,e=>e.type==='error');f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Again'})});assert.equal((await done).error.code,'model_change_requires_reconnect');
+ for(let i=0;i<20&&f.finishes.length<2;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.finishes.length,2);assert.equal(f.finishes[1].p_outcome,'failed');
+});
+test('Composite Responses WebSocket rejects unsupported concrete transports',async t=>{
+ const f=await setup(t,{policyPlatform:'composite',platform:'anthropic',upstreamModel:'claude-test'}),done=waitFor(f.client,e=>e.type==='error');
+ f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Hello'})});assert.equal((await done).error.code,'websocket_account_changed');assert.equal(f.finishes.length,1);
+});
+
+test('Composite Responses WebSocket cannot reuse a socket after account platform or type changes',async t=>{
+ for(const changed of [{platform:'grok'},{type:'oauth'}]){
+  const f=await setup(t,{policyPlatform:'composite',upstreamModel:'gpt-6.1-sol',accountAtTurn:turn=>turn===1?{}:changed});
+  f.server.on('connection',socket=>socket.on('message',()=>socket.send(JSON.stringify({type:'response.completed',response:{usage:{input_tokens:1,output_tokens:1}}}))));
+  let done=waitFor(f.client,e=>e.type==='response.completed');f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Hello'})});await done;
+  done=waitFor(f.client,e=>e.type==='error');f.client.onmessage({data:JSON.stringify({model:'public-alias',input:'Again'})});assert.equal((await done).error.code,'websocket_account_changed');
+  for(let i=0;i<20&&f.finishes.length<2;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.finishes.length,2);assert.equal(f.finishes[1].p_outcome,'failed');
+ }
 });
