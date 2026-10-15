@@ -10,7 +10,7 @@ export function batchProviderCleanup(db:Database,options:{vertex?:{bucket:string
  return async(job,signal)=>{
   if(!/^imgbatch_[a-f0-9]{32}$/.test(job.batch_id)||! /^[1-9][0-9]{0,18}$/.test(String(job.account_id)))throw new HttpError(503,'invalid_batch_cleanup_account');
   if(job.provider==='gemini_api'&&!job.input_ref&&(!job.output_ref||job.output_ref==='gemini:pending'))return;
-  const account=await db.rpc<Account&{type:string;credential_storage:'vault';credentials:Record<string,unknown>;error?:string}>('s2a_gateway_account_snapshot',{p_id:String(job.account_id)});
+  const account=await db.rpc<Account&{type:string;credential_storage:'vault';credentials:Record<string,unknown>;error?:string}>('s2a_batch_image_cleanup_account',{p_id:job.batch_id,p_lease:job.cleanup_lease});
   if(!account||account.error||account.id!==String(job.account_id)||account.platform!=='gemini'||account.credential_storage!=='vault')throw new HttpError(503,'batch_cleanup_account_unavailable');
   if(job.provider==='gemini_api'){
    const client=new GeminiBatchClient(db,account,account.credentials as ApiKeyCredentials),refs=new Set([job.input_ref,job.output_ref].filter((ref):ref is string=>Boolean(ref)&&ref!=='gemini:pending'));

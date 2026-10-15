@@ -463,6 +463,22 @@ BEGIN
     SELECT j.provider INTO provider FROM public.batch_image_jobs j WHERE j.batch_id=task.batch_id;
     RETURN jsonb_build_array(to_jsonb(task)||jsonb_build_object('provider',provider));
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_cleanup_account(p_id text,p_lease uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; a s2a_private.accounts%ROWTYPE; provider text;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
+    IF NOT FOUND OR task.cleanup_lease IS DISTINCT FROM p_lease OR task.cleanup_until IS NULL OR task.cleanup_until<=clock_timestamp()
+        OR NOT task.cleanup_requested OR task.cleaned_at IS NOT NULL OR task.stage NOT IN ('completed','failed')
+        THEN RETURN jsonb_build_object('error','batch_image_cleanup_lease_lost','status',409); END IF;
+    SELECT j.provider INTO provider FROM public.batch_image_jobs j WHERE j.batch_id=p_id;
+    SELECT * INTO a FROM s2a_private.accounts WHERE id=task.account_id AND deleted_at IS NULL AND platform='gemini'
+        AND type=CASE provider WHEN 'vertex' THEN 'service_account' WHEN 'gemini_api' THEN 'apikey' ELSE '' END;
+    IF NOT FOUND OR a.s2a_credential_version IS DISTINCT FROM task.credential_version
+        THEN RETURN jsonb_build_object('error','batch_cleanup_account_unavailable','status',503); END IF;
+    RETURN jsonb_build_object('id',a.id::text,'platform',a.platform,'type',a.type,'proxy_id',a.proxy_id::text,
+        'credential_storage','vault','credentials',s2a_private.account_credentials(a.id));
+END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_cleanup_finish(p_id text,p_lease uuid)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE task s2a_private.batch_image_runtime%ROWTYPE;
@@ -506,7 +522,7 @@ BEGIN
     RETURN jsonb_build_object('released',FOUND);
 END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_mark_downloaded','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish','s2a_batch_image_download_acquire','s2a_batch_image_download_release') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_model_sources','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_mark_downloaded','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_account','s2a_batch_image_cleanup_finish','s2a_batch_image_download_acquire','s2a_batch_image_download_release') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

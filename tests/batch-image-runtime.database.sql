@@ -158,6 +158,15 @@ BEGIN
  r:=public.s2a_batch_image_cleanup_claim()->0;
  IF r->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'cleanup claim failed'; END IF;
  IF public.s2a_batch_image_cleanup_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleanup double claim'; END IF;
+ UPDATE s2a_private.batch_image_runtime SET credential_version=(SELECT s2a_credential_version FROM s2a_private.accounts WHERE id=a) WHERE batch_id=ident;
+ UPDATE public.accounts SET status='inactive' WHERE id=a;
+ IF public.s2a_gateway_account_snapshot(a)->>'error' IS DISTINCT FROM 'account_unavailable' THEN RAISE EXCEPTION 'inactive account inference enabled'; END IF;
+ IF public.s2a_batch_image_cleanup_account(ident,(r->>'cleanup_lease')::uuid)->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'inactive cleanup account rejected'; END IF;
+ IF public.s2a_batch_image_cleanup_account(ident,gen_random_uuid())->>'error' IS DISTINCT FROM 'batch_image_cleanup_lease_lost' THEN RAISE EXCEPTION 'foreign cleanup credential lease accepted'; END IF;
+ UPDATE s2a_private.batch_image_runtime SET credential_version=credential_version+1 WHERE batch_id=ident;
+ IF public.s2a_batch_image_cleanup_account(ident,(r->>'cleanup_lease')::uuid)->>'error' IS DISTINCT FROM 'batch_cleanup_account_unavailable' THEN RAISE EXCEPTION 'changed cleanup credentials accepted'; END IF;
+ IF has_function_privilege('anon','public.s2a_batch_image_cleanup_account(text,uuid)','EXECUTE') OR has_function_privilege('authenticated','public.s2a_batch_image_cleanup_account(text,uuid)','EXECUTE') THEN RAISE EXCEPTION 'cleanup credential ACL mismatch'; END IF;
+
  IF public.s2a_batch_image_cleanup_finish(ident,gen_random_uuid())->>'error' IS DISTINCT FROM 'batch_image_cleanup_lease_lost' THEN RAISE EXCEPTION 'stale cleaner accepted'; END IF;
  IF public.s2a_batch_image_cleanup_finish(ident,(r->>'cleanup_lease')::uuid)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cleanup finish failed'; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='output_deleted' AND input_deleted_at IS NOT NULL AND output_deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'cleanup native state mismatch'; END IF;
