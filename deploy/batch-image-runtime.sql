@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS s2a_private.batch_image_runtime (
     CHECK(stage NOT IN ('poll','index','completed') OR provider_job_name IS NOT NULL),
     CHECK(stage='upload' OR stage='failed' OR input_ref IS NOT NULL)
 );
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cleanup_requested boolean NOT NULL DEFAULT false;
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cleanup_lease uuid;
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cleanup_until timestamptz;
+ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cleaned_at timestamptz;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS cancel_requested boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS credential_version bigint;
 ALTER TABLE s2a_private.batch_image_runtime ADD COLUMN IF NOT EXISTS client_ip text;
@@ -270,7 +274,7 @@ BEGIN
     RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
         'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
-        'output_expires_at',native.output_expires_at,'error_code',native.last_error_code,'items',items));
+        'output_expires_at',native.output_expires_at,'output_deletion_pending',task.cleanup_requested AND task.cleaned_at IS NULL,'error_code',native.last_error_code,'items',items));
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_list(p_key_hash text,p_limit integer DEFAULT 20,p_offset integer DEFAULT 0,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -296,7 +300,7 @@ BEGIN
     snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
     IF snapshot ? 'error' THEN RETURN snapshot; END IF;
     SELECT * INTO job FROM public.batch_image_jobs WHERE batch_id=p_id;
-    IF job.output_deleted_at IS NOT NULL OR job.output_expires_at IS NOT NULL AND job.output_expires_at<=clock_timestamp()
+    IF coalesce((snapshot->>'output_deletion_pending')::boolean,false) OR job.output_deleted_at IS NOT NULL OR job.output_expires_at IS NOT NULL AND job.output_expires_at<=clock_timestamp()
         THEN RETURN jsonb_build_object('error','batch_image_output_expired','status',410); END IF;
     IF job.status<>'completed' THEN RETURN jsonb_build_object('error','batch_image_not_completed','status',409); END IF;
     SELECT * INTO item FROM public.batch_image_items WHERE job_id=p_id AND custom_id=p_custom_id;
@@ -320,8 +324,46 @@ BEGIN
     END IF;
     RETURN public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_delete(p_key_hash text,p_id text,p_hide boolean DEFAULT false,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE snapshot jsonb; task s2a_private.batch_image_runtime%ROWTYPE;
+BEGIN
+    snapshot:=public.s2a_batch_image_read(p_key_hash,p_id,p_client_ip);
+    IF snapshot ? 'error' THEN RETURN snapshot; END IF;
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF task.stage NOT IN ('completed','failed') THEN RETURN jsonb_build_object('error','batch_image_not_terminal','status',409); END IF;
+    UPDATE s2a_private.batch_image_runtime SET cleanup_requested=true,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    IF p_hide THEN UPDATE public.batch_image_jobs SET user_deleted_at=coalesce(user_deleted_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id; END IF;
+    RETURN jsonb_build_object('id',p_id,'deleted',coalesce(p_hide,false),'output_deletion_pending',task.cleaned_at IS NULL);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_cleanup_claim()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; provider text;
+BEGIN
+    SELECT r.* INTO task FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
+        WHERE r.stage IN ('completed','failed') AND r.cleaned_at IS NULL AND (r.cleanup_until IS NULL OR r.cleanup_until<=clock_timestamp())
+        AND (r.cleanup_requested OR coalesce(j.output_expires_at,j.finished_at+interval '24 hours',r.updated_at+interval '24 hours')<=clock_timestamp())
+        ORDER BY r.updated_at,r.batch_id FOR UPDATE OF r SKIP LOCKED LIMIT 1;
+    IF NOT FOUND THEN RETURN '[]'::jsonb; END IF;
+    UPDATE s2a_private.batch_image_runtime SET cleanup_requested=true,cleanup_lease=gen_random_uuid(),cleanup_until=clock_timestamp()+interval '180 seconds' WHERE batch_id=task.batch_id RETURNING * INTO task;
+    SELECT j.provider INTO provider FROM public.batch_image_jobs j WHERE j.batch_id=task.batch_id;
+    RETURN jsonb_build_array(to_jsonb(task)||jsonb_build_object('provider',provider));
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_cleanup_finish(p_id text,p_lease uuid)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND OR task.cleanup_lease IS DISTINCT FROM p_lease OR task.cleanup_until IS NULL OR task.cleanup_until<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_cleanup_lease_lost','status',409); END IF;
+    IF task.stage NOT IN ('completed','failed') THEN RETURN jsonb_build_object('error','batch_image_not_terminal','status',409); END IF;
+    UPDATE s2a_private.batch_image_runtime SET cleaned_at=clock_timestamp(),cleanup_lease=NULL,cleanup_until=NULL WHERE batch_id=p_id;
+    UPDATE public.batch_image_jobs SET output_deleted_at=coalesce(output_deleted_at,clock_timestamp()),input_deleted_at=coalesce(input_deleted_at,clock_timestamp()),
+        status=CASE WHEN status='completed' THEN 'output_deleted' ELSE status END,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    RETURN jsonb_build_object('applied',true);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read','s2a_batch_image_list','s2a_batch_image_content_resolve','s2a_batch_image_cancel','s2a_batch_image_delete','s2a_batch_image_cleanup_claim','s2a_batch_image_cleanup_finish') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

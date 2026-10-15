@@ -8,6 +8,7 @@ export async function downloadBatchImages(db:Database,keyHash:string,batchID:str
  if(!snapshot||typeof snapshot!=='object'||Array.isArray(snapshot))throw new HttpError(503,'invalid_batch_download');
  if(typeof snapshot.error==='string')throw new HttpError(typeof snapshot.status==='number'?snapshot.status:503,snapshot.error);
  if(snapshot.id!==batchID||!Array.isArray(snapshot.items)||snapshot.items.length>200)throw new HttpError(503,'invalid_batch_download');
+ if(snapshot.output_deletion_pending===true)throw new HttpError(410,'batch_image_output_expired');
  if(snapshot.status!=='completed')throw new HttpError(409,'batch_image_not_completed');
  if(typeof snapshot.output_expires_at==='string'&&(!Number.isFinite(Date.parse(snapshot.output_expires_at))||Date.parse(snapshot.output_expires_at)<=Date.now()))throw new HttpError(410,'batch_image_output_expired');
  const items=snapshot.items as Record<string,unknown>[];

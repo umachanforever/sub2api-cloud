@@ -101,6 +101,15 @@ BEGIN
  IF public.s2a_batch_image_runtime_indexed(ident,lease,items)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'index completion failed'; END IF;
  IF (SELECT count(*) FROM public.batch_image_items WHERE job_id=ident)<>2 THEN RAISE EXCEPTION 'item count mismatch'; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='completed' AND success_count=1 AND fail_count=1 AND actual_cost=0 AND output_expires_at IS NOT NULL) THEN RAISE EXCEPTION 'native index totals mismatch'; END IF;
+ UPDATE s2a_private.batch_image_runtime SET cleanup_requested=true WHERE batch_id=ident;
+ r:=public.s2a_batch_image_cleanup_claim()->0;
+ IF r->>'batch_id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'cleanup claim failed'; END IF;
+ IF public.s2a_batch_image_cleanup_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleanup double claim'; END IF;
+ IF public.s2a_batch_image_cleanup_finish(ident,gen_random_uuid())->>'error' IS DISTINCT FROM 'batch_image_cleanup_lease_lost' THEN RAISE EXCEPTION 'stale cleaner accepted'; END IF;
+ IF public.s2a_batch_image_cleanup_finish(ident,(r->>'cleanup_lease')::uuid)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cleanup finish failed'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='output_deleted' AND input_deleted_at IS NOT NULL AND output_deleted_at IS NOT NULL) THEN RAISE EXCEPTION 'cleanup native state mismatch'; END IF;
+ IF public.s2a_batch_image_cleanup_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cleaned job reclaimed'; END IF;
+
 END $$;
 ROLLBACK;
 BEGIN;

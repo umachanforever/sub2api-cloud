@@ -85,3 +85,13 @@ export async function listTaskArtifacts(db:Database,taskId:string):Promise<strin
   return path;
  });
 }
+
+export async function listBatchArtifacts(db:Database,batchId:string):Promise<string[]>{
+ if(!/^imgbatch_[a-f0-9]{32}$/.test(batchId))throw new HttpError(400,'invalid_artifact_path');
+ const prefix='batches/'+batchId,headers=auth(db);headers.set('content-type','application/json');
+ const response=await db.fetchImpl(storageURL(db,'object/list/'+bucket),{method:'POST',headers,body:JSON.stringify({prefix,limit:203,offset:0,sortBy:{column:'name',order:'asc'}}),signal:AbortSignal.timeout(10000),redirect:'error'});
+ if(!response.ok){await response.body?.cancel();throw new HttpError(503,'artifact_storage_unavailable');}
+ const entries=await storageMetadata(response,262144);
+ if(!Array.isArray(entries)||entries.length>202)throw new HttpError(502,'invalid_artifact_listing');
+ return entries.map(entry=>{if(typeof entry?.name!=='string')throw new HttpError(502,'invalid_artifact_listing');const path=prefix+'/'+entry.name;try{encodedPath(path);}catch{throw new HttpError(502,'invalid_artifact_listing');}return path;});
+}
