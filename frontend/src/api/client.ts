@@ -14,6 +14,7 @@ import {
 } from './adminUIRequest'
 import { refreshAuthTokens } from './tokenRefresh'
 import { getAPIBaseURL } from './url'
+import { createReadCache } from './readCache'
 export { buildApiUrl, buildGatewayUrl } from './url'
 
 // ==================== Axios Instance Configuration ====================
@@ -26,6 +27,8 @@ export const apiClient: AxiosInstance = axios.create({
     'Content-Type': 'application/json'
   }
 })
+
+apiClient.defaults.adapter = createReadCache(axios.getAdapter(apiClient.defaults.adapter))
 
 // ==================== Request Interceptor ====================
 
