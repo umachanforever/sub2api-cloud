@@ -51,3 +51,48 @@ func TestSupabaseMigrationRole(t *testing.T) {
 		})
 	}
 }
+
+func TestSupabaseMigrationChecksums(t *testing.T) {
+	for _, mode := range []string{"native", "cloud", "configured", "offline", "interrupted"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Setenv("SUPABASE_URL", "")
+			ctx := context.Background()
+			if mode == "configured" {
+				ctx = context.WithValue(ctx, supabaseMigrationContextKey{}, true)
+			} else if mode != "native" {
+				t.Setenv("SUPABASE_URL", "https://project.supabase.co")
+			}
+			db, mock, err := sqlmock.New()
+			require.NoError(t, err)
+			defer db.Close()
+			conn, err := db.Conn(ctx)
+			require.NoError(t, err)
+			defer conn.Close()
+			if mode != "native" {
+				query := mock.ExpectQuery("SELECT filename, checksum FROM schema_migrations")
+				if mode == "offline" {
+					query.WillReturnError(errors.New("offline"))
+				} else {
+					rows := sqlmock.NewRows([]string{"filename", "checksum"}).AddRow("001.sql", "first").AddRow("002.sql", "second")
+					if mode == "interrupted" {
+						rows.RowError(1, errors.New("interrupted"))
+					}
+					query.WillReturnRows(rows).RowsWillBeClosed()
+				}
+			}
+			checksums, err := supabaseMigrationChecksums(ctx, conn)
+			if mode == "offline" || mode == "interrupted" {
+				require.Error(t, err)
+				require.Nil(t, checksums)
+			} else {
+				require.NoError(t, err)
+				if mode == "native" {
+					require.Nil(t, checksums)
+				} else {
+					require.Equal(t, map[string]string{"001.sql": "first", "002.sql": "second"}, checksums)
+				}
+			}
+			require.NoError(t, mock.ExpectationsWereMet())
+		})
+	}
+}

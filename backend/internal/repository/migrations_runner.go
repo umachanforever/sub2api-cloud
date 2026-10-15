@@ -183,6 +183,11 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	}
 	sort.Strings(files) // 确保按文件名顺序执行迁移
 
+	appliedChecksums, err := supabaseMigrationChecksums(ctx, lockConn)
+	if err != nil {
+		return err
+	}
+
 	for _, name := range files {
 		// 读取迁移文件内容
 		contentBytes, err := fs.ReadFile(fsys, name)
@@ -202,7 +207,16 @@ func applyMigrationsFS(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 
 		// 检查该迁移是否已经应用
 		var existing string
-		rowErr := lockConn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", name).Scan(&existing)
+		var rowErr error
+		if appliedChecksums != nil {
+			var found bool
+			existing, found = appliedChecksums[name]
+			if !found {
+				rowErr = sql.ErrNoRows
+			}
+		} else {
+			rowErr = lockConn.QueryRowContext(ctx, "SELECT checksum FROM schema_migrations WHERE filename = $1", name).Scan(&existing)
+		}
 		if rowErr == nil {
 			// 迁移已应用，验证校验和是否匹配
 			if existing != checksum {

@@ -42,3 +42,28 @@ func validateSupabaseMigrationRole(ctx context.Context, conn *sql.Conn) error {
 	}
 	return nil
 }
+
+// Read migration metadata once across the remote connection while holding its advisory lock.
+func supabaseMigrationChecksums(ctx context.Context, conn *sql.Conn) (map[string]string, error) {
+	enabled, _ := ctx.Value(supabaseMigrationContextKey{}).(bool)
+	if !enabled && os.Getenv("SUPABASE_URL") == "" {
+		return nil, nil
+	}
+	rows, err := conn.QueryContext(ctx, "SELECT filename, checksum FROM schema_migrations")
+	if err != nil {
+		return nil, fmt.Errorf("read Supabase migration checksums: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[string]string)
+	for rows.Next() {
+		var name, checksum string
+		if err := rows.Scan(&name, &checksum); err != nil {
+			return nil, fmt.Errorf("scan Supabase migration checksum: %w", err)
+		}
+		result[name] = checksum
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read Supabase migration checksums: %w", err)
+	}
+	return result, nil
+}
