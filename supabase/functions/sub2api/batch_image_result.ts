@@ -1,7 +1,8 @@
 import {HttpError} from './db.ts';
 type Row=Record<string,any>;
 export type BatchResultImage={mime_type:string;extension:string;data:string};
-export type BatchResultItem={custom_id:string;status:'succeeded'|'failed';image_count:number;mime_type?:string;file_extension?:string;error_code?:string;images:BatchResultImage[]};
+export type BatchTokenUsage={input_tokens?:number;output_tokens?:number;cache_read_tokens?:number};
+export type BatchResultItem={usage?:BatchTokenUsage;custom_id:string;status:'succeeded'|'failed';image_count:number;mime_type?:string;file_extension?:string;error_code?:string;images:BatchResultImage[]};
 const object=(value:unknown):value is Row=>Boolean(value)&&typeof value==='object'&&!Array.isArray(value);
 const text=(value:unknown)=>typeof value==='string'?value.trim():typeof value==='number'&&Number.isFinite(value)?String(Math.trunc(value)):'';
 function images(candidates:unknown):BatchResultImage[]{
@@ -18,12 +19,23 @@ function images(candidates:unknown):BatchResultImage[]{
  }
  return result;
 }
+function tokenUsage(row:Row):BatchTokenUsage|undefined{
+ const source=row.usageMetadata??row.usage_metadata;if(!object(source))return undefined;
+ const count=(value:unknown):value is number=>typeof value==='number'&&Number.isSafeInteger(value)&&value>=0&&value<=2147483647;
+ const input=source.promptTokenCount??source.prompt_token_count,output=source.candidatesTokenCount??source.candidates_token_count,thoughts=source.thoughtsTokenCount??source.thoughts_token_count,cache=source.cachedContentTokenCount??source.cached_content_token_count;
+ const usage:BatchTokenUsage={};
+ if(count(input))usage.input_tokens=input;
+ if(count(output)){const total=output+(count(thoughts)?thoughts:0);if(count(total))usage.output_tokens=total;}
+ if(count(cache))usage.cache_read_tokens=cache;
+ return Object.keys(usage).length?usage:undefined;
+}
 export function parseBatchImageResult(line:Uint8Array):BatchResultItem{
  let row:Row;try{row=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(line));if(!object(row))throw Error('shape');}catch{throw new HttpError(502,'batch_image_index_parse_failed');}
  const id=text(row.key)||text(row.custom_id)||text(row.customId)||(object(row.request)?text(row.request.key):'');
  if(!id||new TextEncoder().encode(id).length>255||/[\u0000-\u001f]/.test(id))throw new HttpError(502,'batch_image_index_parse_failed');
+ const usage=tokenUsage(object(row.response)?row.response:row)??tokenUsage(row);
  const response=object(row.response)?row.response:null,found=images(response?.candidates),output=found.length?found:images(row.candidates);
- if(output.length)return {custom_id:id,status:'succeeded',image_count:output.length,mime_type:output[0].mime_type,file_extension:output[0].extension,images:output};
+ if(output.length)return {...(usage?{usage}:{}),custom_id:id,status:'succeeded',image_count:output.length,mime_type:output[0].mime_type,file_extension:output[0].extension,images:output};
  const error=object(row.status)?row.status:object(row.error)?row.error:null;let code='PROVIDER_ITEM_FAILED';
  if(error){
   const message=(text(error.code)+' '+text(error.status)+' '+text(error.message)+' '+text(error.details)).toLowerCase();
@@ -31,7 +43,7 @@ export function parseBatchImageResult(line:Uint8Array):BatchResultItem{
   else if(/invalid_argument|invalid argument|bad request/.test(message))code='INVALID_ARGUMENT';
   else if(/quota|rate|resource_exhausted|too many requests/.test(message))code='PROVIDER_RATE_LIMITED';
  }else if('response' in row||'candidates' in row)code='EMPTY_IMAGE_OUTPUT';
- return {custom_id:id,status:'failed',image_count:0,error_code:code,images:[]};
+ return {...(usage?{usage}:{}),custom_id:id,status:'failed',image_count:0,error_code:code,images:[]};
 }
 export type BatchResultLine={item:BatchResultItem;line_number:number;byte_offset:number;byte_length:number};
 // Match the original 16 MiB JSONL line limit without limiting the total result size.

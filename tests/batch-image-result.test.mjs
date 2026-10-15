@@ -18,3 +18,9 @@ test('batch JSONL enforces original per-line limit and releases upstream on inte
  await assert.rejects(async()=>{for await(const row of batchImageResultLines(chunks(),10))void row;},/line_too_large/);
  async function* invalid(){yield new Uint8Array([255,10]);}await assert.rejects(async()=>{for await(const row of batchImageResultLines(invalid()))void row;},/parse_failed/);
 });
+test('batch usage preserves known zero values, thought tokens and unknown fields',()=>{
+ const value=JSON.parse(line());value.response.usageMetadata={promptTokenCount:0,candidatesTokenCount:7,thoughtsTokenCount:3,cachedContentTokenCount:0,private:'secret'};
+ assert.deepEqual(parseBatchImageResult(bytes(JSON.stringify(value))).usage,{input_tokens:0,output_tokens:10,cache_read_tokens:0});
+ value.response.usageMetadata={promptTokenCount:-1,candidatesTokenCount:'7',thoughtsTokenCount:3,cachedContentTokenCount:NaN};assert.equal(parseBatchImageResult(bytes(JSON.stringify(value))).usage,undefined);
+ value.response.usageMetadata={candidatesTokenCount:2147483647,thoughtsTokenCount:1};assert.equal(parseBatchImageResult(bytes(JSON.stringify(value))).usage,undefined);
+});

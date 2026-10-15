@@ -90,6 +90,13 @@ BEGIN
  IF public.s2a_batch_image_runtime_admit(ident,(leased->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'batch_image_account_changed' THEN RAISE EXCEPTION 'worker followed rotated credential'; END IF;
  UPDATE public.groups SET model_allowlist='{"enabled":true,"models":["allowed-*"]}' WHERE id=g;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'model_not_allowed' THEN RAISE EXCEPTION 'allowlist bypass'; END IF;
+ UPDATE s2a_private.batch_image_runtime SET stage='index',input_ref='files/input',provider_job_name='batches/result' WHERE batch_id=ident;
+ IF public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,jsonb_build_array(jsonb_build_object('custom_id','cover','status','failed','image_count',0,'error_code','EMPTY_IMAGE_OUTPUT','usage',jsonb_build_object('input_tokens',-1))))->>'error' IS DISTINCT FROM 'invalid_batch_image_usage' THEN RAISE EXCEPTION 'negative batch usage accepted'; END IF;
+ r:=public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,jsonb_build_array(jsonb_build_object('custom_id','cover','status','failed','image_count',0,'error_code','EMPTY_IMAGE_OUTPUT','usage',jsonb_build_object('input_tokens',12,'output_tokens',0))));
+ IF r->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'batch usage completion failed: %',r; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident AND user_id=u AND api_key_id=k AND account_id=a AND input_tokens=12 AND output_tokens=0 AND actual_cost=0 AND NOT (s2a_personal_details->'usage' ? 'cache_read_tokens')) THEN RAISE EXCEPTION 'batch usage identity or unknown values lost'; END IF;
+ PERFORM public.s2a_batch_image_runtime_indexed(ident,(leased->>'lease_id')::uuid,'[]'::jsonb);
+ IF (SELECT count(*) FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident)<>1 THEN RAISE EXCEPTION 'batch usage duplicated'; END IF;
  UPDATE public.batch_image_jobs SET status='completed' WHERE batch_id=ident;
  IF public.s2a_batch_image_mark_downloaded(other_hash,ident)->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key download marking'; END IF;
  IF public.s2a_batch_image_mark_downloaded(h,ident)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'download marking failed'; END IF;

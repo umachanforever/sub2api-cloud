@@ -253,7 +253,7 @@ BEGIN
 END $$;
 CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_indexed(p_id text,p_lease uuid,p_items jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; item jsonb; successes integer:=0; failures integer:=0;
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; item jsonb; token_field text; successes integer:=0; failures integer:=0;
 BEGIN
     SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
     IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
@@ -270,6 +270,15 @@ BEGIN
             OR coalesce(item->>'image_count','') !~ '^[0-9]{1,6}$'
             OR (item ? 'error_code' AND coalesce(item->>'error_code','') !~ '^[A-Z][A-Z0-9_]{0,99}$')
             THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+        IF item ? 'usage' THEN
+            IF jsonb_typeof(item->'usage')<>'object' OR (item->'usage')-ARRAY['input_tokens','output_tokens','cache_read_tokens']<>'{}'::jsonb THEN RETURN jsonb_build_object('error','invalid_batch_image_usage','status',400); END IF;
+            FOREACH token_field IN ARRAY ARRAY['input_tokens','output_tokens','cache_read_tokens'] LOOP
+                IF item->'usage' ? token_field THEN
+                    IF jsonb_typeof(item->'usage'->token_field)<>'number' OR coalesce(item->'usage'->>token_field,'') !~ '^[0-9]{1,10}$' THEN RETURN jsonb_build_object('error','invalid_batch_image_usage','status',400); END IF;
+                    IF (item->'usage'->>token_field)::bigint>2147483647 THEN RETURN jsonb_build_object('error','invalid_batch_image_usage','status',400); END IF;
+                END IF;
+            END LOOP;
+        END IF;
         IF item->>'status'='success' THEN
             IF (item->>'image_count')::integer<1 OR coalesce(item->>'provider_source_object','') !~ ('^batches/'||p_id||'/item-([1-9]|[1-9][0-9]|1[0-9]{2}|200)[.]json$')
                 OR coalesce(item->>'mime_type','') !~ '^image/[A-Za-z0-9.+_-]{1,100}$'
@@ -289,6 +298,14 @@ BEGIN
         SELECT p_id,value->>'custom_id',value->>'status',(value->>'image_count')::integer,value->>'provider_source_object',
             (value->>'source_line_number')::integer,(value->>'source_byte_offset')::bigint,(value->>'source_byte_length')::bigint,
             value->>'mime_type',value->>'file_extension',value->>'error_code',clock_timestamp(),0 FROM jsonb_array_elements(p_items);
+    INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,
+        input_tokens,output_tokens,cache_read_tokens,stream,request_type,billing_mode,s2a_personal_details)
+        SELECT task.user_id,task.key_id,task.account_id,task.group_id,
+            encode(sha256(convert_to('batch:'||p_id||':'||(value->>'custom_id'),'UTF8')),'hex'),left(native.model,100),left(native.model,100),
+            coalesce((value->'usage'->>'input_tokens')::integer,0),coalesce((value->'usage'->>'output_tokens')::integer,0),
+            coalesce((value->'usage'->>'cache_read_tokens')::integer,0),false,1,'token',
+            jsonb_build_object('operation','image_batch','batch_id',p_id,'custom_id',value->>'custom_id','usage',value->'usage')
+        FROM jsonb_array_elements(p_items) WHERE value ? 'usage' AND value->'usage'<>'{}'::jsonb;
     UPDATE public.batch_image_jobs SET status='completed',success_count=successes,fail_count=failures,cancelled_count=0,actual_cost=0,
         finished_at=clock_timestamp(),settled_at=clock_timestamp(),output_expires_at=clock_timestamp()+interval '24 hours',updated_at=clock_timestamp() WHERE batch_id=p_id;
     UPDATE s2a_private.batch_image_runtime SET stage='completed',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
