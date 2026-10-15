@@ -93,6 +93,7 @@ for(const [platform,url] of [
 ])test(`${platform} cloud chat forwards to the original provider endpoint and records tokens`,async()=>{
   const result={object:'chat.completion',choices:[{message:{role:'assistant',content:'hello'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:3,prompt_tokens_details:{cached_tokens:5}}};
   const value=await fixture(platform,(target,init)=>{
+    if(platform==='command_code'&&target.endsWith('/models'))return Response.json({data:[]});
     assert.equal(target,url);assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
     assert.equal(init.headers.get('x-goog-api-key'),null);assert.equal(init.redirect,'error');
     return Response.json(result);
@@ -106,6 +107,7 @@ for(const platform of ['kimi','deepseek','minimax','opencode_go','command_code']
   const result={type:'response.completed',response:{object:'response',status:'completed',output:[],usage:{input_tokens:9,output_tokens:4}}};
   const expected=providerEndpoint(platform,{api_protocol:'adaptive'},'responses');
   const value=await fixture(platform,(target,init)=>{
+    if(platform==='command_code'&&target.endsWith('/models'))return Response.json({data:[]});
     assert.equal(target,expected);assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
     return sse([result,'[DONE]']);
   },{api_key:'provider-secret',api_protocol:'adaptive'});
@@ -117,6 +119,7 @@ for(const platform of ['kimi','deepseek','minimax','opencode_go','command_code']
 for(const platform of ['kimi','zhipu','deepseek','minimax','opencode_go','command_code'])test(`${platform} adaptive Messages uses Anthropic authentication and cached usage`,async()=>{
   const result={type:'message',role:'assistant',content:[{type:'text',text:'hello'}],stop_reason:'end_turn',usage:{input_tokens:3,output_tokens:2,cache_read_input_tokens:4,cache_creation_input_tokens:1}};
   const value=await fixture(platform,(target,init)=>{
+    if(platform==='command_code'&&target.endsWith('/models'))return Response.json({data:[]});
     assert.equal(target,providerEndpoint(platform,{api_protocol:'adaptive'},'anthropic'));
     assert.equal(init.headers.get('x-api-key'),'provider-secret');assert.equal(init.headers.get('authorization'),null);
     assert.equal(init.headers.get('anthropic-version'),'2023-06-01');return Response.json(result);
@@ -166,6 +169,7 @@ for(const platform of ['kimi','opencode_go','command_code'])for(const protocol o
     {type:'response.completed',response:completed},
   ];
   const value=await fixture(platform,(url,init)=>{
+    if(platform==='command_code'&&url.endsWith('/models'))return Response.json({data:[]});
     assert.equal(url,providerEndpoint(platform,options,'responses'));
     const sent=JSON.parse(init.body);
     assert.equal(sent.stream,true);assert.equal(sent.store,false);assert.equal(sent.max_output_tokens,20);assert.equal(sent.temperature,0.5);
@@ -198,6 +202,44 @@ test('client cancellation of a bridged stream cancels the upstream and releases 
   const response=await value.request('/v1/chat/completions',{model:'kimi-test',messages:[{role:'user',content:'hello'}],stream:true});
   assert.equal(response.status,200);await response.body.cancel();
   assert.equal(cancelled,true);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'cancelled');
+});
+
+test('Command Code discovers and caches model-specific Responses endpoints before converting Chat clients',async()=>{
+  let catalogs=0,generations=0;
+  const value=await fixture('command_code',(url,init)=>{
+    assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
+    if(url.endsWith('/models')){catalogs++;assert.equal(init.method,'GET');assert.match(init.headers.get('user-agent'),/codex/);return Response.json({data:[{id:'deepseek-test',supported_endpoints:['/responses']}]});}
+    generations++;assert.equal(url,'https://api.commandcode.ai/provider/v1/responses');assert.equal(JSON.parse(init.body).stream,true);
+    return sse([{type:'response.completed',response:{object:'response',model:'deepseek-test',status:'completed',output:[{type:'message',content:[{type:'output_text',text:'catalog-selected'}]}],usage:{input_tokens:3,output_tokens:1}}}]);
+  });
+  for(let i=0;i<2;i++){
+    const response=await value.request('/v1/chat/completions',{model:'deepseek-test',messages:[{role:'user',content:'hello'}]});
+    assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'catalog-selected');
+  }
+  assert.equal(catalogs,1);assert.equal(generations,2);assert.equal(value.finishes.length,2);
+});
+
+test('Command Code catalog allows native Responses for models absent from built-in rules',async()=>{
+  const result={object:'response',status:'completed',model:'new-provider-model',output:[],usage:{input_tokens:2,output_tokens:1}};
+  const value=await fixture('command_code',(url,init)=>{
+    if(url.endsWith('/models'))return Response.json({data:[{id:'new-provider-model',supported_endpoints:['/v1/responses']}]});
+    assert.equal(url,'https://api.commandcode.ai/provider/v1/responses');assert.equal(JSON.parse(init.body).stream,false);return Response.json(result);
+  });
+  const response=await value.request('/v1/responses',{model:'new-provider-model',input:'hello',stream:false});
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),result);assert.equal(value.finishes[0].p_input_tokens,2);
+});
+
+test('Command Code explicit rules override discovery and failed discovery falls back without an inference failure',async()=>{
+  for(const failure of [false,true]){
+    let catalogs=0;
+    const value=await fixture('command_code',(url)=>{
+      if(url.endsWith('/models')){catalogs++;return failure?Response.json({error:'private provider rejection'},{status:403}):Response.json({data:[{id:'deepseek-test',supported_endpoints:['/responses']}]});}
+      assert.equal(url,'https://api.commandcode.ai/provider/v1/chat/completions');
+      return Response.json({object:'chat.completion',choices:[{finish_reason:'stop',message:{role:'assistant',content:'chat'}}],usage:{prompt_tokens:2,completion_tokens:1}});
+    },{api_key:'provider-secret',...(!failure?{protocol_rules:[{pattern:'deepseek-*',protocol:'chat_completions'}]}:{})});
+    const response=await value.request('/v1/chat/completions',{model:'deepseek-test',messages:[{role:'user',content:'hello'}]});
+    assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'chat');assert.equal(catalogs,1);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');
+  }
 });
 
 test("API-key credentials encrypt losslessly, reject tampering and keep OAuth validation distinct", async () => {

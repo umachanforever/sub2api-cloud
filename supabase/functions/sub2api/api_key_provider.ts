@@ -41,6 +41,7 @@ export function apiKeyRequest(
   body: Item | undefined,
   request: Request,
   signal: AbortSignal,
+  catalog?:ProviderProtocol[],
 ): { url: string; init: RequestInit; streaming: boolean } {
   if (platform === "openai" && protocol === "responses" && body) {
     body = structuredClone(body);
@@ -55,7 +56,7 @@ export function apiKeyRequest(
   ) as ApiKeyCredentials;
   const multi=multiProtocolProvider(platform);
   const nativeProtocol:ProviderProtocol=protocol==='messages'?'anthropic':protocol==='responses'?'responses':'chat_completions';
-  if(multi&&(!['chat','responses','messages','models'].includes(protocol)||protocol!=='models'&&providerProtocol(platform,validated,nativeProtocol,String(body?.model??''))!==nativeProtocol))throw new HttpError(501,'provider_protocol_conversion_required');
+  if(multi&&(!['chat','responses','messages','models'].includes(protocol)||protocol!=='models'&&providerProtocol(platform,validated,nativeProtocol,String(body?.model??''),catalog)!==nativeProtocol))throw new HttpError(501,'provider_protocol_conversion_required');
   if (
     (["openai", "grok"].includes(platform) &&
       !["chat", "responses", "models", "images", ...(platform === "openai" ? ["embeddings"] : ["voice", "videos"])].includes(protocol)) ||

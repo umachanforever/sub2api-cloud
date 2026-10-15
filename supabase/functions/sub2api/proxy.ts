@@ -1,5 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol} from './provider_routing.ts';
+import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {vertexGeminiRequest} from './vertex_gemini.ts';
@@ -41,6 +42,7 @@ import {
   modelListFromManifest,
   normalizeBody,
   type Platform,
+  type ApiKeyCredentials,
 } from "./gateway.ts";
 import {
   apiKeyRequest,
@@ -48,7 +50,7 @@ import {
   nativeResponse,
 } from "./api_key_provider.ts";
 import { decryptApiKeyCredentials,decryptSecret } from "./credential_store.ts";
-import { hashKey, readBody } from "./validation.ts";
+import { hashKey, readBody,parseAccountCredentials } from "./validation.ts";
 import { json } from "./http.ts";
 import { trackedStream, UsageObserver, type Usage } from "./stream.ts";
 import {
@@ -486,12 +488,14 @@ async function proxyWithIdentity(
           upstream=await accountFetch(db,account,native.url,native.init);
         }
       } else if (apiKey) {
-        const credentials = await decryptApiKeyCredentials(
+        let credentials = await decryptApiKeyCredentials(
           account,
           db.config.encryptionKey,
         );
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
-        const bridgeResponses = platform === "openai" && messages || multiProtocolProvider(platform) && (chat || messages) && providerProtocol(platform,credentials,messages?'anthropic':'chat_completions',upstreamModel)==='responses';
+        credentials=parseAccountCredentials(credentials,platform,'apikey') as ApiKeyCredentials;
+        const providerCatalog=models?[]:await providerCatalogProtocols(db,account,credentials,upstreamModel,signal);
+        const bridgeResponses = platform === "openai" && messages || multiProtocolProvider(platform) && (chat || messages) && providerProtocol(platform,credentials,messages?'anthropic':'chat_completions',upstreamModel,providerCatalog)==='responses';
         let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeResponses) {
           try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
@@ -505,6 +509,7 @@ async function proxyWithIdentity(
           outgoingBody,
           request,
           signal,
+          providerCatalog,
         );
         if(voice){
           const headers=new Headers(native.init.headers);headers.set('accept','application/json, audio/*');

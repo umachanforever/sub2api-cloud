@@ -56,18 +56,26 @@ export function parseProviderOptions(platform:MultiProtocolPlatform,input:Record
   }
   return out;
 }
-export function providerProtocol(platform:MultiProtocolPlatform,options:ProviderOptions,inbound:ProviderProtocol,model:string):ProviderProtocol{
+export function providerProtocol(platform:MultiProtocolPlatform,options:ProviderOptions,inbound:ProviderProtocol,model:string,catalog:ProviderProtocol[]=[]):ProviderProtocol{
   const p=profile(platform),mode=endpoints(platform,options);
   let configured=options.api_protocol;
   if(configured==='responses'&&!mode.BaseURLs.responses)configured='chat_completions';
   if(configured&&configured!=='adaptive')return configured;
   if(p.Routing==='by_model'){
     const normalized=model.trim().toLowerCase();
-    const rule=(options.protocol_rules??mode.ProtocolRules??[]).find(rule=>rule.pattern.endsWith('*')?normalized.startsWith(rule.pattern.slice(0,-1)):normalized===rule.pattern);
-    const available=rule?.protocols??[rule?.protocol??'chat_completions'];
+    const match=(rules:ProtocolRule[])=>rules.find(rule=>rule.pattern.endsWith('*')?normalized.startsWith(rule.pattern.slice(0,-1)):normalized===rule.pattern);
+    const configuredRule=options.protocol_rules?match(options.protocol_rules):undefined;
+    const builtin=match(mode.ProtocolRules??[]);
+    const supported=[...new Set(catalog.filter(protocol=>mode.BaseURLs[protocol]))];
+    const preferred=builtin?.protocol;
+    const rule=configuredRule??(options.protocol_rules?undefined:builtin);
+    const available=configuredRule?(configuredRule.protocols??[configuredRule.protocol]):supported.length?(preferred&&supported.includes(preferred)?[preferred,...supported.filter(p=>p!==preferred)]:supported):rule?.protocols??[rule?.protocol??'chat_completions'];
     return available.includes(inbound)?inbound:available[0];
   }
   return configured==='adaptive'&&mode.BaseURLs[inbound]?inbound:'chat_completions';
+}
+export function providerHasModelCatalog(platform:MultiProtocolPlatform,options:ProviderOptions):boolean{
+  return !!(profiles[platform] as Profile & {ModelCatalog:boolean}).ModelCatalog&&(!options.api_protocol||options.api_protocol==='adaptive');
 }
 export function providerEndpoint(platform:MultiProtocolPlatform,options:ProviderOptions & {base_url?:string},protocol:ProviderProtocol|'models'):string{
   const mode=endpoints(platform,options),p=profile(platform);
