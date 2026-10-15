@@ -4,6 +4,7 @@ import { apiKeyRequest, type NativeProtocol } from './api_key_provider.ts';
 import type { Account } from './accounts.ts';
 import { Database, HttpError } from './db.ts';
 import { normalizeCodeAssist, type GoogleCredentials } from './google_oauth.ts';
+import { cleanAntigravityTools } from './antigravity_schema.ts';
 import { antigravityIdentity } from './antigravity_identity.ts';
 
 const PROD = 'https://cloudcode-pa.googleapis.com';
@@ -23,6 +24,7 @@ export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol
   const match = /^\/v1beta\/models\/([^/]+):(generateContent|streamGenerateContent)$/.exec(path);
   if (!match || !body) throw new HttpError(501, 'provider_protocol_unsupported');
   const inner = structuredClone(body);
+  cleanAntigravityTools(inner);
   const system = inner.systemInstruction;
   if (system !== undefined && (!system || typeof system !== 'object' || Array.isArray(system))) throw new HttpError(400, 'invalid_system_instruction');
   const instruction = (system ?? {}) as Record<string, unknown>;

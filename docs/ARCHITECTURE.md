@@ -46,3 +46,5 @@ The TypeScript gateway retains protocol-specific provider transports, model mapp
 Antigravity's Gemini-native transport wraps requests in its internal project envelope and normalizes provider SSE into native Gemini events or an aggregated JSON response. Catalog requests use `fetchAvailableModels` and project only public model metadata. Dedicated Google client configuration and the shared Vault refresh lease keep Antigravity token refresh in the cloud; no provider credentials or project IDs are returned in catalogs or generation envelopes.
 
 The original Go and Vue sources remain pinned and attributed as described in [NOTICE](../NOTICE).
+
+Antigravity tool declarations normalize local schema definitions, object intersections, union branches, tuples, nullable types, and constants before forwarding. Unsupported constraints are retained as description hints. Expansion is bounded; unresolved, external, and recursive references return an explicit client error. Caller schemas, tool names, content, and thought signatures remain intact.
