@@ -403,6 +403,10 @@ func (a *Account) GetCredentialAsTime(key string) *time.Time {
 	}
 	// 尝试 Unix 时间戳（纯数字字符串）
 	if ts, err := strconv.ParseInt(s, 10, 64); err == nil {
+		if ts > 10_000_000_000 {
+			t := time.UnixMilli(ts)
+			return &t
+		}
 		t := time.Unix(ts, 0)
 		return &t
 	}

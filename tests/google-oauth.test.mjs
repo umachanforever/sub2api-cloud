@@ -51,6 +51,7 @@ for(const codeAssist of [false,true])for(const stream of [false,true])test(`Goog
 });
 for(const codeAssist of [false,true])for(const condition of ['expired','reject'])test(`Google OAuth refresh uses the ${codeAssist?'CLI':'AI Studio'} client after ${condition} and saves the entire canonical document`,async()=>{
  const result=await fixture({codeAssist,[condition]:true});assert.equal(result.response.status,200);assert.equal(result.refreshes,1);assert.equal(result.saved.length,1);assert.deepEqual(result.saved[0].p_credentials.provider_metadata,{preserved:true});assert.equal(result.saved[0].p_credentials.refresh_token,'private-refresh');
+ assert.match(result.saved[0].p_credentials.expires_at,/^\d{4}-\d{2}-\d{2}T/);
 });
 for(const codeAssist of [false,true])test(`Google OAuth ${codeAssist?'pinned Code Assist':'AI Studio upstream'} models use the common catalog response`,async()=>{
  const result=await fixture({codeAssist,catalog:true});assert.equal(result.response.status,200);assert.ok(JSON.parse(result.text).data.length);assert.equal(result.dispatched,codeAssist?0:1);

@@ -11,6 +11,7 @@ import { ensureOpenAIPrivacy } from "./openai_privacy.ts";
 import { Database, HttpError } from "./db.ts";
 import {
   type OAuthCredentials,
+  expiresAtMillis,
   refreshCredentials,
   shouldRefresh,
 } from "./gateway.ts";
@@ -94,6 +95,11 @@ export async function credentialsFor(
       const refreshed = account.platform === "gemini"
         ? await refreshGoogleCredentials(current, fetcher, db.config.googleOAuth)
         : await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(current, fetcher);
+      if (isVaultCredentials(account) && refreshed.expires_at !== undefined) {
+        const expiry = expiresAtMillis(refreshed.expires_at);
+        if (expiry === undefined) throw new HttpError(502, "invalid_oauth_refresh_response");
+        refreshed.expires_at = new Date(expiry).toISOString();
+      }
       const encrypted = isVaultCredentials(account)
         ? null
         : await encryptCredentials(refreshed, db.config.encryptionKey);

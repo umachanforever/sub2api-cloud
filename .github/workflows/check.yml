@@ -46,7 +46,7 @@ jobs:
       - run: go build ./cmd/server
       - run: go test -tags=unit ./internal/config ./internal/server/middleware
       - run: go test -tags=unit ./internal/pkg/geminicli ./internal/pkg/antigravity
-      - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService)'
+      - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService|AccountCredentialExpiryFormats)'
       - run: go test ./internal/repository -run 'Test(SupabaseMigrationRole|ApplyMigrations)'
       - run: go test ./cmd/server -run TestManagementMigrationURL
       - run: docker build -t sub2api-supabase-management:check .
