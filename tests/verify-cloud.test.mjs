@@ -10,8 +10,12 @@ function fixture({ terminal = true, unauthorized = 401, model = config.model, re
       assert.equal(init.headers.authorization, undefined);
       return Response.json({ ok: true });
     }
-    if (!init.headers.authorization) return new Response(null, { status: unauthorized });
-    assert.equal(init.headers.authorization, 'Bearer sk-test');
+    if (!init.headers.authorization && !init.headers['x-api-key']) return new Response(null, { status: unauthorized });
+    assert.equal(init.headers.authorization || init.headers['x-api-key'], init.headers.authorization ? 'Bearer sk-test' : 'sk-test');
+    if (url.endsWith('/backend-api/codex/models')) return Response.json({ models: [{ slug: config.model }] });
+    if (url.endsWith('/responses/input_tokens')) return Response.json({ object: 'response.input_tokens', input_tokens: 2 });
+    if (url.endsWith('/messages/count_tokens')) return Response.json({ input_tokens: 7 });
+    if (url.endsWith('/alpha/search')) return Response.json({ output: 'Official site', results: [{ url: 'https://openai.com' }] });
     if (url.endsWith('/models')) return Response.json({ data: [{ id: config.model }] });
     if (url.endsWith('/usage')) return Response.json({ accounts: [] });
     assert.equal(JSON.parse(init.body).model, config.model);
@@ -30,7 +34,7 @@ function fixture({ terminal = true, unauthorized = 401, model = config.model, re
   };
 }
 test('cloud verification checks real client paths without requiring a local console', async () => {
-  assert.deepEqual(await verifyCloud(config, fixture()), ['health', 'authentication', 'models', 'responses', 'chat', 'stream', 'responses-stream', 'usage']);
+  assert.deepEqual(await verifyCloud(config, fixture()), ['health', 'authentication', 'models', 'responses-input-tokens', 'messages-input-tokens', 'responses', 'chat', 'stream', 'responses-stream', 'usage']);
 });
 test('cloud verification rejects incomplete streams and publicly accessible catalogs', async () => {
   await assert.rejects(verifyCloud(config, fixture({ terminal: false })), /terminal event/);
@@ -43,4 +47,20 @@ test('cloud verification rejects credentials in URLs before any request', async 
 test('cloud verification rejects model substitution and truncated Responses streams', async () => {
   await assert.rejects(verifyCloud(config, fixture({ model: 'other-model' })), /Returned model/);
   await assert.rejects(verifyCloud(config, fixture({ responseTerminal: false })), /terminal event/);
+});
+
+test('Codex acceptance verifies native discovery and source-backed standalone search',async()=>{
+ const checks=await verifyCloud({...config,verify_codex:true},fixture());
+ assert.ok(checks.includes('codex-models'));assert.ok(checks.includes('codex-search'));
+ for(const [endpoint,result] of [['/backend-api/codex/models',{data:[{id:config.model}]}],['/alpha/search',{output:'No sources',results:[]}],['/responses/input_tokens',{object:'response.input_tokens',input_tokens:-1}],['/messages/count_tokens',{input_tokens:0.5}]]){
+  const base=fixture();await assert.rejects(verifyCloud({...config,verify_codex:true},(url,init)=>url.endsWith(endpoint)?Response.json(result):base(url,init)),/manifest|source-backed|preflight/);
+ }
+});
+
+test('Messages preflight acceptance exercises native authentication without a Bearer header',async()=>{
+ const base=fixture();let called=false;
+ await verifyCloud(config,(url,init)=>{
+  if(url.endsWith('/messages/count_tokens')){called=true;assert.equal(init.headers.authorization,undefined);assert.equal(init.headers['x-api-key'],config.api_key);}
+  return base(url,init);
+ });assert.equal(called,true);
 });

@@ -30,6 +30,25 @@ export async function verifyCloud(config, fetcher = fetch) {
     const value = await json(response);
     if (!Array.isArray(value.data) || !value.data.some(row => row.id === config.model)) throw Error('Configured model is absent from the catalog');
   });
+  const inspectCount = async (response, responses = false) => {
+    const value = await json(response);
+    if (!Number.isSafeInteger(value.input_tokens) || value.input_tokens <= 0 || responses && value.object !== 'response.input_tokens') throw Error('Invalid input token preflight response');
+  };
+  await check('responses-input-tokens', api + '/responses/input_tokens', post({ model: config.model, input: 'Hello world' }), response => inspectCount(response, true));
+  await check('messages-input-tokens', api + '/messages/count_tokens', {
+    ...post({ model: config.model, messages: [{ role: 'user', content: 'Hello world' }] }),
+    headers: { 'content-type': 'application/json', 'x-api-key': config.api_key },
+  }, response => inspectCount(response), false);
+  if (config.verify_codex) {
+    await check('codex-models', api.slice(0, -3) + '/backend-api/codex/models', {}, async response => {
+      const value = await json(response);
+      if (!Array.isArray(value.models) || !value.models.some(row => row.slug === (config.expected_model || config.model))) throw Error('Configured model is absent from the Codex manifest');
+    });
+    await check('codex-search', api + '/alpha/search', post({ model: config.model, id: crypto.randomUUID(), commands: { search_query: [{ q: 'OpenAI official website' }] }, settings: { search_context_size: 'low' } }), async response => {
+      const value = await json(response);
+      if (typeof value.output !== 'string' || !value.output.trim() || !Array.isArray(value.results) || !value.results.some(row => typeof row.url === 'string' && /^https?:\/\//.test(row.url))) throw Error('Standalone search returned no source-backed result');
+    });
+  }
   const expectedModel = config.expected_model || config.model;
   const inspectModel = value => { if (value.model !== expectedModel) throw Error('Returned model does not match the configured model'); };
   await check('responses', api + '/responses', post({ model: config.model, input: 'Reply with OK.', stream: false }), async response => {
@@ -89,7 +108,9 @@ export async function verifyCloud(config, fetcher = fetch) {
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const config = JSON.parse(await readFile(new URL('../.local/agent-access.json', import.meta.url), 'utf8'));
-    const checks = await verifyCloud(config);
+    const args = process.argv.slice(2);
+    if (args.some(arg => arg !== "--codex")) throw Error("Usage: npm run verify:cloud -- [--codex]");
+    const checks = await verifyCloud({ ...config, verify_codex: args.includes("--codex") || config.verify_codex === true });
     console.log(`Cloud verification passed: ${checks.join(', ')}.`);
   } catch (error) {
     // Response bodies and credentials must never appear in deployment logs.

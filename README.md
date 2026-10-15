@@ -96,7 +96,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 For full agent API access, run `npm run agent:access` while the local console is running. Configure the administrator credentials and an existing `GPT_SUBSCRIPTION_GATEWAY_KEY` in `.env.local`. The command creates a normal `sk-` API key in the same provider group and saves `base_url`, `api_key`, model, and usage URLs in private `.local/agent-access.json`. This key supports AI requests, model discovery, and usage queries, and can be managed in the console. Any previous usage-only token in `.local/agent-usage.json` is revoked and that configuration is updated.
 
-Run `npm run verify:cloud` to check the deployed gateway using `.local/agent-access.json`. It verifies authentication, model discovery, ordinary and streaming Responses and Chat Completions, returned model identity, and usage without the local management services. The check makes four short AI requests.
+Run `npm run verify:cloud` to check the deployed gateway using `.local/agent-access.json`. It verifies authentication, model discovery, ordinary and streaming Responses and Chat Completions, returned model identity, Responses and Messages input-token preflight, and usage without the local management services. The check makes four short AI requests and two preflight requests. Add `-- --codex` to also verify the native Codex model manifest and a source-backed standalone web search.
 
 Run `npm run verify:independence` to temporarily stop this project's local console, management service, and Redis, run the cloud checks, and restore the containers that were running. It checks container ownership first and restores services after a failed or interrupted verification. Other Docker projects are left running.
 

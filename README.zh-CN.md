@@ -92,7 +92,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 需要完整 API 能力的 Agent，可在本地控制台运行时执行 `npm run agent:access`；在 `.env.local` 配置管理员登录信息和已有的 `GPT_SUBSCRIPTION_GATEWAY_KEY`。命令会在同一供应商分组创建标准 `sk-` 调用 Key，将 `base_url`、`api_key`、模型和用量地址保存到私有文件 `.local/agent-access.json`。这个 Key 支持 AI 请求、模型列表和用量查询，可在控制台管理。如果 `.local/agent-usage.json` 中有旧的只读 Key，会将其撤销并更新该配置。
 
-执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性以及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求。
+执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性、Responses 与 Messages 输入 Token 预估及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求和两次预估请求。使用 `npm run verify:cloud -- --codex` 可额外验收 Codex 原生模型清单和一次带来源的独立网页搜索。
 
 执行 `npm run verify:independence`，可暂时停止本项目的本地控制台、管理服务和 Redis，再运行云端验收，最后恢复原本运行的容器。命令会先确认容器归属，验收失败或中断时也会恢复服务，其他 Docker 项目继续运行。
 

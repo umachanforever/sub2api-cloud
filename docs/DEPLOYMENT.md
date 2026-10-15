@@ -48,6 +48,6 @@ Keep `.env.local` and `.local/` private. Preserve them when moving the local man
 
 ## Cloud verification
 
-After creating an agent key with `npm run agent:access`, run `npm run verify:cloud`. The command uses private `.local/agent-access.json` to verify health, rejected unauthenticated access, the configured model, Chat Completions, complete SSE output, and subscription usage. It sends two short inference requests and uses the account's normal quota. The selected model must support Chat Completions.
+After creating an agent key with `npm run agent:access`, run `npm run verify:cloud`. The command uses private `.local/agent-access.json` to verify health, rejected unauthenticated access, the configured model, ordinary and streaming Responses and Chat Completions, input-token preflight in both formats, and subscription usage. It sends four short inference requests and two preflight requests. The selected model must support these protocols. For OpenAI OAuth or personal-access-token accounts, run `npm run verify:cloud -- --codex` to also check the native Codex model manifest and one standalone web search with source URLs. These requests use the account's normal quota.
 
 Verification connects directly to the configured gateway; it does not require the local console, Go service, or Redis. To verify workstation independence, stop local management with `npm run down -- --cloud` and run the command again. Start management again with `npm run up -- --cloud` when needed.
