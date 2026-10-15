@@ -70,6 +70,20 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
  const keyHash=await hashKey(token),ip=request.headers.get('cf-connecting-ip')?.trim()||request.headers.get('x-real-ip')?.trim()||request.headers.get('x-forwarded-for')?.split(',')[0]?.trim()||null;
  if(context)Object.assign(context,{keyHash,platform:'grok',stream:false,endpoint:route.id?'/v1/videos/:id':'/v1/videos/'+route.operation});
  const checked=async(name:string,args:Item)=>{const result=await db.rpc<Item>(name,args);if(!result)throw new HttpError(503,'database_unavailable');if(result.error)throw new HttpError(result.status??503,result.error);return result;};
+ // Only replay idempotent database writes, never uncertain provider submissions.
+ const durable=async(name:string,args:Item,flag:string)=>{
+  for(let attempt=0;attempt<2;attempt++){
+   try{
+    const result=await checked(name,args);
+    if(flag==='applied'?typeof result.applied!=='boolean':result[flag]!==true)throw new HttpError(503,'invalid_video_task_persistence');
+    return result;
+   }catch(error){
+    if(error instanceof HttpError&&error.status!==503)throw error;
+    if(attempt===1)throw error instanceof HttpError?error:new HttpError(503,'database_unavailable');
+   }
+  }
+  throw new HttpError(503,'database_unavailable');
+ };
  const policy=await checked('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:ip});
  if(policy.platform!=='grok'){await request.body?.cancel().catch(()=>{});throw new HttpError(400,'grok_video_requires_grok_group');}
  const range=route.content?videoRange(request):undefined;
@@ -81,13 +95,13 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
  const input=binding?undefined:videoInput(await readBody(request,requestBodyLimit(path,db.config.requestLimits)),route.operation!);
  const model=binding?.model??input!.model;
  const reservation=await checked('s2a_personal_acquire',{p_key_hash:keyHash,p_model:model,p_request_id:crypto.randomUUID(),p_client_ip:ip,p_billing_context:{policy_model:model,stream:false,...(binding?{video_task:route.id,count_only:true}:{})}});
- const account=reservation.account as Account&{type:string};let status=502,completed=false,dispatched=false,prepared=false,deferred=false;
+ const account=reservation.account as Account&{type:string};let status=502,completed=false,dispatched=false,intentAttempted=false,deferred=false;
  const id=route.id??'video_'+crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','').slice(0,8);
  const upstreamModel=binding?.upstream_model??reservation.upstream_model??mappedTarget(reservation.model_sources?.mapping??{},model,'grok')??model;
  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
- if(context)Object.assign(context,{accountId:account.id,leaseId:reservation.lease_id,model,upstreamModel});
- const finish=(responseStatus:number,usage:import('./stream.ts').Usage)=>checked('s2a_personal_finish',{p_lease_id:reservation.lease_id,p_status:responseStatus,p_outcome:usage.outcome,p_input_tokens:null,p_output_tokens:null,p_cache_creation_tokens:null,p_cache_read_tokens:null,p_cooldown_seconds:responseStatus===429?30:0,p_credential_version:account?.credential_version??null,p_upstream_model:upstreamModel}).then(()=>{});
- const record=(action:string,upstreamId?:string)=>checked('s2a_personal_video_create',{p_key_hash:keyHash,p_public_id:id,p_lease_id:reservation.lease_id,p_upstream_model:upstreamModel,p_operation:route.operation,p_action:action,p_upstream_id:upstreamId??null,p_client_ip:ip});
+ if(context)Object.assign(context,{accountId:account?.id,leaseId:reservation.lease_id,model,upstreamModel});
+ const finish=(responseStatus:number,usage:import('./stream.ts').Usage)=>durable('s2a_personal_finish',{p_lease_id:reservation.lease_id,p_status:responseStatus,p_outcome:usage.outcome==='incomplete'?'interrupted':usage.outcome,p_input_tokens:null,p_output_tokens:null,p_cache_creation_tokens:null,p_cache_read_tokens:null,p_cooldown_seconds:responseStatus===429?30:0,p_credential_version:account?.credential_version??null,p_upstream_model:upstreamModel},'applied').then(()=>{});
+ const record=(action:string,upstreamId?:string)=>durable('s2a_personal_video_create',{p_key_hash:keyHash,p_public_id:id,p_lease_id:reservation.lease_id,p_upstream_model:upstreamModel,p_operation:route.operation,p_action:action,p_upstream_id:upstreamId??null,p_client_ip:ip},action==='prepare'?'prepared':action==='bind'?'bound':'rejected');
  try{
   if(account?.platform!=='grok')throw new HttpError(503,'video_account_unavailable');
   if(binding&&String(account.id)!==String(binding.account_id))throw new HttpError(503,'video_account_mismatch');
@@ -99,7 +113,7 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
    if(content){const headers=new Headers(outgoing.init.headers);headers.set('accept','*/*');if(range)headers.set('range',range);outgoing.init.headers=headers;}
    return accountFetch(db,account,outgoing.url,outgoing.init);
   };
-  if(!binding){await record('prepare');prepared=true;}
+  if(!binding){intentAttempted=true;await record('prepare');}
   dispatched=true;
   let response=await forward();
   if(response.status===401&&account.type!=='apikey'){
@@ -131,8 +145,11 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
  }catch(error){
   const failure=error instanceof HttpError?error:request.signal.aborted?new HttpError(499,'request_cancelled'):signal.aborted?new HttpError(504,'video_request_timeout'):new HttpError(502,dispatched?'video_upstream_failed':'video_request_failed');
   status=failure.status;
-  throw prepared?new VideoTaskError(status,failure.code,id):failure;
+  throw intentAttempted?new VideoTaskError(status,failure.code,id):failure;
  }finally{
-  if(!deferred)await finish(status,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:completed?'completed':'failed'});
+  if(!deferred){
+   try{await finish(status,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:completed?'completed':'failed'});}
+   catch{throw intentAttempted||binding?new VideoTaskError(503,'video_task_persistence_failed',id):new HttpError(503,'video_task_persistence_failed');}
+  }
  }
 }

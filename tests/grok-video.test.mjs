@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {createBackendHandler} from './handler.mjs';
 import {videoInput,videoRoute,providerVideoId} from '../supabase/functions/sub2api/grok_video.ts';
 
-async function fixture({type='apikey',platform='grok',forward,resolve,accountId='1',refresh=false}={}){
+async function fixture({type='apikey',platform='grok',forward,resolve,accountId='1',refresh=false,database}={}){
  const events=[],finishes=[];let stored;let credentials={access_token:'oauth-private',refresh_token:'refresh-private',expires_at:Date.now()+3600000};
  const snapshot=()=>({id:accountId,platform:'grok',type,credential_storage:'vault',credential_version:1,credentials:type==='apikey'?{api_key:'provider-private'}:credentials});
  const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
@@ -26,9 +26,10 @@ async function fixture({type='apikey',platform='grok',forward,resolve,accountId=
    if(body.p_action==='prepare')stored={public_id:body.p_public_id,model:'grok-imagine-video',upstream_model:body.p_upstream_model,account_id:'1',operation:body.p_operation,state:'creating'};
    if(body.p_action==='bind'){stored.upstream_id=body.p_upstream_id;stored.state='submitted';}
    if(body.p_action==='reject')stored.state='rejected';
+   if(database){const injected=await database(name,body);if(injected)return injected;}
    return Response.json({[body.p_action==='bind'?'bound':body.p_action==='prepare'?'prepared':'rejected']:true});
   }
-  if(name==='s2a_personal_finish'){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(name==='s2a_personal_finish'){const body=JSON.parse(init.body);finishes.push(body);if(database){const injected=await database(name,body);if(injected)return injected;}return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))assert.fail(name);
   events.push({name:'fetch',url,init});
   if(refresh&&events.filter(e=>e.name==='fetch').length===1)return new Response('unauthorized',{status:401});
@@ -176,4 +177,51 @@ test('protected content authentication can refresh without changing the bound ac
   assert.equal(new Headers(init.headers).get('authorization'),'Bearer rotated-private');return new Response('video',{headers:{'content-type':'video/mp4'}});
  }});
  const response=await value.request('/v1/videos/'+publicId+'/content');assert.equal(response.status,200);assert.equal(await response.text(),'video');assert.equal(downloads,2);assert.equal(value.finishes.length,1);
+});
+
+test('lost video binding and completion responses replay database writes without resubmitting the provider',async()=>{
+ for(const lost of ['prepare','bind','finish']){
+  let attempts=0;
+  const value=await fixture({database:(name,body)=>{
+   if((lost==='finish'?name==='s2a_personal_finish':name==='s2a_personal_video_create'&&body.p_action===lost)&&!attempts++)throw Error('database transport interrupted after commit');
+  }});
+  const response=await value.request('/v1/videos',{model:'grok-imagine-video',prompt:'Bird'});assert.equal(response.status,200,lost);const body=await response.json();assert.equal(body.id,value.stored.public_id);assert.equal(value.stored.state,'submitted');assert.equal(value.events.filter(e=>e.name==='fetch').length,1);assert.equal(attempts,2);
+  if(lost==='finish')assert.deepEqual(value.finishes[0],value.finishes[1]);
+ }
+});
+
+test('permanent persistence failures preserve the public task ID for later resolution',async()=>{
+ for(const failed of ['bind','finish']){
+  let outage=true;
+  const value=await fixture({database:(name,body)=>{
+   if(outage&&(failed==='finish'?name==='s2a_personal_finish':name==='s2a_personal_video_create'&&body.p_action===failed))return new Response('unavailable',{status:503});
+  }});
+  const response=await value.request('/v1/videos',{model:'grok-imagine-video',prompt:'Bird'});assert.equal(response.status,503);const body=await response.json();assert.equal(body.request_id,value.stored.public_id);assert.ok(!JSON.stringify(body).includes('provider-task'));assert.equal(value.events.filter(e=>e.name==='fetch').length,1);
+  outage=false;const resolved=await value.request('/v1/videos/'+body.request_id);assert.equal(resolved.status,200);assert.equal((await resolved.json()).request_id,body.request_id);
+ }
+});
+
+test('a database refusal or malformed prepare acknowledgement cannot dispatch video generation',async()=>{
+ for(const conflict of [false,true]){
+  let attempted=0;
+  const value=await fixture({database:(name,body)=>{
+   if(name==='s2a_personal_video_create'&&body.p_action==='prepare'){attempted++;return Response.json(conflict?{error:'video_task_conflict',status:409}:{});}
+  }});
+  const response=await value.request('/v1/videos',{model:'grok-imagine-video',prompt:'Bird'});assert.equal(response.status,conflict?409:503);const body=await response.json();assert.match(body.request_id,/^video_[a-f0-9]{40}$/);assert.equal(value.events.some(e=>e.name==='fetch'),false);assert.equal(attempted,conflict?1:2);assert.equal(value.finishes.length,1);
+ }
+});
+
+test('video creation remains queryable when binding never commits',async()=>{
+ const value=await fixture({database:(name,body)=>{
+  if(name==='s2a_personal_video_create'&&body.p_action==='bind'){value.stored.state='creating';delete value.stored.upstream_id;return new Response(null,{status:503});}
+ }});
+ const failed=await value.request('/v1/videos',{model:'grok-imagine-video',prompt:'Bird'});assert.equal(failed.status,503);const body=await failed.json();
+ const lookup=await value.request('/v1/videos/'+body.request_id);assert.equal(lookup.status,200);assert.equal((await lookup.json()).status,'creation_unknown');assert.equal(value.events.filter(e=>e.name==='fetch').length,1);
+});
+
+test('video download timeouts use the native interrupted completion contract',async()=>{
+ const abort=new AbortController();let cancelled=false;
+ const value=await fixture({resolve:downloadBinding,forward:url=>url.endsWith('/provider-task')?Response.json({video:{url:'https://vidgen.x.ai/video'}}):new Response(new ReadableStream({start(controller){controller.enqueue(new Uint8Array([1]));},cancel(){cancelled=true;}}),{headers:{'content-type':'video/mp4'}})});
+ const response=await value.request('/v1/videos/'+publicId+'/content',undefined,{},abort.signal);const reader=response.body.getReader();await reader.read();const pending=reader.read();abort.abort(new DOMException('timed out','TimeoutError'));
+ await assert.rejects(pending,/upstream_aborted/);await new Promise(resolve=>setTimeout(resolve,0));assert.equal(cancelled,true);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'interrupted');
 });
