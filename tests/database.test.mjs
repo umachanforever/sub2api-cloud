@@ -397,3 +397,14 @@ test(
     }
   },
 );
+
+test('Supabase migration versions are unique for CLI deployment', async () => {
+  const files = (await readdir(new URL('../supabase/migrations/', import.meta.url))).filter(name => name.endsWith('.sql'));
+  const versions = new Map();
+  for (const name of files) {
+    const version = name.match(/^([0-9]{14})_/ )?.[1];
+    assert.ok(version, `Invalid migration filename: ${name}`);
+    assert.equal(versions.has(version), false, `Duplicate migration version: ${versions.get(version)} and ${name}`);
+    versions.set(version, name);
+  }
+});
