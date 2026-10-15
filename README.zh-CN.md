@@ -98,6 +98,8 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 常用数据页面在切换菜单时也会保留已加载的界面状态 60 秒。不同筛选条件分别保存；修改数据后其他页面快照失效，退出登录会清空页面缓存。实时监控和支付流程保持原有生命周期。
 
+如需直接在浏览器中查询，在生成 Agent 调用配置后运行 `npm run usage:link`。只读链接保存在 `.local/usage-link.json` 的 `browser_url`。该链接按名称分别显示关联 Key 所属分组内每个已启用订阅账户的 5 小时和 7 日用量，不显示停用账户。
+
 控制台的仪表板、用量、账号详情、设置等成功的数据查询统一在当前标签页内存缓存 60 秒。修改数据或切换登录身份会清空缓存；认证、OAuth 流程、导出和流式接口直接请求，携带 `Cache-Control: no-cache` 可强制重新读取。
 
 ## 目录

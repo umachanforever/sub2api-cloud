@@ -19,6 +19,7 @@
     "up": "node --env-file-if-exists=.env.local scripts/up.mjs",
     "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down",
     "management:setup": "node --env-file=.env.local scripts/management.mjs",
+    "usage:link": "node --env-file=.env.local scripts/usage-link.mjs",
     "usage:access": "node --env-file=.env.local scripts/usage-access.mjs",
     "agent:access": "node --env-file=.env.local scripts/agent-access.mjs",
     "verify:independence": "node scripts/verify-independence.mjs"

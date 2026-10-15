@@ -44,7 +44,7 @@ BEGIN
         END LOOP;
     END IF;
     SELECT coalesce(jsonb_agg(public.s2a_gateway_account_snapshot(a.id) || jsonb_build_object(
-        'proxy_id',a.proxy_id::text,'quota_snapshot',(SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb)
+        'name',a.name,'status',a.status,'proxy_id',a.proxy_id::text,'quota_snapshot',(SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb)
             FROM jsonb_each(coalesce(a.extra,'{}'::jsonb)) e
             WHERE e.key ~ '^codex_(usage_updated_at|(5h|7d)_(used_percent|window_minutes|reset_after_seconds|reset_at))$')) ORDER BY a.id),'[]'::jsonb)
     INTO accounts FROM (

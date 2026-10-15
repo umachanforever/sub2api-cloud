@@ -89,3 +89,21 @@ test('account selection preserves bigint identity and API keys hash identically 
   const response = await app(request('?account_id=9007199254740993'));
   assert.deepEqual((await response.json()).accounts, []);
 });
+
+test('direct read-only links show separate enabled account names and windows',async()=>{
+ const key='sk-usage-'+'a'.repeat(64);
+ const app=handler((url,init,args)=>{
+  assert.equal(args.p_key_hash.length,64);
+  return Response.json({accounts:[account({id:'1',name:'First',status:'active'}),account({id:'2',name:'Second',status:'active',quota_snapshot:{...snapshot(),codex_5h_used_percent:45}}),account({id:'3',name:'Disabled',status:'disabled'})]});
+ });
+ const r=await app(new Request('https://edge/functions/v1/sub2api/v1/usage?key='+key));
+ assert.equal(r.status,200);assert.equal(r.headers.get('referrer-policy'),'no-referrer');
+ const body=await r.json();assert.deepEqual(body.accounts.map(a=>a.account_name),['First','Second']);
+ assert.deepEqual(body.accounts.map(a=>a.five_hour.used_percent),[12,45]);
+});
+test('URL credentials accept only usage tokens and reject conflicting headers',async()=>{
+ const app=handler(()=>assert.fail('invalid URL credentials must not query the database'));
+ for(const key of ['sk-s2a-'+'a'.repeat(64),'short',''])assert.equal((await app(new Request('https://edge/v1/usage?key='+key))).status,401);
+ assert.equal((await app(new Request('https://edge/v1/usage?key=sk-usage-'+'a'.repeat(64),{headers:{authorization:'Bearer different'}}))).status,400);
+ assert.equal((await app(new Request('https://edge/v1/responses?key=sk-usage-'+'a'.repeat(64),{method:'POST',body:'{}'}))).status,401);
+});

@@ -5,7 +5,7 @@ import { quotaWindowUpdates } from './openai_quota_values.ts';
 import { hashKey } from './validation.ts';
 
 type Snapshot = Record<string, unknown>;
-type UsageAccount = QuotaAccount & { quota_snapshot?: Snapshot };
+type UsageAccount = QuotaAccount & { name?: string; status?: string; quota_snapshot?: Snapshot };
 const TTL_SECONDS = 60;
 
 function window(snapshot: Snapshot, period: '5h' | '7d', now: number) {
@@ -36,10 +36,11 @@ export async function usageAccess(request: Request, token: string, db: Database)
     p_key_hash: await hashKey(token), p_client_ip: clientIp, p_account_id: id,
   });
   if (result.error) throw new HttpError(result.status ?? 403, result.error);
+  const enabledAccounts = result.accounts.filter(account => account.status === undefined || account.status === 'active');
   // Batch provider reads to bound concurrency for pooled groups.
   const accounts: Record<string, unknown>[] = [];
-  for (let offset = 0; offset < result.accounts.length; offset += 4) {
-    accounts.push(...await Promise.all(result.accounts.slice(offset, offset + 4).map(async account => {
+  for (let offset = 0; offset < enabledAccounts.length; offset += 4) {
+    accounts.push(...await Promise.all(enabledAccounts.slice(offset, offset + 4).map(async account => {
       let snapshot = account.quota_snapshot ?? {};
       let fetched = typeof snapshot.codex_usage_updated_at === 'string' ? Date.parse(snapshot.codex_usage_updated_at) / 1000 : NaN;
       const now = Math.floor(Date.now() / 1000);
@@ -66,7 +67,7 @@ export async function usageAccess(request: Request, token: string, db: Database)
       const fiveHour = window(snapshot, '5h', sampledAt), sevenDay = window(snapshot, '7d', sampledAt);
       const age = Number.isFinite(fetched) ? Math.max(0, sampledAt - fetched) : null;
       return {
-        account_id: account.id, platform: 'openai',
+        account_id: account.id, account_name: account.name ?? `Account ${account.id}`, platform: 'openai',
         five_hour: fiveHour, seven_day: sevenDay,
         fetched_at: Number.isFinite(fetched) ? new Date(fetched * 1000).toISOString() : null,
         age_seconds: age, cached,
@@ -75,5 +76,7 @@ export async function usageAccess(request: Request, token: string, db: Database)
       };
     })));
   }
-  return json(200, { object: 'subscription.usage', cache_ttl_seconds: TTL_SECONDS, accounts });
+  const response = json(200, { object: 'subscription.usage', cache_ttl_seconds: TTL_SECONDS, accounts });
+  response.headers.set('referrer-policy', 'no-referrer');
+  return response;
 }

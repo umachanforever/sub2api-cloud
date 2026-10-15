@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE u bigint; g bigint; other_g bigint; k bigint; a bigint; other_a bigint; result jsonb;
+DECLARE u bigint; g bigint; other_g bigint; k bigint; a bigint; other_a bigint; second_a bigint; disabled_a bigint; result jsonb;
     key_hash text:=encode(sha256(convert_to('synthetic-usage-inference-key','UTF8')),'hex');
     usage_hash text:=encode(sha256(convert_to('synthetic-usage-readonly-key','UTF8')),'hex');
 BEGIN
@@ -23,6 +23,14 @@ BEGIN
     IF jsonb_array_length(result->'accounts')<>1 OR result->'accounts'->0->>'id' IS DISTINCT FROM a::text
         OR result->'accounts'->0->'quota_snapshot'->>'codex_5h_used_percent' IS DISTINCT FROM '12'
         OR result->'accounts'->0->'quota_snapshot' ? 'private_value' THEN RAISE EXCEPTION 'usage projection or group isolation mismatch'; END IF;
+    INSERT INTO public.accounts(name,platform,type,credentials) VALUES('Second enabled fixture','openai','oauth','{"access_token":"second-secret"}') RETURNING id INTO second_a;
+    INSERT INTO public.accounts(name,platform,type,credentials,status) VALUES('Disabled fixture','openai','oauth','{"access_token":"disabled-secret"}','inactive') RETURNING id INTO disabled_a;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(second_a,g),(disabled_a,g);
+    result:=public.s2a_personal_usage_accounts(usage_hash);
+    IF jsonb_array_length(result->'accounts')<>2
+        OR NOT EXISTS(SELECT 1 FROM jsonb_array_elements(result->'accounts') entry WHERE entry->>'id'=second_a::text AND entry->>'name'='Second enabled fixture')
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(result->'accounts') entry WHERE entry->>'id'=disabled_a::text)
+        THEN RAISE EXCEPTION 'enabled account names or status filtering mismatch'; END IF;
     IF public.s2a_personal_usage_accounts(key_hash) IS DISTINCT FROM result THEN RAISE EXCEPTION 'inference key not accepted'; END IF;
     IF public.s2a_gateway_key_lookup(usage_hash)->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'usage token accepted for inference'; END IF;
     IF public.s2a_personal_usage_accounts(usage_hash,NULL,other_a)->>'error' IS DISTINCT FROM 'account_not_found' THEN RAISE EXCEPTION 'other group disclosed'; END IF;

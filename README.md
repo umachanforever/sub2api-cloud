@@ -102,6 +102,8 @@ For optional usage-only access, run `npm run usage:access`. This saves a private
 
 Common data pages also retain their loaded UI state for 60 seconds when switching sections. Filters are isolated, inactive snapshots are invalidated after writes, and signing out clears retained pages. Live monitors and payment flows keep their normal lifecycle.
 
+For a browser-ready, read-only URL, run `npm run usage:link` after creating agent access. The private `.local/usage-link.json` contains `browser_url`. It lists each enabled subscription account by name with separate five-hour and seven-day windows, scoped to the linked key’s group. Disabled accounts are excluded.
+
 The console caches successful authenticated data queries in tab memory for 60 seconds, including dashboard, usage, account details, and settings. Writes and session changes invalidate snapshots. Authentication, OAuth flows, exports, and streams bypass this cache; a request with `Cache-Control: no-cache` forces a fresh read.
 
 ## Project layout

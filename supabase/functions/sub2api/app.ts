@@ -48,7 +48,9 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         ? [request.headers.get("x-goog-api-key"), new URL(request.url).searchParams.get("key")]
         : [];
 
-      const supplied = [bearer, ...nativeKeys].filter((value): value is string => !!value);
+      const usageLinkKey = pathname === "/v1/usage" && request.method === "GET" ? new URL(request.url).searchParams.get("key") : null;
+      if (usageLinkKey !== null && !/^sk-usage-[a-f0-9]{64}$/.test(usageLinkKey)) throw new HttpError(401, "unauthorized");
+      const supplied = [bearer, usageLinkKey, ...nativeKeys].filter((value): value is string => !!value);
       if (new Set(supplied).size > 1) throw new HttpError(400, "conflicting_credentials");
       const token = supplied[0];
       if (!token) throw new HttpError(401, "unauthorized");
