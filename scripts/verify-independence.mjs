@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { verifyCloud } from './verify-cloud.mjs';
+import { verifyWebSocket } from './verify-websocket.mjs';
 
 const containers = ['sub2api-cloud-console', 'sub2api-cloud-management', 'sub2api-cloud-redis'];
 export async function verifyIndependence(config, run = docker, verify = verifyCloud) {
@@ -44,8 +45,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   process.once('SIGINT', interrupt);
   process.once('SIGTERM', interrupt);
   try {
+    const args=process.argv.slice(2);
+    if(args.some(arg=>arg!=='--websocket'))throw Error('Usage: npm run verify:independence -- [--websocket]');
     const config = JSON.parse(await readFile(new URL('../.local/agent-access.json', import.meta.url), 'utf8'));
-    const checks = await verifyIndependence(config, docker, value => verifyCloud(value, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([init.signal, interruption.signal]) })));
+    const checks = await verifyIndependence(config, docker, async value => {
+      const result=await verifyCloud(value, (url, init) => fetch(url, { ...init, signal: AbortSignal.any([init.signal, interruption.signal]) }));
+      if(args.includes('--websocket'))result.push(...await verifyWebSocket(value,interruption.signal));
+      return result;
+    });
     console.log('Cloud independence verified; local containers restored: ' + checks.join(', ') + '.');
   } catch (error) {
     console.error('Cloud independence verification failed: ' + error.message);
