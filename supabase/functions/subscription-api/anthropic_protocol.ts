@@ -1,3 +1,4 @@
+import { modernCodexModel, supportsCodexMax, validateCodexReasoning } from "./codex_models.ts";
 import { responseEvents } from "./openai_protocol.ts";
 type Item = Record<string, any>;
 
@@ -42,6 +43,8 @@ function contentParts(content: unknown, assistant = false): Item[] {
 
 // Same direct bridge as upstream apicompat/anthropic_to_responses.go.
 export function messagesToResponses(body: Item): Item {
+  validateCodexReasoning(body);
+  const modern = typeof body.model === "string" ? modernCodexModel(body.model) : undefined;
   if (
     !Array.isArray(body.messages) || !body.messages.length ||
     !Number.isInteger(body.max_tokens) || body.max_tokens <= 0
@@ -144,13 +147,13 @@ export function messagesToResponses(body: Item): Item {
   ) throw new Error("Invalid thinking");
   let effort = body.thinking?.type === "disabled"
     ? "none"
-    : body.output_config?.effort ?? "medium";
-  if (effort === "max") effort = "xhigh";
-  if (!["none", "low", "medium", "high", "xhigh"].includes(effort)) {
+    : body.output_config?.effort ?? modern?.effort ?? "medium";
+  if (effort === "max" && !supportsCodexMax(body.model ?? "")) effort = "xhigh";
+  if (!["none", "low", "medium", "high", "xhigh", "max"].includes(effort)) {
     throw new Error("Invalid reasoning effort");
   }
   const result: Item = {
-    model: body.model,
+    model: modern?.id ?? body.model,
     input,
     instructions: "",
     include: ["reasoning.encrypted_content"],

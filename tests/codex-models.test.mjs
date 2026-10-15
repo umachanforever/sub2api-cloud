@@ -59,3 +59,41 @@ test('cloud rejects disabled GPT-6.1 reasoning before provider dispatch and sett
   }
   assert.equal(finished, 3);
 });
+
+test('GPT-6 Responses keeps mode and max while removing incompatible sampling', async () => {
+  const {normalizeModernCodexResponses}=await import('../supabase/functions/subscription-api/codex_models.ts');
+  for(const model of ['gpt-6-sol','gpt-6-luna','gpt-6.1-sol']) {
+    const input={model,reasoning:{mode:'pro',effort:'max'},temperature:0.5,top_p:0.9,logprobs:true,top_logprobs:2,include:['message.output_text.logprobs','reasoning.encrypted_content'],prompt_cache_options:{ttl:'30m'}};
+    normalizeModernCodexResponses(input);
+    assert.deepEqual(input.reasoning,{mode:'pro',effort:'max'});
+    for(const field of ['temperature','top_p','logprobs','top_logprobs'])assert.equal(field in input,false);
+    assert.deepEqual(input.include,['reasoning.encrypted_content']);
+    assert.equal(input.prompt_cache_options.ttl,'30m');
+  }
+  const disabled={model:'gpt-6-sol',reasoning:{effort:'none'},temperature:0.5,include:['message.output_text.logprobs']};
+  normalizeModernCodexResponses(disabled);assert.equal(disabled.temperature,0.5);
+  assert.deepEqual(disabled.include,['message.output_text.logprobs']);
+});
+
+test('Messages bridge preserves distinct max effort and modern model aliases', async () => {
+  const {messagesToResponses}=await import('../supabase/functions/subscription-api/anthropic_protocol.ts');
+  for(const model of ['gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-6-astra','gpt-5.6-sol']) {
+    const body=messagesToResponses({model,max_tokens:32,messages:[{role:'user',content:'hello'}],output_config:{effort:'max'}});
+    assert.equal(body.reasoning.effort,'max',model);
+  }
+  const aliased=messagesToResponses({model:'openai/GPT_6.1_SOL_MAX',max_tokens:32,messages:[{role:'user',content:'hello'}]});
+  assert.equal(aliased.model,'gpt-6.1-sol');assert.equal(aliased.reasoning.effort,'max');
+  const legacy=messagesToResponses({model:'gpt-5.4',max_tokens:32,messages:[{role:'user',content:'hello'}],output_config:{effort:'max'}});
+  assert.equal(legacy.reasoning.effort,'xhigh');
+});
+
+test('API key Responses applies model compatibility without mutating the request', async () => {
+  const {apiKeyRequest}=await import('../supabase/functions/subscription-api/api_key_provider.ts');
+  const body={model:'gpt-6.1-sol',input:'hello',reasoning:{mode:'pro',effort:'max'},temperature:0.5,top_logprobs:2,include:['message.output_text.logprobs','reasoning.encrypted_content']};
+  const outgoing=apiKeyRequest('openai',{api_key:'secret'},'responses','/v1/responses',body,new Request('https://gateway/v1/responses'),new AbortController().signal);
+  const forwarded=JSON.parse(outgoing.init.body);
+  assert.deepEqual(forwarded.reasoning,body.reasoning);
+  assert.equal('temperature' in forwarded,false);assert.equal('top_logprobs' in forwarded,false);
+  assert.deepEqual(forwarded.include,['reasoning.encrypted_content']);assert.equal(body.temperature,0.5);
+  assert.throws(()=>apiKeyRequest('openai',{api_key:'secret'},'responses','/v1/responses',{...body,reasoning:{effort:'none'}},new Request('https://gateway/v1/responses'),new AbortController().signal),{status:400});
+});

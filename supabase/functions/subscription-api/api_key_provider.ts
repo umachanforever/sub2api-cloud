@@ -1,3 +1,4 @@
+import { normalizeModernCodexResponses } from "./codex_models.ts";
 import { grokHeaders } from './grok_config.ts';
 import { mappedCatalog, type ModelSources } from "./model_mapping.ts";
 import { filterModelCatalog, type ModelAllowlist } from "./model_policy.ts";
@@ -31,6 +32,10 @@ export function apiKeyRequest(
   request: Request,
   signal: AbortSignal,
 ): { url: string; init: RequestInit; streaming: boolean } {
+  if (platform === "openai" && protocol === "responses" && body) {
+    body = structuredClone(body);
+    try { normalizeModernCodexResponses(body!); } catch { throw new HttpError(400, "invalid_request"); }
+  }
   if (platform === 'antigravity') throw new HttpError(501, 'provider_requires_oauth');
   // Revalidate decrypted routing data; never send a secret to a custom URL or redirect.
   const validated = parseAccountCredentials(

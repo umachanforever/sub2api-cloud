@@ -23,3 +23,21 @@ export function validateCodexReasoning(body: Record<string, any>): void {
     throw new Error('gpt-6.1-sol requires reasoning effort low, medium, high, xhigh or max');
   }
 }
+
+export function supportsCodexMax(model: string): boolean {
+  const canonical = model.trim().split('/').at(-1)!.toLowerCase().replace(/[_\s]+/g, '-');
+  return !!modernCodexModel(model) || /^(?:gpt-6(?:-astra)?|gpt-5\.6(?:-(?:sol|terra|luna))?)(?:$|-(?:none|low|medium|high|xhigh|max|openai-compact)$)/.test(canonical);
+}
+
+// Responses reasoning mode and effort are independent for GPT-6. Sampling is
+// available on Sol/Luna only with reasoning disabled, matching the Go gateway.
+export function normalizeModernCodexResponses(body: Record<string, any>, canonicalModel = false): void {
+  validateCodexReasoning(body);
+  if (typeof body.model !== 'string') return;
+  const model = modernCodexModel(body.model);
+  if (!model) return;
+  if (canonicalModel) body.model = model.id;
+  if (body.reasoning?.effort === 'none') return;
+  for (const field of ['temperature', 'top_p', 'logprobs', 'top_logprobs']) delete body[field];
+  if (Array.isArray(body.include)) body.include = body.include.filter((value: unknown) => value !== 'message.output_text.logprobs');
+}
