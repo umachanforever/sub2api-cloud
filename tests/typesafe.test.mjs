@@ -46,3 +46,12 @@ test('TypeSafe model discovery is local and other inference protocols cannot use
  const catalog=await handler(new Request('https://gateway/v1/models',{headers:{authorization:'Bearer sk-client'}}));assert.equal(catalog.status,200);assert.equal((await catalog.json()).data[0].id,'jev-latest');
  const rejected=await handler(new Request('https://gateway/v1/chat/completions',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'jev-latest',messages:[{role:'user',content:'hello'}]})}));assert.equal(rejected.status,400);assert.equal(providerCalls,0);
 });
+
+test('System One preserves provider counts above the PostgreSQL integer range',async()=>{
+ const wire=JSON.stringify({answers:{valid:true},usage:{input_tokens:2**40,output_tokens:2147483648}});
+ let completed=false;
+ const response=await nativeResponse(new Response(wire,{headers:{'content-type':'application/json'}}),'typesafe','systemone',false,new AbortController().signal,'test',async(status,usage)=>{
+  assert.equal(status,200);assert.equal(usage.input,2**40);assert.equal(usage.output,2147483648);completed=true;
+ });
+ assert.equal(await response.text(),wire);assert.equal(completed,true);
+});
