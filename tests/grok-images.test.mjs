@@ -64,3 +64,41 @@ test('Grok multipart editing passes through parsing, OAuth routing and native se
  const response=await proxy(new Request('https://gateway/v1/images/edits',{method:'POST',body:form}),'/v1/images/edits','gateway-key',db,{requestId:'test'});
  assert.equal(response.status,200);await response.json();assert.equal(dispatched,1);assert.equal(finished.length,1);
 });
+
+test('Grok image aliases select the canonical account model before applying account mappings',async()=>{
+ const {proxy}=await import('../supabase/functions/sub2api/proxy.ts');
+ let acquired=0;
+ const db={config:{dataModel:'native'},async rpc(name,body){
+  if(name==='s2a_personal_acquire'){
+   acquired++;assert.equal(body.p_model,'grok-imagine-image-quality');assert.equal(body.p_billing_context.policy_model,'grok-imagine');assert.ok(body.p_billing_context.model_candidates.includes('grok-imagine-image-quality'));
+   return {lease_id:'lease',account:{id:'1',platform:'grok',type:'oauth',credential_storage:'vault',credential_version:1,credentials:{access_token:'private-access',expires_at:Date.now()+3600000}},upstream_model:'grok-imagine-image-mapped'};
+  }
+  if(name==='s2a_personal_finish')return;
+  assert.fail(name);
+ },async fetchImpl(url,init){assert.equal(JSON.parse(init.body).model,'grok-imagine-image-mapped');return Response.json({data:[{url:'https://images.example/result.png'}]});}};
+ const response=await proxy(new Request('https://gateway/v1/images/generations',{method:'POST',body:JSON.stringify({model:'grok-imagine',prompt:'A bird'})}),'/v1/images/generations','gateway-key',db,{requestId:'test'});
+ assert.equal(response.status,200);await response.json();assert.equal(acquired,1);
+});
+
+test('Native image defaults authenticate first and never send OpenAI defaults to Grok',async()=>{
+ const {proxy}=await import('../supabase/functions/sub2api/proxy.ts');
+ for(const policy of [{platform:'grok'},{error:'invalid_api_key',status:401},null]){
+  let checked=0;
+  const db={config:{dataModel:'native'},async rpc(name){assert.equal(name,'s2a_personal_key_policy');checked++;return policy;},fetchImpl(){assert.fail('Missing model reached provider');}};
+  await assert.rejects(proxy(new Request('https://gateway/v1/images/generations',{method:'POST',body:JSON.stringify({prompt:'A bird'})}),'/v1/images/generations','gateway-key',db,{requestId:'test'}),{status:policy?.platform==='grok'?400:policy?.status??503});
+  assert.equal(checked,1);
+ }
+});
+
+test('OpenAI groups retain their default image model after native key policy checks',async()=>{
+ const {proxy}=await import('../supabase/functions/sub2api/proxy.ts');
+ const calls=[];
+ const db={config:{dataModel:'native'},async rpc(name,body){
+  calls.push(name);
+  if(name==='s2a_personal_key_policy')return {platform:'openai'};
+  assert.equal(name,'s2a_personal_acquire');assert.equal(body.p_model,'gpt-image-2');
+  return {error:'model_not_allowed',status:403};
+ }};
+ await assert.rejects(proxy(new Request('https://gateway/v1/images/generations',{method:'POST',body:JSON.stringify({prompt:'A bird'})}),'/v1/images/generations','gateway-key',db,{requestId:'test'}),{status:403,code:'model_not_allowed'});
+ assert.deepEqual(calls,['s2a_personal_key_policy','s2a_personal_acquire']);
+});

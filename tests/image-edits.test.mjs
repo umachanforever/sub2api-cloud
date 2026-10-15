@@ -8,6 +8,7 @@ const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:
 async function fixture(forward,{type="apikey",upstreamModel="gpt-image-2"}={}){
  const stored=await encryptCredentials(type==='apikey'?{api_key:'provider-key'}:{access_token:'oauth-private',refresh_token:'refresh-private',expires_at:Date.now()+3600000,chatgpt_account_id:'chatgpt-account'},config.encryptionKey),leases=[],finishes=[];
  const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'openai'});
   if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',upstream_model:upstreamModel,account:{...stored,id:'1',platform:'openai',type,credential_version:1}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);

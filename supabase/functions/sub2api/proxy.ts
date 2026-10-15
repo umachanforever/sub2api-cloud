@@ -187,7 +187,17 @@ export async function proxy(
             ?.include_usage === true;
       if(voice){if(!voiceBytes)voiceBody={...raw};raw.model=voiceKind;raw.stream=false;}
       if(grokSearch){grokSearchOptions=grokSearchInput(raw,grokSearchKind!);raw.model='grok-4.6';raw.stream=false;}
-      if(images && (raw.model===undefined || typeof raw.model==="string" && !raw.model.trim()))raw.model="gpt-image-2";
+      if(imageEdit && !imageMultipart)validateImageEdit(raw);
+      if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
+      if(images && (raw.model===undefined || typeof raw.model==="string" && !raw.model.trim())){
+        if(db.config.dataModel==='native'){
+          const policy=await db.rpc<{platform?:string;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
+          if(!policy)throw new HttpError(503,'database_unavailable');
+          if(policy.error)throw new HttpError(policy.status??403,policy.error);
+          if(policy.platform==='grok')throw new HttpError(400,'image_model_required');
+        }
+        raw.model="gpt-image-2";
+      }
       const requestedModel = gemini ? gemini[1] : raw.model;
       if (
         typeof requestedModel !== "string" || !requestedModel.trim() ||
@@ -204,8 +214,6 @@ export async function proxy(
         const validInput = typeof raw.input === "string" ? raw.input.length > 0 : tokenList(raw.input) || Array.isArray(raw.input) && raw.input.length > 0 && (raw.input.every(value => typeof value === "string" && value.length > 0) || raw.input.every(tokenList));
         if (!validInput || raw.stream === true || raw.encoding_format !== undefined && !["float", "base64"].includes(raw.encoding_format as string) || raw.dimensions !== undefined && (!Number.isSafeInteger(raw.dimensions) || (raw.dimensions as number) <= 0)) throw new HttpError(400, "invalid_request");
       }
-      if(imageEdit && !imageMultipart)validateImageEdit(raw);
-      if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
       if(geminiTokens){
         const nested=raw.generateContentRequest as Record<string,unknown>|undefined;
         if(raw.stream===true||nested!==undefined&&(!nested||typeof nested!=='object'||Array.isArray(nested))||nested&&raw.contents!==undefined)throw new HttpError(400,'invalid_request');
@@ -224,6 +232,7 @@ export async function proxy(
     }
   }
   const policyModel = models ? modelId ? decodeURIComponent(modelId) : "" : gemini ? gemini[1] : body!.model as string;
+  const routingModel=images&&policyModel==='grok-imagine'?'grok-imagine-image-quality':policyModel;
   const cacheName=gemini?geminiCacheName(body!):undefined;
   const cacheBinding=cacheName?await resolveGeminiCache(db,keyHash,cacheName,policyModel,clientIp):undefined;
   if(grokSearch)await requireGrokPlatform('grok_search_requires_grok_group');
@@ -238,13 +247,13 @@ export async function proxy(
     let reservation: Reservation;
     reservation = await db.rpc<Reservation>(db.config.dataModel === "native" ? "s2a_personal_acquire" : "s2a_acquire", {
       p_key_hash: keyHash,
-      p_model: models ? "__models__" : gemini ? gemini[1] : body!.model,
+      p_model: models ? "__models__" : routingModel,
       p_request_id: requestId,
       p_excluded: excluded,
       p_count_request: attempt === 0,
       p_client_ip: clientIp,
       p_billing_context: {
-        policy_model:policyModel,model_candidates:modelCandidates(policyModel),
+        policy_model:policyModel,model_candidates:modelCandidates(routingModel),
         ...(cacheName?{cached_content:cacheName}:{}),
         ...(inputTokens || messageTokens || geminiTokens ? {count_only:true} : {}),
         ...(search || grokSearch ? {web_search:true,search_operation:grokSearch?grokSearchKind:'alpha_search'} : {}),
@@ -263,7 +272,7 @@ export async function proxy(
       upstream_model?:string;
       model_sources?:ModelSources;
     };
-    const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
+    const mappedModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
     let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
