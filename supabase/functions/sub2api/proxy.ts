@@ -263,6 +263,7 @@ export async function proxy(
       return finishing;
     };
     try {
+      if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if (inputTokens || messageTokens) {
         const input_tokens=messageTokens
           ? await countMessageTokens(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;})
@@ -272,7 +273,6 @@ export async function proxy(
       }
       if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (images && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
-      if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
       let native: ReturnType<typeof apiKeyRequest> | undefined;

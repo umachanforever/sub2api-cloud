@@ -98,3 +98,11 @@ test('Messages preflight rejects missing credentials, malformed messages and gen
   assert.equal(value.leases.length,0);
   assert.equal((await value.request('/v1/messages/count_tokens',{model:'gpt-6.1',messages:[{role:'user',content:'hi'}]},{})).status,401);
 });
+test('provider-specific preflight routes reject mismatched accounts before contacting providers',async()=>{
+  for(const platform of ['openai','grok','anthropic'])for(const path of ['/antigravity/v1/messages/count_tokens','/antigravity/v1/responses/input_tokens']){
+    const value=await fixture(()=>assert.fail('Mismatched route must not dispatch upstream'),{platform});
+    const response=await value.request(path,{model:'gpt-6.1',input:'hello',messages:[{role:'user',content:'hello'}]});
+    assert.equal(response.status,400);assert.equal((await response.json()).error.type,'provider_route_mismatch');
+    assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'failed');assert.equal(value.finishes[0].p_cooldown_seconds,0);
+  }
+});
