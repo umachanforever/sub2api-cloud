@@ -86,6 +86,8 @@ The gateway supports Responses, Chat Completions, Anthropic Messages, and Gemini
 
 Gemini `cachedContent` references are scoped to their owning key and group and stay pinned to the account that created the cache. Unknown, expired, foreign, or model-mismatched cache names are rejected before provider dispatch.
 
+`GET /v1beta/cachedContents` lists active caches owned by the current key and group, with `pageSize` and `pageToken` pagination. `GET /v1beta/cachedContents/{id}` returns the public cache metadata without exposing provider resource names or account identifiers.
+
 ### Subscription usage
 
 `GET /v1/usage` returns the provider-reported five-hour and seven-day subscription windows for OpenAI OAuth accounts in the key's group. Authenticate with `Authorization: Bearer <api-key>`. Each account includes `five_hour` and `seven_day` objects with `used_percent`, `remaining_percent`, `window_seconds`, and `reset_at`. These are shared account allowances, rather than this key's token totals. Unsupported groups return an empty account list; missing window values are `null`.

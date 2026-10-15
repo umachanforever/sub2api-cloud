@@ -335,5 +335,44 @@ END $$;
 ALTER FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_resolve(text,text,text,text) TO service_role;
+-- Expose only tenant-owned cache views, never provider-wide cache listings.
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_read(p_key_hash text,p_name text DEFAULT NULL,p_page_size integer DEFAULT 50,p_before bigint DEFAULT NULL,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; item public.gemini_cached_contents%ROWTYPE;
+    entries jsonb:='[]'::jsonb; view jsonb; result jsonb; count integer:=0; last_id bigint;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'gemini' THEN RETURN jsonb_build_object('error','gemini_cache_requires_gemini_group','status',400); END IF;
+    IF p_page_size IS NULL OR p_page_size<1 OR p_page_size>1000 OR p_before<=0 THEN RETURN jsonb_build_object('error','invalid_cache_pagination','status',400); END IF;
+    IF p_name IS NOT NULL AND p_name !~ '^cachedContents/[a-zA-Z0-9_-]{1,64}$' THEN RETURN jsonb_build_object('error','invalid_cached_content','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    FOR item IN SELECT * FROM public.gemini_cached_contents
+        WHERE user_id=(identity->>'user_id')::bigint AND api_key_id=(identity->>'key_id')::bigint
+        AND group_id=(identity->>'group_id')::bigint AND deleted_at IS NULL AND expire_time>clock_timestamp()
+        AND (p_name IS NULL OR public_id=substring(p_name FROM 16))
+        AND (p_name IS NOT NULL OR p_before IS NULL OR id<p_before)
+        ORDER BY id DESC LIMIT p_page_size+1 LOOP
+        count:=count+1;
+        IF count>p_page_size THEN EXIT; END IF;
+        view:=jsonb_build_object('name','cachedContents/'||item.public_id,'model','models/'||item.model,
+            'usageMetadata',jsonb_build_object('totalTokenCount',item.total_token_count),
+            'createTime',to_char(item.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'updateTime',to_char(item.updated_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+            'expireTime',to_char(item.expire_time AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'));
+        IF item.display_name<>'' THEN view:=view||jsonb_build_object('displayName',item.display_name); END IF;
+        IF p_name IS NOT NULL THEN RETURN view; END IF;
+        entries:=entries||jsonb_build_array(view); last_id:=item.id;
+    END LOOP;
+    IF p_name IS NOT NULL THEN RETURN jsonb_build_object('error','cached_content_not_found','status',403); END IF;
+    result:='{}'::jsonb;
+    IF count>0 THEN result:=jsonb_build_object('cachedContents',entries); END IF;
+    IF count>p_page_size THEN result:=result||jsonb_build_object('nextPageToken',rtrim(translate(encode(convert_to(last_id::text,'UTF8'),'base64'),'+/','-_'),'=')); END IF;
+    RETURN result;
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

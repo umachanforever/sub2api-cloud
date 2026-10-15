@@ -45,6 +45,8 @@ Antigravity OAuth 账号提供供应商模型目录，以及 Gemini 原生 `gene
 
 Gemini 的 `cachedContent` 引用限定于创建缓存的密钥和分组，并固定使用原账号。不存在、已过期、属于其他密钥或模型不匹配的缓存会在请求上游前被拒绝。
 
+`GET /v1beta/cachedContents` 分页列出当前密钥和分组所属的有效缓存，支持 `pageSize` 和 `pageToken`。`GET /v1beta/cachedContents/{id}` 返回公开缓存信息，不暴露上游资源名或账号标识。
+
 ## 本地 Supabase
 
 ```sh

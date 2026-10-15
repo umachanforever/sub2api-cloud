@@ -124,11 +124,18 @@ BEGIN
     INSERT INTO public.account_groups(account_id,group_id) VALUES(alternative_cache_account,cache_group);
     INSERT INTO public.gemini_cached_contents(public_id,user_id,api_key_id,group_id,account_id,upstream_name,model,upstream_model,expire_time)
         VALUES('cache-fixture',u,k,cache_group,cache_account,'cachedContents/provider-private','gemini-cache','gemini-upstream',now()+interval '1 hour');
+    result:=public.s2a_personal_cache_read(h,'cachedContents/cache-fixture');
+    IF result->>'name' IS DISTINCT FROM 'cachedContents/cache-fixture' OR result->>'model' IS DISTINCT FROM 'models/gemini-cache'
+        OR result ? 'account_id' OR result ? 'upstream_name' THEN RAISE EXCEPTION 'cache view exposed private data or lost identity: %',result; END IF;
+    result:=public.s2a_personal_cache_read(h);
+    IF jsonb_array_length(result->'cachedContents')<>1 THEN RAISE EXCEPTION 'cache list omitted owned cache'; END IF;
+    IF public.s2a_personal_cache_read(h,'cachedContents/missing')->>'status' IS DISTINCT FROM '403' THEN RAISE EXCEPTION 'missing cache detail not forbidden'; END IF;
     result:=public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache');
     IF result->>'account_id' IS DISTINCT FROM cache_account::text OR result->>'upstream_name' IS DISTINCT FROM 'cachedContents/provider-private' THEN RAISE EXCEPTION 'cache binding lookup failed: %',result; END IF;
     IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','different-model')->>'error' IS DISTINCT FROM 'cached_content_model_mismatch' THEN RAISE EXCEPTION 'cache accepted wrong model'; END IF;
     UPDATE public.gemini_cached_contents SET api_key_id=k+100000 WHERE public_id='cache-fixture';
     IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'foreign cache exposed'; END IF;
+    IF public.s2a_personal_cache_read(h)<>'{}'::jsonb THEN RAISE EXCEPTION 'foreign cache listed'; END IF;
     UPDATE public.gemini_cached_contents SET api_key_id=k WHERE public_id='cache-fixture';
     UPDATE public.gemini_cached_contents SET user_id=u+100000 WHERE public_id='cache-fixture';
     IF public.s2a_personal_cache_resolve(h,'cachedContents/cache-fixture','gemini-cache')->>'error' IS DISTINCT FROM 'cached_content_not_found' THEN RAISE EXCEPTION 'foreign user cache exposed'; END IF;
