@@ -180,10 +180,12 @@ ALTER TABLE public.usage_logs
  ALTER COLUMN cache_read_tokens TYPE bigint;
 -- Remove the old signature so PostgREST sees one unambiguous RPC.
 DROP FUNCTION IF EXISTS public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text);
+DROP FUNCTION IF EXISTS public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text);
 CREATE OR REPLACE FUNCTION public.s2a_personal_finish(
     p_lease_id uuid,p_status integer,p_outcome text,p_input_tokens bigint,p_output_tokens bigint,
     p_cache_creation_tokens bigint,p_cache_read_tokens bigint,p_cooldown_seconds integer,
-    p_credential_version bigint,p_first_token_ms integer DEFAULT NULL,p_upstream_model text DEFAULT NULL
+    p_credential_version bigint,p_first_token_ms integer DEFAULT NULL,p_upstream_model text DEFAULT NULL,
+    p_duration_ms integer DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE lease s2a_private.personal_gateway_leases; payload jsonb; digest text; usage_id bigint; now_at timestamptz;
 BEGIN
@@ -191,13 +193,14 @@ BEGIN
         OR p_outcome IS NULL OR p_outcome NOT IN ('completed','failed','cancelled','interrupted')
         OR coalesce(p_input_tokens,0)<0 OR coalesce(p_output_tokens,0)<0
         OR coalesce(p_cache_creation_tokens,0)<0 OR coalesce(p_cache_read_tokens,0)<0
+        OR coalesce(p_duration_ms,0)<0 OR (p_duration_ms IS NOT NULL AND p_first_token_ms>p_duration_ms)
         OR coalesce(p_first_token_ms,0)<0 OR p_cooldown_seconds IS NULL OR p_cooldown_seconds NOT BETWEEN 0 AND 3600
         OR (p_upstream_model IS NOT NULL AND (length(p_upstream_model) NOT BETWEEN 1 AND 200 OR p_upstream_model ~ '[[:cntrl:]]')) THEN
         RETURN jsonb_build_object('error','invalid_usage','status',400);
     END IF;
     payload:=jsonb_build_object('status',p_status,'outcome',p_outcome,'input',p_input_tokens,'output',p_output_tokens,
         'cacheCreation',p_cache_creation_tokens,'cacheRead',p_cache_read_tokens,'firstTokenMs',p_first_token_ms,
-        'cooldown',p_cooldown_seconds,'credentialVersion',p_credential_version,'upstreamModel',p_upstream_model);
+        'cooldown',p_cooldown_seconds,'credentialVersion',p_credential_version,'upstreamModel',p_upstream_model,'durationMs',p_duration_ms);
     digest:=encode(sha256(convert_to(payload::text,'UTF8')),'hex');
     SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','lease_not_found','status',404); END IF;
@@ -213,7 +216,7 @@ BEGIN
         VALUES(lease.user_id,lease.key_id,lease.account_id,lease.group_id,lease.request_id::text,lease.model,lease.model,
             coalesce(p_upstream_model,lease.model),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),
             coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.responses_websocket THEN 3 WHEN lease.stream THEN 2 ELSE 1 END,
-            least(2147483647,greatest(0,floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer,p_first_token_ms,
+            coalesce(p_duration_ms,least(2147483647,greatest(coalesce(p_first_token_ms,0),floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer),p_first_token_ms,
             'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation',coalesce(lease.search_operation,'alpha_search')) ELSE '{}'::jsonb END,lease.inbound_endpoint,lease.client_ip) RETURNING id INTO usage_id;
     END IF;
     IF p_cooldown_seconds>0 THEN
@@ -225,9 +228,9 @@ BEGIN
         WHERE id=p_lease_id;
     RETURN jsonb_build_object('applied',true,'usage_log_id',usage_id::text);
 END $$;
-ALTER FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text) OWNER TO s2a_management;
-REVOKE ALL ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text) FROM PUBLIC,anon,authenticated;
-GRANT EXECUTE ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text) TO service_role;
+ALTER FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer) TO service_role;
 
 -- Preserve provider quota headers for the original account console.
 CREATE OR REPLACE FUNCTION public.s2a_personal_windows_save(

@@ -745,12 +745,12 @@ test('gateway captures service tier and native stream mode for database billing'
   assert.equal(value.finishes[0].p_input_tokens,100);assert.equal(value.finishes[0].p_cache_read_tokens,20);
 });
 
-test('a transient settlement failure retries identical usage without another provider request', async () => {
+for (const dataModel of [undefined,'native']) test(`a transient settlement failure retries identical usage without another provider request (model=${dataModel??'legacy'})`, async () => {
   const stored=await encryptCredentials({api_key:'provider-secret'},config.encryptionKey);
   const settlements=[];let forwards=0;
-  const handler=createHandler(config,async(url,init)=>{
-    if(String(url).endsWith('/s2a_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'account',type:'apikey',platform:'openai',credential_version:1}});
-    if(String(url).endsWith('/s2a_finish')){
+  const handler=createHandler({...config,...(dataModel?{dataModel}:{})},async(url,init)=>{
+    if(String(url).endsWith(dataModel?'/s2a_personal_acquire':'/s2a_acquire'))return Response.json({lease_id:'lease',account:{...stored,id:'account',type:'apikey',platform:'openai',credential_version:1}});
+    if(String(url).endsWith(dataModel?'/s2a_personal_finish':'/s2a_finish')){
       settlements.push(JSON.parse(init.body));return settlements.length===1?Response.json({},{status:503}):Response.json(null);
     }
     forwards++;return Response.json({id:'response',object:'response',status:'completed',output:[],usage:{input_tokens:100,output_tokens:10,input_tokens_details:{cached_tokens:20}}});
@@ -759,6 +759,7 @@ test('a transient settlement failure retries identical usage without another pro
   assert.equal(response.status,200);await response.json();
   assert.equal(forwards,1);assert.equal(settlements.length,2);assert.deepEqual(settlements[0],settlements[1]);
   assert.equal(settlements[1].p_cache_read_tokens,20);
+  if(dataModel){assert.ok(Number.isInteger(settlements[0].p_duration_ms));assert.ok(settlements[0].p_duration_ms>=0);}
 });
 
 for (const stream of [false, true]) test(`OpenAI API-key Messages bridge preserves tools, limits and usage (stream=${stream})`, async () => {

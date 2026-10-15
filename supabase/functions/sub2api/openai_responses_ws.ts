@@ -35,9 +35,9 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   if(turn.settled)return turn.settled;
   turn.settled=(async()=>{
    try{
-    let saved=false;
+    let saved=false;const durationMs=Math.min(2147483647,Math.max(0,Date.now()-turn.started));
     for(let attempt=0;attempt<2;attempt++){
-     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
+     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_duration_ms:durationMs,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
     }
     if(!saved)throw new HttpError(503,'usage_persistence_failed');
    }finally{if(active===turn)active=undefined;turn.resolve();}
@@ -97,10 +97,10 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   const payload=JSON.parse(text);if(!payload||typeof payload!=='object'||Array.isArray(payload)||payload.type!==undefined&&payload.type!=='response.create')throw new HttpError(400,'invalid_websocket_request');
   const requested=payload.model??model;if(typeof requested!=='string'||!requested.trim()||requested.length>200||/[\x00-\x1f\x7f]/.test(requested)||requested==='__models__')throw new HttpError(400,'invalid_model');
   if(model&&requested!==model)throw new HttpError(400,'model_change_requires_reconnect');model=requested;
-  const requestId=crypto.randomUUID();
+  const requestId=crypto.randomUUID(),turnStarted=Date.now();
   const reservation=await db.rpc<Reservation>('s2a_personal_acquire',{p_key_hash:keyHash,p_model:model,p_request_id:requestId,p_excluded:[],p_count_request:true,p_client_ip:clientIp,p_billing_context:{policy_model:model,model_candidates:modelCandidates(model),native_stream:true,responses_websocket:true,inbound_endpoint:'/v1/responses',...(pinned?{websocket_account:pinned.id}:{})}});
   if(!reservation||reservation.error)throw new HttpError(reservation?.status??503,reservation?.error??'database_unavailable');
-  let resolve!:()=>void;const done=new Promise<void>(r=>{resolve=r;});active={reservation,started:Date.now(),usage:{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'incomplete'},resolve,done};
+  let resolve!:()=>void;const done=new Promise<void>(r=>{resolve=r;});active={reservation,started:turnStarted,usage:{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'incomplete'},resolve,done};
   if(ended){await finish(499,'cancelled');return;}
   if(reservation.account.platform!==policy.platform||!['apikey','oauth'].includes(reservation.account.type)||pinned&&(reservation.account.id!==pinned.id||reservation.account.credential_version!==pinned.credential_version))throw new HttpError(409,'websocket_account_changed');
   const mapped=reservation.upstream_model??(reservation.model_sources?mappedTarget(reservation.model_sources.mapping,model,reservation.account.platform??'openai'):undefined)??model;

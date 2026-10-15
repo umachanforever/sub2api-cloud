@@ -335,10 +335,11 @@ async function proxyWithIdentity(
       if (finishing) return finishing;
       finishing = (async () => {
         await quotaSnapshot;
+        const durationMs=Math.min(2147483647,Math.max(0,Date.now()-errorContext.started));
         for (let retry = 0; retry < 2; retry++) {
           try {
             const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
-              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel} : {}),
+              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel,p_duration_ms:durationMs} : {}),
               p_lease_id: lease_id,
               p_status: status,
               p_outcome: db.config.dataModel === "native" && usage.outcome === "incomplete" ? "interrupted" : usage.outcome,
