@@ -1,4 +1,4 @@
-export type Platform = "openai" | "anthropic" | "gemini";
+export type Platform = "openai" | "anthropic" | "gemini" | "antigravity";
 export type ApiKeyCredentials = { api_key: string; base_url?: string };
 export type AccountCredentials = OAuthCredentials | ApiKeyCredentials;
 

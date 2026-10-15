@@ -17,6 +17,7 @@ const origins: Record<Platform, string> = {
   openai: "https://api.openai.com",
   anthropic: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com",
+  antigravity: "https://cloudcode-pa.googleapis.com",
 };
 
 export function apiKeyRequest(
@@ -28,6 +29,7 @@ export function apiKeyRequest(
   request: Request,
   signal: AbortSignal,
 ): { url: string; init: RequestInit; streaming: boolean } {
+  if (platform === 'antigravity') throw new HttpError(501, 'provider_requires_oauth');
   // Revalidate decrypted routing data; never send a secret to a custom URL or redirect.
   const validated = parseAccountCredentials(
     credentials,
@@ -115,7 +117,7 @@ export function apiKeyRequest(
 
 function modelCatalog(platform: Platform, path: string, value: Item): Item {
   const single = /\/models\/[^/]+$/.test(path);
-  if (platform === "gemini") {
+  if (platform === "gemini" || platform === "antigravity") {
     const entries = single ? [value] : value.models;
     if (
       !Array.isArray(entries) ||

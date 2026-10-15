@@ -43,4 +43,6 @@ The local Node service serves the Vue console, proxies management HTTP and WebSo
 
 The TypeScript gateway retains protocol-specific provider transports, model mappings, JSON and SSE response handling, tool definitions, and provider-reported usage. Model catalogs come from the selected account. Provider credentials and network routes are resolved on the cloud side.
 
+Antigravity's Gemini-native transport wraps requests in its internal project envelope and normalizes provider SSE into native Gemini events or an aggregated JSON response. Catalog requests use `fetchAvailableModels` and project only public model metadata. Dedicated Google client configuration and the shared Vault refresh lease keep Antigravity token refresh in the cloud; no provider credentials or project IDs are returned in catalogs or generation envelopes.
+
 The original Go and Vue sources remain pinned and attributed as described in [NOTICE](../NOTICE).

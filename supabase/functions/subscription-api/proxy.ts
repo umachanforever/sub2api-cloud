@@ -1,5 +1,6 @@
 import { accountFetch } from "./account_proxy.ts";
 import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
+import { antigravityOAuthRequest, forwardAntigravity } from "./antigravity_oauth.ts";
 import { googleOAuthCatalog, googleOAuthRequest, normalizeCodeAssist } from "./google_oauth.ts";
 import { recordOpsError, type ErrorContext } from "./ops_errors.ts";
 import { mappedCatalog, mappedTarget, type ModelSources } from "./model_mapping.ts";
@@ -257,9 +258,14 @@ export async function proxy(
         );
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
-      } else if (platform === "anthropic" || platform === "gemini") {
+      } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
+          if (platform === 'antigravity') {
+            const outgoing = antigravityOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
+            native = outgoing;
+            return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
+          }
           const outgoing = platform === "gemini"
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
             : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);

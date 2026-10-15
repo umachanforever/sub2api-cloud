@@ -92,8 +92,8 @@ export async function credentialsFor(
   if (acquired) {
     try {
       const fetcher = proxyFetcher(db, account.proxy_id, isVaultCredentials(account));
-      const refreshed = account.platform === "gemini"
-        ? await refreshGoogleCredentials(current, fetcher, db.config.googleOAuth)
+      const refreshed = account.platform === "gemini" || account.platform === "antigravity"
+        ? await refreshGoogleCredentials(current, fetcher, db.config.googleOAuth, account.platform === "antigravity" ? "antigravity" : undefined)
         : await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(current, fetcher);
       if (isVaultCredentials(account) && refreshed.expires_at !== undefined) {
         const expiry = expiresAtMillis(refreshed.expires_at);

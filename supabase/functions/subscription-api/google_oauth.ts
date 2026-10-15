@@ -32,11 +32,11 @@ export function googleOAuthCatalog(credentials: GoogleCredentials, path: string,
   return Response.json({ models: models.slice(offset, end), ...(end < models.length ? { nextPageToken: String(end) } : {}) });
 }
 
-export async function refreshGoogleCredentials(credentials: GoogleCredentials, fetchImpl: typeof fetch, clients?: GoogleOAuthClients): Promise<GoogleCredentials> {
+export async function refreshGoogleCredentials(credentials: GoogleCredentials, fetchImpl: typeof fetch, clients?: GoogleOAuthClients, kind?: 'antigravity'): Promise<GoogleCredentials> {
   if (!credentials.refresh_token) throw new HttpError(401, 'oauth_refresh_token_missing');
   const client = credentials.client_id && credentials.client_secret
     ? { clientId: credentials.client_id, clientSecret: credentials.client_secret }
-    : credentials.oauth_type === 'ai_studio' ? clients?.aiStudio : clients?.cli;
+    : kind === 'antigravity' ? clients?.antigravity : credentials.oauth_type === 'ai_studio' ? clients?.aiStudio : clients?.cli;
   if (!client?.clientId || !client.clientSecret) throw new HttpError(503, 'google_oauth_client_not_configured');
   const response = await fetchImpl('https://oauth2.googleapis.com/token', {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(20_000),
