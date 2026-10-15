@@ -5,21 +5,23 @@ import type { Account } from './accounts.ts';
 import { Database, HttpError } from './db.ts';
 import { normalizeCodeAssist, type GoogleCredentials } from './google_oauth.ts';
 import { cleanAntigravityTools } from './antigravity_schema.ts';
-import { claudeToAntigravity, antigravityToClaude } from './antigravity_claude.ts';
+import { claudeToAntigravity, antigravityToClaude, antigravitySearchOnly } from './antigravity_claude.ts';
 import { antigravityIdentity } from './antigravity_identity.ts';
 
 const PROD = 'https://cloudcode-pa.googleapis.com';
 const DAILY = 'https://daily-cloudcode-pa.googleapis.com';
-type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string };
+type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string; upstreamModel?: string };
 
 export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol: NativeProtocol, path: string,
   body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal, responseModel?: string): Outgoing {
   const claudeModel = protocol === 'messages' && typeof body?.model === 'string' ? body.model : undefined;
   const claudeStreaming = body?.stream === true;
+  const searchOnly = !!(claudeModel && antigravitySearchOnly(body!));
+  const targetModel = searchOnly ? 'gemini-2.5-flash' : claudeModel;
   if (claudeModel) {
-    body = claudeToAntigravity(body!);
+    body = claudeToAntigravity({ ...body!, model: targetModel });
     protocol = 'gemini';
-    path = `/v1beta/models/${encodeURIComponent(claudeModel)}:${claudeStreaming ? 'streamGenerateContent' : 'generateContent'}`;
+    path = `/v1beta/models/${encodeURIComponent(targetModel!)}:${claudeStreaming ? 'streamGenerateContent' : 'generateContent'}`;
   }
   const validated = apiKeyRequest('gemini', { api_key: credentials.access_token }, protocol, path, body, request, signal);
   const project = typeof credentials.project_id === 'string' ? credentials.project_id.trim() : undefined;
@@ -44,9 +46,9 @@ export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol
   }
   return {
     url: DAILY + '/v1internal:streamGenerateContent?alt=sse', fallbackURL: PROD + '/v1internal:streamGenerateContent?alt=sse',
-    catalog: false, streaming: validated.streaming, ...(claudeModel ? { claudeModel: responseModel ?? claudeModel } : {}),
+    catalog: false, streaming: validated.streaming, upstreamModel: decodeURIComponent(match[1]), ...(claudeModel ? { claudeModel: responseModel ?? claudeModel } : {}),
     init: { method: 'POST', headers, redirect: 'error', signal, body: JSON.stringify({
-      project, requestId: 'agent-' + crypto.randomUUID(), userAgent: 'antigravity', requestType: 'agent',
+      project, requestId: 'agent-' + crypto.randomUUID(), userAgent: 'antigravity', requestType: searchOnly ? 'web_search' : 'agent',
       model: decodeURIComponent(match[1]), request: inner,
     }) },
   };

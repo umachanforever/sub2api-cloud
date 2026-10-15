@@ -5,6 +5,13 @@ function fail(): never { throw new HttpError(400, 'unsupported_messages_content'
 const dummy = 'skip_thought_signature_validator';
 const object = (value: unknown): value is Item => !!value && typeof value === 'object' && !Array.isArray(value);
 
+export function antigravitySearchTool(tool: unknown): boolean {
+  return object(tool) && (typeof tool.type === 'string' && (tool.type.startsWith('web_search') || tool.type === 'google_search') || ['web_search', 'google_search', 'web_search_20250305'].includes(typeof tool.name === 'string' ? tool.name.trim() : ''));
+}
+export function antigravitySearchOnly(body: Item): boolean {
+  return Array.isArray(body.tools) && body.tools.some(antigravitySearchTool) && !body.tools.some((tool: unknown) => object(tool) && !antigravitySearchTool(tool) && tool.type !== 'code_execution' && typeof tool.name === 'string' && tool.name.trim());
+}
+
 export function claudeToAntigravity(body: Item): Item {
   if (!Array.isArray(body.messages) || !body.messages.length || typeof body.model !== 'string') fail();
   const names = new Map<string, string>(), system: Item[] = [], contents: Item[] = [];
@@ -69,15 +76,19 @@ export function claudeToAntigravity(body: Item): Item {
     generationConfig.thinkingConfig = { includeThoughts: true, thinkingBudget: budget };
   }
   const declarations: Item[] = [];
+  let search = false, code = false;
   if (body.tools !== undefined) {
     if (!Array.isArray(body.tools)) fail();
     for (const tool of body.tools) {
+      if (antigravitySearchTool(tool)) { search = true; continue; }
+      if (object(tool) && tool.type === 'code_execution') { code = true; continue; }
       if (!object(tool) || tool.type && tool.type !== 'custom' || typeof tool.name !== 'string') throw new HttpError(400, 'unsupported_messages_tool');
       const spec = tool.type === 'custom' ? tool.custom : tool;
       if (!object(spec)) throw new HttpError(400, 'unsupported_messages_tool');
       declarations.push({ name: tool.name, ...(typeof spec.description === 'string' ? { description: spec.description } : {}), parameters: structuredClone(spec.input_schema ?? { type: 'object' }) });
     }
   }
+  const tools: Item[] = declarations.length ? [{ functionDeclarations: declarations }] : [...(search ? [{ googleSearch: { enhancedContent: { imageSearch: { maxResultCount: 5 } } } }] : []), ...(code ? [{ codeExecution: {} }] : [])];
   const functionCallingConfig: Item = { mode: 'VALIDATED' };
   if (body.tool_choice !== undefined) {
     const choice = body.tool_choice;
@@ -89,7 +100,7 @@ export function claudeToAntigravity(body: Item): Item {
     }
   }
   return { contents, ...(system.length ? { systemInstruction: { role: 'user', parts: system } } : {}), generationConfig,
-    toolConfig: { functionCallingConfig }, ...(declarations.length ? { tools: [{ functionDeclarations: declarations }] } : {}),
+    toolConfig: { functionCallingConfig }, ...(tools.length ? { tools } : {}),
     ...(typeof body.metadata?.user_id === 'string' ? { sessionId: body.metadata.user_id } : {}) };
 }
 
@@ -106,6 +117,8 @@ function content(parts: Item[]): Item[] {
   for (const part of parts) {
     if (part.functionCall) result.push({ type: 'tool_use', id: part.functionCall.id || 'toolu_' + crypto.randomUUID(), name: part.functionCall.name, input: part.functionCall.args ?? {}, ...(part.thoughtSignature ? { signature: part.thoughtSignature } : {}) });
     else if (typeof part.text === 'string') result.push(part.thought ? { type: 'thinking', thinking: part.text, ...(part.thoughtSignature ? { signature: part.thoughtSignature } : {}) } : { type: 'text', text: part.text });
+    if (part.executableCode && typeof part.executableCode.code === 'string') result.push({ type: 'text', text: `\n\n\`\`\`${String(part.executableCode.language ?? '').toLowerCase()}\n${part.executableCode.code}\n\`\`\`` });
+    if (part.codeExecutionResult && typeof part.codeExecutionResult.output === 'string') result.push({ type: 'text', text: `\n\nExecution result (${part.codeExecutionResult.outcome ?? 'unknown'}):\n${part.codeExecutionResult.output}` });
     if (!part.thought && !part.functionCall && part.thoughtSignature) result.push({ type: 'thinking', thinking: '', signature: part.thoughtSignature });
   }
   const merged: Item[] = [];
@@ -119,6 +132,20 @@ function content(parts: Item[]): Item[] {
   }
   return merged;
 }
+function groundingText(grounding: Item | undefined): string {
+  if (!grounding) return '';
+  const queries = Array.isArray(grounding.webSearchQueries) ? grounding.webSearchQueries.filter((q: unknown) => typeof q === 'string') : [];
+  const links: string[] = [];
+  for (const chunk of Array.isArray(grounding.groundingChunks) ? grounding.groundingChunks : []) {
+    if (typeof chunk?.web?.uri !== 'string') continue;
+    let url: URL;
+    try { url = new URL(chunk.web.uri); } catch { continue; }
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) continue;
+    const title = String(chunk.web.title || 'Source').replace(/[\\\[\]<>]/g, (c: string) => c === '<' ? '&lt;' : c === '>' ? '&gt;' : '\\' + c);
+    links.push(`[${links.length + 1}] [${title}](${url.href.replaceAll('(', '%28').replaceAll(')', '%29')})`);
+  }
+  return (queries.length ? '\n\n---\nWeb search queries: ' + queries.join(', ') : '') + (links.length ? '\n\nSources:\n' + links.join('\n') : '');
+}
 function reason(finish: string, tools: boolean) { return finish === 'MAX_TOKENS' ? 'max_tokens' : finish !== 'STOP' ? 'refusal' : tools ? 'tool_use' : 'end_turn'; }
 export async function antigravityToClaude(response: Response, streaming: boolean, model: string): Promise<Response> {
   if (!response.ok) return response;
@@ -126,6 +153,8 @@ export async function antigravityToClaude(response: Response, streaming: boolean
   if (!streaming) {
     const value = await response.json(), candidate = value.candidates?.[0];
     const blocks = content(candidate?.content?.parts ?? []);
+    const sources = groundingText(candidate?.groundingMetadata);
+    if (sources) blocks.push({ type: 'text', text: sources });
     if (!candidate?.finishReason && !value.promptFeedback?.blockReason) throw new HttpError(502, 'incomplete_upstream_response');
     return Response.json({ id, type: 'message', role: 'assistant', model, content: blocks, stop_reason: reason(candidate?.finishReason, blocks.some(block => block.type === 'tool_use')), stop_sequence: null, usage: usage(value) });
   }
@@ -133,6 +162,7 @@ export async function antigravityToClaude(response: Response, streaming: boolean
   let pending = '', index = 0, started = false, terminal = '', tools = false, totals: Item = {};
   const encoder = new TextEncoder(), decoder = new TextDecoder();
   let active = '';
+  const grounding: Item = {};
   function close(controller: TransformStreamDefaultController<Uint8Array>) {
     if (active) { emit(controller, 'content_block_stop', { index }); index++; active = ''; }
   }
@@ -145,6 +175,7 @@ export async function antigravityToClaude(response: Response, streaming: boolean
     totals = { ...totals, ...usage(value) };
     if (!started) { emit(controller, 'message_start', { message: { id, type: 'message', role: 'assistant', model, content: [], stop_reason: null, stop_sequence: null, usage: totals } }); started = true; }
     const candidate = value.candidates?.[0];
+    for (const key of ['webSearchQueries', 'groundingChunks']) if (!grounding[key]?.length && Array.isArray(candidate?.groundingMetadata?.[key])) grounding[key] = candidate.groundingMetadata[key];
     for (const block of content(candidate?.content?.parts ?? [])) {
       if (terminal) throw new HttpError(502, 'invalid_upstream_event');
       tools ||= block.type === 'tool_use';
@@ -175,6 +206,12 @@ export async function antigravityToClaude(response: Response, streaming: boolean
       pending += decoder.decode(); if (pending.trim()) frame(pending, controller);
       if (!started || !terminal) throw new HttpError(502, 'incomplete_upstream_response');
       close(controller);
+      const sources = groundingText(grounding);
+      if (sources) {
+        emit(controller, 'content_block_start', { index, content_block: { type: 'text', text: '' } });
+        emit(controller, 'content_block_delta', { index, delta: { type: 'text_delta', text: sources } });
+        emit(controller, 'content_block_stop', { index }); index++;
+      }
       emit(controller, 'message_delta', { delta: { stop_reason: reason(terminal, tools), stop_sequence: null }, usage: totals });
       emit(controller, 'message_stop', {});
     },

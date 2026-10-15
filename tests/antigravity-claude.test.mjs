@@ -121,6 +121,6 @@ test('Antigravity custom tool schemas use the original nested specification', ()
   const input = structuredClone(body);
   input.tools = [{ type: 'custom', name: 'lookup', custom: { description: 'Nested tool', input_schema: { type: 'object', properties: { input: { type: 'string' } } } } }];
   assert.equal(claudeToAntigravity(input).tools[0].functionDeclarations[0].description, 'Nested tool');
-  input.tools = [{ type: 'web_search_20250305', name: 'web_search' }];
+  input.tools = [{ type: 'unsupported_tool', name: 'unsupported' }];
   assert.throws(() => claudeToAntigravity(input), { code: 'unsupported_messages_tool' });
 });

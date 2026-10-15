@@ -182,6 +182,7 @@ export async function proxy(
       model_sources?:ModelSources;
     };
     const upstreamModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
+    let dispatchedModel = upstreamModel;
     const forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
     const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
     const forwardedPath=aliasCatalog?path.replace(/\/models\/[^/]+$/,"/models"):gemini?`/v1beta/models/${encodeURIComponent(upstreamModel.replace(/^models\//,""))}:${gemini[2]}`:path;
@@ -210,7 +211,7 @@ export async function proxy(
         for (let retry = 0; retry < 2; retry++) {
           try {
             const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
-              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : upstreamModel} : {}),
+              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel} : {}),
               p_lease_id: lease_id,
               p_status: status,
               p_outcome: usage.outcome,
@@ -265,6 +266,11 @@ export async function proxy(
         const forward = async () => {
           if (platform === 'antigravity') {
             const outgoing = antigravityOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal, protocol === "messages" ? body?.model as string : undefined);
+            if (outgoing.upstreamModel) {
+              dispatchedModel = outgoing.upstreamModel;
+              errorContext.upstreamModel = dispatchedModel;
+              attemptContext.upstreamModel = dispatchedModel;
+            }
             native = outgoing;
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }
