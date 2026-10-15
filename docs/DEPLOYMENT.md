@@ -4,6 +4,8 @@
 
 Supabase hosts PostgreSQL, Auth, and the `sub2api` Edge Function. Docker Compose hosts the original Go management service, its Redis cache, and the Vue console on the local workstation. The AI endpoint has no dependency on those local services.
 
+For Chat-compatible upstreams, the Edge Function runs the original Go protocol converters as WebAssembly. Deployment includes the compressed module and its licenses. After changing the converter source, run `npm run compat:build` with the Go version specified in `backend/go.mod` to rebuild the bundled artifacts.
+
 The console is available at `http://127.0.0.1:3000`; the Go management endpoint binds to `127.0.0.1:8080`. Override `CONSOLE_PORT` and `MANAGEMENT_PORT` in `.env.local` if needed.
 
 ## Cloud setup

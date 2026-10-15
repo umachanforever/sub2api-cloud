@@ -10,6 +10,8 @@ Supabase's free tier and included HTTPS endpoint reduce the need for a separatel
 
 ## Deployment
 
+Chat compatibility reuses the original Go converters through a bundled WebAssembly module running inside Supabase. The cloud gateway does not require a local Go process for these conversions.
+
 Install Node.js 24+, Docker with Compose 2.24+, and the Supabase CLI.
 
 ```sh

@@ -145,6 +145,13 @@ export function apiKeyRequest(
     if(platform==='command_code')headers.set('user-agent',CODEX_USER_AGENT);
   }
   const outbound = body ? platform === "grok" && protocol === "images" ? grokImageBody(body,path.endsWith("/edits")) : structuredClone(body) : undefined;
+  if(outbound&&protocol==='chat'){
+    let model=String(outbound.model??'').trim().toLowerCase();
+    for(const prefix of ['opencode-go/','opencode_go/','opencode/'])if(model.startsWith(prefix))model=model.slice(prefix.length);
+    if(platform==='deepseek'||platform==='opencode_go'&&model.startsWith('deepseek')){
+      for(const message of Array.isArray(outbound.messages)?outbound.messages:[])if(typeof message?.role==='string'&&message.role.trim()==='assistant'&&(message.reasoning_content===undefined||message.reasoning_content===null||message.reasoning_content===''))message.reasoning_content=' ';
+    }
+  }
   return {
     url: target +
       (query.size ? `?${query}` : ""),

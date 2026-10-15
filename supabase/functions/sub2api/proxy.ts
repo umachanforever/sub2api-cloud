@@ -1,5 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
-import {multiProtocolProvider,providerProtocol} from './provider_routing.ts';
+import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
+import {originalChatBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
@@ -406,6 +407,7 @@ async function proxyWithIdentity(
       })();
       return finishing;
     };
+    let chatBridge:OriginalChatBridge|undefined;
     try {
       if(db.config.dataModel==='native'&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===false&&!models&&!inputTokens&&!messageTokens&&!geminiTokens&&imageGenerationIntent(path,upstreamModel,body,account.platform))throw new HttpError(403,'image_generation_forbidden');
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
@@ -495,22 +497,32 @@ async function proxyWithIdentity(
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
         credentials=parseAccountCredentials(credentials,platform,'apikey') as ApiKeyCredentials;
         const providerCatalog=models?[]:await providerCatalogProtocols(db,account,credentials,upstreamModel,signal);
-        const bridgeResponses = platform === "openai" && messages || multiProtocolProvider(platform) && (chat || messages) && providerProtocol(platform,credentials,messages?'anthropic':'chat_completions',upstreamModel,providerCatalog)==='responses';
+        const upstreamProtocol=multiProtocolProvider(platform)?providerProtocol(platform,credentials,messages?'anthropic':protocol==='responses'?'responses':'chat_completions',upstreamModel,providerCatalog):undefined;
+        const bridgeResponses = platform === "openai" && messages || (chat || messages) && upstreamProtocol==='responses';
+        const bridgeChat=(messages||protocol==='responses')&&upstreamProtocol==='chat_completions';
         let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
         if (bridgeResponses) {
           try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
           catch { throw new HttpError(400, "invalid_request"); }
         }
+        if(bridgeChat){
+          let source;try{source=messages?messagesToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+          chatBridge=await originalChatBridge(source,keyHash);outgoingBody=chatBridge.body;
+        }
         native = apiKeyRequest(
           platform,
           credentials,
-          bridgeResponses ? "responses" : protocol,
-          bridgeResponses ? "/v1/responses" : forwardedPath,
+          bridgeChat?'chat':bridgeResponses ? "responses" : protocol,
+          bridgeChat?'/v1/chat/completions':bridgeResponses ? "/v1/responses" : forwardedPath,
           outgoingBody,
           request,
           signal,
           providerCatalog,
         );
+        if(bridgeChat&&platform==='opencode_go'){
+          const session=openCodeSession(request,forwardedBody,credentials.account_mode!=='zen');
+          if(session){const headers=new Headers(native.init.headers);headers.set('x-opencode-session',session);native.init.headers=headers;}
+        }
         if(voice){
           const headers=new Headers(native.init.headers);headers.set('accept','application/json, audio/*');
           if(voiceBytes){headers.set('content-type',request.headers.get('content-type')??'application/octet-stream');native.init.body=voiceBytes as BodyInit;}
@@ -527,7 +539,7 @@ async function proxyWithIdentity(
         upstreamEndpoint=usageEndpoint(native.url);
         upstream = await accountFetch(db, account, native.url, native.init);
         // Reuse the Responses-to-Messages stream and usage pipeline below.
-        if (bridgeResponses) native = undefined;
+        if (bridgeResponses||bridgeChat) native = undefined;
       } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity" || platform === "grok") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
@@ -662,6 +674,7 @@ async function proxyWithIdentity(
         if(windows)quotaSnapshot=db.rpc(db.config.dataModel === 'native' ? 's2a_personal_windows_save' : 's2a_openai_windows_save',{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn('quota_window_save_failed'));
       }
       if (!upstream.ok) {
+        chatBridge?.close();
         const status = upstream.status;
         const rejection = await upstreamErrorCode(upstream);
         await upstreamFailure(status, rejection === "upstream_rejected_request" ? "upstream_http" : rejection);
@@ -685,6 +698,7 @@ async function proxyWithIdentity(
           rejection,
         );
       }
+      if(chatBridge)upstream=chatBridge.response(upstream);
       responseAccepted = native ? native.streaming : stream;
       if (native) {
         if(voice){if(upstream.status===204){await finish(204,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});return new Response(null,{status:204,headers:{'cache-control':'no-store'}});}return voiceResponse(upstream,signal,finish);}
@@ -777,6 +791,7 @@ async function proxyWithIdentity(
         },
       );
     } catch (error) {
+      chatBridge?.close();
       if (providerDispatched && !usageWriteFailed && !providerFailureRecorded && !request.signal.aborted) {
         await upstreamFailure(signal.aborted ? 504 : error instanceof HttpError ? error.status : 502, signal.aborted ? "upstream_timeout" : upstreamReceived ? "invalid_upstream_response" : "upstream_unavailable");
       }

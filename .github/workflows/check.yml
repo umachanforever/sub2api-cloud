@@ -67,6 +67,9 @@ jobs:
       - name: Verify provider profiles
         working-directory: ${{ github.workspace }}
         run: node scripts/generate-provider-profiles.mjs --check
+      - name: Verify original protocol converters
+        working-directory: ${{ github.workspace }}
+        run: node scripts/build-compat-wasm.mjs --check
 
       - name: Verify native management and cloud gateway integration
         working-directory: ${{ github.workspace }}

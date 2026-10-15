@@ -16,6 +16,14 @@ the cloud gateway and its supporting data and identity services.
 Source and build/deployment instructions are included. This project is maintained
 independently and is not an official Sub2API release.
 
+The cloud compatibility module compiles backend/internal/pkg/apicompat to
+WebAssembly. Its source remains covered by the upstream LGPL license.
+The Go WebAssembly runtime and compiler runtime use the Go Authors' BSD license,
+included in supabase/functions/sub2api/compat/GO_LICENSE.txt. Rebuild the module
+with scripts/build-compat-wasm.mjs using the Go version pinned in backend/go.mod.
+Compiled dependency notices are included in
+supabase/functions/sub2api/compat/THIRD_PARTY_LICENSES.txt.
+
 Local modifications also replace default product branding, logo and visible
 welcome copy, and use the existing compact home page. Supabase names the
 deployment platform; this project is not an official Supabase product.

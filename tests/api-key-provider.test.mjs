@@ -9,6 +9,7 @@ import {
 import { parseAccountCredentials } from "../supabase/functions/sub2api/validation.ts";
 import { nativeUsage } from "../supabase/functions/sub2api/api_key_provider.ts";
 import {providerProtocol,providerEndpoint,openCodeSession} from '../supabase/functions/sub2api/provider_routing.ts';
+import {originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
 const config = {
   url: "https://project.supabase.co",
   serviceKey: "service",
@@ -239,6 +240,51 @@ test('Command Code explicit rules override discovery and failed discovery falls 
     },{api_key:'provider-secret',...(!failure?{protocol_rules:[{pattern:'deepseek-*',protocol:'chat_completions'}]}:{})});
     const response=await value.request('/v1/chat/completions',{model:'deepseek-test',messages:[{role:'user',content:'hello'}]});
     assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'chat');assert.equal(catalogs,1);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');
+  }
+});
+
+for(const platform of ['deepseek','cline'])for(const protocol of ['responses','messages'])for(const stream of [false,true])test(`${platform} uses original Go conversion from ${protocol} to Chat with client stream=${stream}`,async()=>{
+  const value=await fixture(platform,(url,init)=>{
+    assert.equal(url,providerEndpoint(platform,{},'chat_completions'));
+    assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
+    const sent=JSON.parse(init.body);assert.equal(sent.stream,true);assert.equal(sent.max_completion_tokens,20);assert.equal(sent.temperature,0.2);assert.equal(sent.messages.at(-1).content,'hello');assert.deepEqual(sent.stream_options,{include_usage:true});
+    return sse([{id:'chat-original',choices:[{index:0,delta:{role:'assistant',content:'original conversion'},finish_reason:null}]},{choices:[{index:0,delta:{},finish_reason:'stop'}]},{choices:[],usage:{prompt_tokens:8,completion_tokens:2,prompt_tokens_details:{cached_tokens:3}}},'[DONE]']);
+  });
+  const request={model:'provider-test',stream,temperature:0.2,...(protocol==='responses'?{input:'hello',max_output_tokens:20}:{messages:[{role:'user',content:'hello'}],max_tokens:20})};
+  const response=await value.request('/v1/'+protocol,request);assert.equal(response.status,200);
+  if(stream){const text=await response.text();assert.match(text,/original conversion/);assert.match(text,protocol==='responses'?/response.completed/:/message_stop/);assert.doesNotMatch(text,/chat.completion.chunk/);}
+  else{const result=await response.json();assert.equal(protocol==='responses'?result.output.find(item=>item.type==='message').content[0].text:result.content[0].text,'original conversion');}
+  assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_input_tokens,8);assert.equal(value.finishes[0].p_output_tokens,2);assert.equal(value.finishes[0].p_cache_read_tokens,3);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(await originalChatBridgeCount(),0);
+});
+
+test('Go Chat bridge retains original OpenCode conversation identity, tools and JSON provider fallbacks',async()=>{
+  const value=await fixture('opencode_go',(url,init)=>{
+    assert.equal(url,'https://opencode.ai/zen/go/v1/chat/completions');assert.equal(init.headers.get('x-opencode-session'),'stable-conversation');
+    const sent=JSON.parse(init.body);assert.equal(sent.tools[0].function.name,'exec');
+    return Response.json({choices:[{index:0,message:{role:'assistant',tool_calls:[{id:'call-exec',type:'function',function:{name:'exec',arguments:'{"input":"echo hello"}'}}]},finish_reason:'tool_calls'}],usage:{prompt_tokens:4,completion_tokens:2}});
+  });
+  const response=await value.request('/v1/responses',{model:'glm-test',input:'execute',tools:[{type:'custom',name:'exec'}],prompt_cache_key:'stable-conversation',stream:false});
+  assert.equal(response.status,200);const result=await response.json();assert.equal(result.output[0].type,'custom_tool_call');assert.equal(result.output[0].input,'echo hello');assert.equal(await originalChatBridgeCount(),0);
+});
+
+test('Go Chat bridge releases state on upstream rejection, invalid requests and client cancellation',async()=>{
+  const invalid=await fixture('deepseek',()=>{throw Error('Invalid tool declarations must never dispatch');});
+  assert.equal((await invalid.request('/v1/responses',{model:'provider-test',input:'hi',tools:[{type:'custom',name:'duplicate'},{type:'function',name:'duplicate'}]})).status,400);assert.equal(await originalChatBridgeCount(),0);
+  const rejected=await fixture('deepseek',()=>Response.json({error:'private credential detail'},{status:400}));
+  const response=await rejected.request('/v1/responses',{model:'provider-test',input:'hi'});assert.equal(response.status,400);assert.equal((await response.text()).includes('private credential detail'),false);assert.equal(await originalChatBridgeCount(),0);
+  let cancelled=false;
+  const pending=await fixture('deepseek',()=>new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{'content-type':'text/event-stream'}}));
+  const streaming=await pending.request('/v1/responses',{model:'provider-test',input:'hi',stream:true});assert.equal(streaming.status,200);await streaming.body.cancel();assert.equal(cancelled,true);assert.equal(pending.finishes[0].p_outcome,'cancelled');assert.equal(await originalChatBridgeCount(),0);
+});
+
+test('DeepSeek Chat requests restore original reasoning placeholders without replacing known reasoning or changing other providers',async()=>{
+  for(const platform of ['deepseek','opencode_go','cline']){
+    const value=await fixture(platform,(_url,init)=>{
+      const sent=JSON.parse(init.body);assert.equal(sent.messages[0].reasoning_content,platform==='cline'?undefined:' ');assert.equal(sent.messages[1].reasoning_content,'known reasoning');
+      return Response.json({choices:[{message:{role:'assistant',content:'ok'},finish_reason:'stop'}],usage:{prompt_tokens:2,completion_tokens:1}});
+    });
+    const response=await value.request('/v1/chat/completions',{model:'deepseek-test',messages:[{role:'assistant',content:'previous'},{role:'assistant',content:'previous with reasoning',reasoning_content:'known reasoning'},{role:'user',content:'next'}]});
+    assert.equal(response.status,200);await response.json();
   }
 });
 

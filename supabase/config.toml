@@ -8,3 +8,4 @@ additional_redirect_urls = ["http://127.0.0.1:3000/auth/callback", "http://127.0
 # The function validates its own Bearer key.
 verify_jwt = false
 import_map = "./functions/sub2api/deno.json"
+static_files = ["./functions/sub2api/compat/compat.wasm.gz", "./functions/sub2api/compat/GO_LICENSE.txt", "./functions/sub2api/compat/THIRD_PARTY_LICENSES.txt"]

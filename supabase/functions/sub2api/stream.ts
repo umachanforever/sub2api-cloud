@@ -64,7 +64,7 @@ export class UsageObserver {
         ["response.completed", "response.failed", "response.incomplete"]
           .includes(event.type)
       ) {
-        this.usage.outcome = event.type === "response.completed"
+        this.usage.outcome = event.type === "response.completed" && event.response?.status !== 'incomplete'
           ? "completed"
           : event.type === "response.failed"
           ? "failed"

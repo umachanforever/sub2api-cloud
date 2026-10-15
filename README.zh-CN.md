@@ -10,6 +10,8 @@ Supabase 负责 API 鉴权、凭据刷新、供应商请求、流式响应和用
 
 ## 云端部署
 
+Chat 协议兼容层复用原版 Go 转换器，通过随项目提供的 WebAssembly 模块在 Supabase 内执行，转换过程不依赖本地 Go 服务。
+
 准备 Node.js 24+、带 Compose 2.24+ 的 Docker 和 Supabase CLI。
 
 ```sh
