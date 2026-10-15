@@ -20,13 +20,13 @@ async function storageMetadata(response:Response,maxBytes=16384):Promise<any>{
  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
  try{return JSON.parse(new TextDecoder().decode(bytes));}catch{throw new HttpError(502,'invalid_artifact_response');}
 }
-export async function putArtifact(db:Database,path:string,bytes:Uint8Array,contentType:string):Promise<void>{
+export async function putArtifact(db:Database,path:string,bytes:Uint8Array,contentType:string,signal?:AbortSignal):Promise<void>{
  const encoded=encodedPath(path);
  if(!(bytes instanceof Uint8Array))throw new HttpError(400,'invalid_artifact_size');
  if(!bytes.length||bytes.length>maxBytes)throw new HttpError(bytes.length?413:400,'invalid_artifact_size');
  if(!contentType||contentType.length>512||/[\r\n\x00]/.test(contentType))throw new HttpError(400,'invalid_artifact_content_type');
  const headers=auth(db);headers.set('content-type',contentType);headers.set('x-upsert','true');headers.set('cache-control','private, max-age=0');
- const response=await db.fetchImpl(storageURL(db,'object/'+bucket+'/'+encoded),{method:'POST',headers,body:bytes as BodyInit,signal:AbortSignal.timeout(30000),redirect:'error'});
+ const response=await db.fetchImpl(storageURL(db,'object/'+bucket+'/'+encoded),{method:'POST',headers,body:bytes as BodyInit,signal:signal?AbortSignal.any([signal,AbortSignal.timeout(30000)]):AbortSignal.timeout(30000),redirect:'error'});
  await response.body?.cancel();if(!response.ok)throw new HttpError(response.status===413?413:503,response.status===413?'artifact_too_large':'artifact_storage_unavailable');
 }
 export async function getArtifact(db:Database,path:string,signal:AbortSignal):Promise<Response>{

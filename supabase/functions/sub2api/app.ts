@@ -1,3 +1,6 @@
+import {imageJobs,kickImageJobs} from './image_jobs.ts';
+import {imageTaskSubmit,ImageTaskSubmitError} from './image_task_submit.ts';
+import {imageTaskRead} from './image_task_read.ts';
 import {grokVideo,videoRoute,VideoTaskError} from './grok_video.ts';
 import {geminiCacheJobs} from './gemini_cache_jobs.ts';
 import {geminiCacheCreate} from './gemini_cache_create.ts';
@@ -30,13 +33,16 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
+      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:(?:generations|edits)(?:\/async)?|tasks\/[^/]+))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
       if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      if (/^\/v1\/images\/(?:generations|edits)\/async$/.test(pathname)) errorContext.endpoint=pathname;
+      if (/^\/v1\/images\/tasks\/[^/]+$/.test(pathname)) errorContext.endpoint='/v1/images/tasks/:task_id';
+      if (pathname === "/internal/jobs/images") return await imageJobs(request,db);
       if (pathname === "/internal/jobs/gemini-cache") return await geminiCacheJobs(request,db);
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
@@ -69,6 +75,10 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (request.method==='POST' && pathname==='/v1beta/cachedContents') return await geminiCacheCreate(request,token,db);
       if (['DELETE','PATCH'].includes(request.method) && /^\/v1beta\/cachedContents\/[^/]+$/.test(pathname)) return await geminiCacheMutation(request,pathname,token,db);
       if (request.method === 'GET' && /^\/v1beta\/cachedContents(?:\/[^/]+)?$/.test(pathname)) return await geminiCacheRead(request,pathname,token,db);
+      const imageSubmit=/^\/v1\/images\/(generations|edits)\/async$/.exec(pathname);
+      if(imageSubmit&&request.method==='POST'){const response=await imageTaskSubmit(request,imageSubmit[1] as 'generations'|'edits',token,db);kickImageJobs(db);return response;}
+      const imageRead=/^\/v1\/images\/tasks\/([^/]+)$/.exec(pathname);
+      if(imageRead&&request.method==='GET')return await imageTaskRead(request,imageRead[1],token,db);
       if(videoRoute(pathname,request.method))return await grokVideo(request,pathname,token,db,errorContext);
       return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);
     } catch (error) {
@@ -76,7 +86,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         errorCode = error.code;
         return json(error.status, {
           error: { type: error.code, message: error.message },
-          ...(error instanceof VideoTaskError?{id:error.taskId,request_id:error.taskId}:{}),
+          ...(error instanceof VideoTaskError||error instanceof ImageTaskSubmitError?{id:error.taskId,request_id:error.taskId}:{}),
           ...(request.headers.get("x-s2a-frontend") === "1"
             ? { code: error.status, message: error.message }
             : {}),

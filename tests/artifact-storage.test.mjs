@@ -4,12 +4,12 @@ import {imageArtifactPath,putArtifact,getArtifact,signArtifact,deleteArtifacts,l
 const task='imgtask_'+'a'.repeat(32),path=imageArtifactPath(task,'request');
 function fixture(forward){return {config:{url:'https://project.supabase.co',serviceKey:'private-service-role'},fetchImpl:forward};}
 
-test('artifact storage keeps private request bytes and multipart content types intact',async()=>{
+test('artifact storage uploads opaque request bytes without multipart parsing',async()=>{
  const db=fixture(async(url,init)=>{
   assert.equal(url,'https://project.supabase.co/storage/v1/object/sub2api-artifacts/'+path);assert.equal(init.method,'POST');assert.equal(init.redirect,'error');
-  const headers=new Headers(init.headers);assert.equal(headers.get('authorization'),'Bearer private-service-role');assert.equal(headers.get('content-type'),'multipart/form-data; boundary=example');assert.equal(headers.get('x-upsert'),'true');assert.deepEqual([...init.body],[0,1,255]);return Response.json({Key:'sub2api-artifacts/'+path});
+  const headers=new Headers(init.headers);assert.equal(headers.get('authorization'),'Bearer private-service-role');assert.equal(headers.get('content-type'),'application/octet-stream');assert.equal(headers.get('x-upsert'),'true');assert.deepEqual([...init.body],[0,1,255]);return Response.json({Key:'sub2api-artifacts/'+path});
  });
- await putArtifact(db,path,new Uint8Array([0,1,255]),'multipart/form-data; boundary=example');
+ await putArtifact(db,path,new Uint8Array([0,1,255]),'application/octet-stream');
 });
 
 test('authenticated object reads preserve content and apply the caller cancellation signal',async()=>{

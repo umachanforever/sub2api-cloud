@@ -73,14 +73,16 @@ export async function imageTaskSubmit(request:Request,operation:'generations'|'e
  const id='imgtask_'+crypto.randomUUID().replaceAll('-','');
  try{
   await imageTaskRPC(db,'s2a_personal_image_task_prepare',{p_key_hash:keyHash,p_id:id,p_model:model,p_operation:operation,p_content_type:contentType,p_body_hash:await imageBytesHash(bytes),p_body_size:bytes.length,p_client_ip:clientIP},id);
+  // Store the wire envelope as opaque bytes: Storage parses multipart content types.
   // Upload retries overwrite the same private object, never submit inference.
   for(let attempt=0;;attempt++){
-   try{await putArtifact(db,imageArtifactPath(id,'request'),bytes,contentType);break;}
+   try{await putArtifact(db,imageArtifactPath(id,'request'),bytes,'application/octet-stream');break;}
    catch(error){if(attempt===1||error instanceof HttpError&&error.status!==503)throw error;}
   }
   const task=await imageTaskRPC(db,'s2a_personal_image_task_ready',{p_key_hash:keyHash,p_id:id,p_client_ip:clientIP},id);
-  const url=new URL(request.url);url.pathname=url.pathname.replace(/\/images\/(?:generations|edits)\/async$/,'/images/tasks/'+id);url.search='';url.hash='';
-  const response=json(202,{id,task_id:id,object:task.object,status:task.status,created_at:task.created_at,expires_at:task.expires_at,poll_url:url.href});
-  response.headers.set('location',url.href);response.headers.set('retry-after','3');return response;
+  const path=new URL(request.url).pathname,route=path.replace(/^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,'');
+  const pollURL=(route===path?'':'/functions/v1/sub2api')+route.replace(/\/images\/(?:generations|edits)\/async$/,'/images/tasks/'+id);
+  const response=json(202,{id,task_id:id,object:task.object,status:task.status,created_at:task.created_at,expires_at:task.expires_at,poll_url:pollURL});
+  response.headers.set('location',pollURL);response.headers.set('retry-after','3');return response;
  }catch(error){throw new ImageTaskSubmitError(error,id);}
 }

@@ -21,7 +21,7 @@ test('async image submission freezes owner, content digest and exact private byt
  const f=fixture(),req=request({prompt:'Tree',custom:'preserved'}),bytes=new Uint8Array(await req.clone().arrayBuffer());
  const response=await imageTaskSubmit(req,'generations','sk-client',f.db),value=await response.json();
  assert.equal(response.status,202);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(response.headers.get('retry-after'),'3');
- assert.match(value.id,/^imgtask_[a-f0-9]{32}$/);assert.equal(value.poll_url,'https://gateway/functions/v1/sub2api/v1/images/tasks/'+value.id);assert.equal(response.headers.get('location'),value.poll_url);
+ assert.match(value.id,/^imgtask_[a-f0-9]{32}$/);assert.equal(value.poll_url,'/functions/v1/sub2api/v1/images/tasks/'+value.id);assert.equal(response.headers.get('location'),value.poll_url);
  assert.equal(value.result_path,undefined);assert.equal(value.result_hash,undefined);
  assert.deepEqual(f.calls.map(call=>call.name),['s2a_personal_key_policy','s2a_personal_image_task_prepare','s2a_personal_image_task_ready']);
  const args=f.calls[1].args;assert.equal(args.p_key_hash,await hashKey('sk-client'));assert.equal(args.p_client_ip,'192.0.2.2');assert.equal(args.p_model,'gpt-image-2');assert.equal(args.p_body_hash,await imageBytesHash(bytes));assert.equal(args.p_body_size,bytes.length);
@@ -33,7 +33,7 @@ test('multipart staging preserves original boundaries, filenames and binary uplo
  const f=fixture(),form=new FormData();form.set('model','image-alias');form.set('prompt','Edit');form.set('stream','false');form.append('image[]',new Blob([Uint8Array.of(0,255,1)],{type:'image/png'}),'input.png');
  const req=new Request('https://gateway/images/edits/async',{method:'POST',body:form}),bytes=new Uint8Array(await req.clone().arrayBuffer()),contentType=req.headers.get('content-type');
  assert.equal((await imageTaskSubmit(req,'edits','sk-client',f.db)).status,202);
- assert.deepEqual(f.uploads[0].init.body,bytes);assert.equal(new Headers(f.uploads[0].init.headers).get('content-type'),contentType);assert.equal(f.calls[1].args.p_operation,'edits');
+ assert.deepEqual(f.uploads[0].init.body,bytes);assert.equal(new Headers(f.uploads[0].init.headers).get('content-type'),'application/octet-stream');assert.equal(f.calls[1].args.p_content_type,contentType);assert.equal(f.calls[1].args.p_operation,'edits');
 });
 
 test('malformed, streaming and missing edit inputs never persist jobs or artifacts',async()=>{
@@ -82,4 +82,11 @@ test('key admission fails before consuming or storing an uploaded request',async
 test('unsupported content types and storage quota failures never mark tasks ready',async()=>{
  const unsupported=fixture();await assert.rejects(imageTaskSubmit(request({prompt:'Tree'},{'content-type':'text/plain'}),'generations','sk-client',unsupported.db),error=>error.status===415);assert.equal(unsupported.calls.length,1);
  const quota=fixture({uploadFailure:()=>new Response('limit',{status:413})});await assert.rejects(imageTaskSubmit(request(),'generations','sk-client',quota.db),error=>error instanceof ImageTaskSubmitError&&error.status===413);assert.equal(quota.uploads.length,1);assert.equal(quota.calls.filter(call=>call.name==='s2a_personal_image_task_ready').length,0);
+});
+
+test('Supabase internal request origins never escape into public polling locations',async()=>{
+ for(const path of ['/sub2api/v1/images/generations/async','/functions/v1/sub2api/v1/images/generations/async']){
+  const f=fixture(),req=new Request('http://edge-runtime:9000'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({prompt:'Tree'})});
+  const response=await imageTaskSubmit(req,'generations','sk-client',f.db),value=await response.json();assert.equal(value.poll_url,'/functions/v1/sub2api/v1/images/tasks/'+value.id);assert.equal(response.headers.get('location'),value.poll_url);assert.ok(!JSON.stringify(value).includes('edge-runtime'));
+ }
 });
