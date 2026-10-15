@@ -1,3 +1,4 @@
+import {compositeModelCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -63,6 +64,7 @@ type ProviderAccount = Account & {
   type?: "oauth" | "apikey";
 };
 type Reservation =
+  | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources; error?: never }
   | {
     error: string;
@@ -297,6 +299,10 @@ async function proxyWithIdentity(
     });
     if (reservation.error) {
       throw new HttpError(reservation.status, reservation.error);
+    }
+    if('composite_catalog' in reservation){
+      if(!models||nativeGeminiModels||codexModels||clientVersion!==null)throw new HttpError(503,'composite_manifest_unavailable');
+      return json(200,compositeModelCatalog(reservation.composite_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));
     }
     const { account, lease_id, model_allowlist, upstream_model, model_sources } = reservation as {
       account: ProviderAccount;

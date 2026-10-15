@@ -110,8 +110,7 @@ BEGIN
     SELECT * INTO k FROM public.api_keys WHERE id=(identity->>'key_id')::bigint;
     SELECT * INTO g FROM public.groups WHERE id=k.group_id;
     target_platform:=g.platform; routed_model:=p_model;
-    IF g.platform='composite' THEN
-        IF p_model='__models__' THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
+    IF g.platform='composite' AND p_model<>'__models__' THEN
         SELECT l.composite_route INTO route FROM s2a_private.personal_gateway_leases l
             WHERE l.request_id=p_request_id AND l.key_id=k.id ORDER BY l.created_at DESC LIMIT 1;
         IF route IS NULL THEN
@@ -154,6 +153,11 @@ BEGIN
         END LOOP;
     ELSIF jsonb_array_length(coalesce(k.ip_blacklist, '[]'::jsonb)) > 0 THEN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
+    END IF;
+    IF p_model='__models__' AND g.platform='composite' THEN
+        IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^/v1/models(/[^/]+)?$'
+            THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
+        RETURN jsonb_build_object('composite_catalog',s2a_private.composite_catalog_sources(g.id),'model_allowlist',g.model_allowlist);
     END IF;
     IF p_model <> '__models__' AND coalesce((g.model_allowlist->>'enabled')::boolean, false) THEN
         allowed := false;

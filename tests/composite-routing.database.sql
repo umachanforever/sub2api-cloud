@@ -18,6 +18,12 @@ BEGIN
  (g,'alias-long','exact','openai','gpt-6','any',100),
  (g,'alias-long','exact','grok','grok-4.6','responses',200),
  (g,'alias-','prefix','openai','gpt-6','chat_completions',100);
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF NOT acquired ? 'composite_catalog' OR acquired ? 'account' OR acquired ? 'lease_id' THEN RAISE EXCEPTION 'Composite catalog acquisition requires provider lease'; END IF;
+ UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]'::jsonb WHERE s2a_key_hash=h;
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF acquired->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'Composite catalog bypassed IP policy'; END IF;
+ UPDATE public.api_keys SET ip_whitelist='[]'::jsonb WHERE s2a_key_hash=h;
  catalog:=s2a_private.composite_catalog_sources(g);
  IF jsonb_array_length(catalog->'sources')<>2 OR jsonb_array_length(catalog->'routes')<>4 THEN RAISE EXCEPTION 'Composite catalog sources missing'; END IF;
  IF catalog::text LIKE '%synthetic%' OR catalog::text LIKE '%api_key%' OR catalog::text LIKE '%credential%' THEN RAISE EXCEPTION 'Composite catalog leaked provider credentials'; END IF;
