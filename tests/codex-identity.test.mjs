@@ -55,3 +55,30 @@ test('cloud model discovery uses the same current version in catalog query and i
  assert.equal(response.status,200);assert.equal(upstream,1);
  assert.equal((await response.json()).data[0].id,'gpt-6.1-sol');
 });
+
+
+test('cloud release fallback excludes other components and prereleases and selects the highest stable version', async () => {
+ for (const latest of [null, {tag_name:'rusty-v8-v9.0.0',draft:false,prerelease:false}]) {
+  const paths=[];
+  const db=new Database({url:'https://db.example',serviceKey:'secret',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
+   const parsed=new URL(url);
+   if(parsed.hostname==='api.github.com') {
+    paths.push(parsed.pathname+parsed.search);
+    assert.equal(init.redirect,'error');
+    if(parsed.pathname.endsWith('/latest')) return latest ? Response.json(latest) : new Response(null,{status:503});
+    return Response.json([
+     {tag_name:'rust-v0.99.9',draft:false,prerelease:false},
+     {tag_name:'rust-v0.163.0',draft:false,prerelease:false},
+     {tag_name:'rust-v0.164.0-alpha.1',draft:false,prerelease:true},
+     {tag_name:'rust-v0.200.0',draft:true,prerelease:false},
+     {tag_name:'other-v9.0.0',draft:false,prerelease:false},
+     {tag_name:'rust-v0.162.1',draft:false,prerelease:false},
+    ]);
+   }
+   assert.equal(JSON.parse(init.body).p_version,'0.163.0');
+   return Response.json({version:'0.163.0',synced_at:new Date().toISOString()});
+  });
+  assert.equal((await currentCodexIdentity(db,{codex_settings:{synced:'0.162.1'}},{access_token:'secret'})).version,'0.163.0');
+  assert.deepEqual(paths,['/repos/openai/codex/releases/latest','/repos/openai/codex/releases?per_page=30']);
+ }
+});

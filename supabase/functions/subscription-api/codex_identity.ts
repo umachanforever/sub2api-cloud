@@ -26,6 +26,30 @@ export function resolveCodexIdentity(settings: CodexSettings = {}, credentials?:
   const originator = pair?.originator ?? 'codex-tui';
   return { version, originator, userAgent: `${originator}/${version}${pair?.suffix ?? ' (Ubuntu 22.4.0; x86_64) xterm-256color'}` };
 }
+function stableReleaseVersion(value: unknown): string | undefined {
+  if (!value || typeof value !== 'object') return;
+  const release = value as Record<string, unknown>;
+  return typeof release.tag_name === 'string' && /^rust-v\d+\.\d+\.\d+$/.test(release.tag_name) && release.draft === false && release.prerelease === false ? release.tag_name.slice(6) : undefined;
+}
+async function fetchStableVersion(db: Database): Promise<string | undefined> {
+  const fetchRelease = async (path: string): Promise<unknown> => {
+    try {
+      const response = await db.fetchImpl(`https://api.github.com/repos/openai/codex/releases${path}`, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'sub2api-supabase' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
+      if (!response.ok) { await response.body?.cancel(); return; }
+      return await response.json();
+    } catch { return; }
+  };
+  const latest = stableReleaseVersion(await fetchRelease('/latest'));
+  if (latest) return latest;
+  const releases = await fetchRelease('?per_page=30');
+  if (!Array.isArray(releases)) return;
+  // Compare numeric components: release order can include historical re-releases.
+  return releases.map(stableReleaseVersion).filter((version): version is string => !!version).sort((a, b) => {
+    const left = a.split('.').map(Number), right = b.split('.').map(Number);
+    for (let index = 0; index < 3; index++) if (left[index] !== right[index]) return right[index] - left[index];
+    return 0;
+  })[0];
+}
 const attempts = new WeakMap<Database, { until: number; pending?: Promise<void>; saved?: { version?: string; synced_at?: string } }>();
 export async function currentCodexIdentity(db: Database, account: { codex_settings?: CodexSettings }, credentials: OAuthCredentials): Promise<CodexIdentity> {
   const settings = { ...account.codex_settings };
@@ -37,10 +61,7 @@ export async function currentCodexIdentity(db: Database, account: { codex_settin
     const state: { until: number; pending?: Promise<void>; saved?: { version?: string; synced_at?: string } } = { until: Date.now() + 60000 };
     state.pending = (async () => {
       try {
-        const response = await db.fetchImpl('https://api.github.com/repos/openai/codex/releases/latest', { headers: { accept: 'application/vnd.github+json', 'user-agent': 'sub2api-supabase' }, signal: AbortSignal.timeout(3000), redirect: 'error' });
-        if (!response.ok) { await response.body?.cancel(); return; }
-        const release = await response.json();
-        const version = typeof release.tag_name === 'string' && /^rust-v\d+\.\d+\.\d+$/.test(release.tag_name) && release.draft === false && release.prerelease === false ? release.tag_name.slice(6) : undefined;
+        const version = await fetchStableVersion(db);
         if (!version) return;
         const saved = await db.rpc<{ version?: string; synced_at?: string }>('s2a_gateway_codex_version_save', { p_version: version });
         if (saved.version) { state.saved = saved; settings.synced = saved.version; settings.synced_at = saved.synced_at; state.until = Date.now() + 6 * 3600000; }
