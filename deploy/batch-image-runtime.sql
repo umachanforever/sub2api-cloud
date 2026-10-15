@@ -372,7 +372,7 @@ BEGIN
     IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 100 OR p_offset IS NULL OR p_offset NOT BETWEEN 0 AND 1000000 THEN RETURN jsonb_build_object('error','invalid_batch_pagination','status',400); END IF;
     SELECT count(*) INTO total FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
         WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL
-            AND (coalesce(p_filters->>'status','') IN ('','all') OR j.status=CASE p_filters->>'status' WHEN 'queued' THEN 'submitted' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
+            AND (coalesce(p_filters->>'status','') IN ('','all') OR (p_filters->>'status'='queued' AND j.status IN ('created','uploading','submitted')) OR j.status=CASE p_filters->>'status' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
             AND (coalesce(p_filters->>'task_name','')='' OR position(lower(p_filters->>'task_name') IN lower(coalesce(j.task_name,'')))>0)
             AND (NOT p_filters ? 'downloaded' OR (j.downloaded_at IS NOT NULL)=(p_filters->>'downloaded')::boolean)
             AND (NOT p_filters ? 'from' OR j.created_at>=(p_filters->>'from')::timestamptz)
@@ -380,7 +380,7 @@ BEGIN
     SELECT coalesce(jsonb_agg(public.s2a_batch_image_read(p_key_hash,q.batch_id,p_client_ip)-'items' ORDER BY q.created_at DESC,q.batch_id DESC),'[]'::jsonb) INTO entries
         FROM (SELECT r.batch_id,j.created_at FROM s2a_private.batch_image_runtime r JOIN public.batch_image_jobs j ON j.batch_id=r.batch_id
             WHERE r.user_id=(identity->>'user_id')::bigint AND r.key_id=(identity->>'key_id')::bigint AND r.group_id=(identity->>'group_id')::bigint AND j.user_deleted_at IS NULL
-            AND (coalesce(p_filters->>'status','') IN ('','all') OR j.status=CASE p_filters->>'status' WHEN 'queued' THEN 'submitted' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
+            AND (coalesce(p_filters->>'status','') IN ('','all') OR (p_filters->>'status'='queued' AND j.status IN ('created','uploading','submitted')) OR j.status=CASE p_filters->>'status' WHEN 'processing_results' THEN 'indexing' ELSE p_filters->>'status' END)
             AND (coalesce(p_filters->>'task_name','')='' OR position(lower(p_filters->>'task_name') IN lower(coalesce(j.task_name,'')))>0)
             AND (NOT p_filters ? 'downloaded' OR (j.downloaded_at IS NOT NULL)=(p_filters->>'downloaded')::boolean)
             AND (NOT p_filters ? 'from' OR j.created_at>=(p_filters->>'from')::timestamptz)

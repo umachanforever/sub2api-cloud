@@ -72,6 +72,7 @@ BEGIN
  IF public.s2a_batch_image_read(other_hash,ident)->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key read'; END IF;
  IF public.s2a_batch_image_list(other_hash)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'cross-key list'; END IF;
  IF public.s2a_batch_image_list(h)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'own batch missing from list'; END IF;
+ IF public.s2a_batch_image_list(h,p_filters=>'{"status":"queued"}'::jsonb)->>'total' IS DISTINCT FROM '1' OR jsonb_array_length(public.s2a_batch_image_list(h,p_filters=>'{"status":"queued"}'::jsonb)->'data')<>1 THEN RAISE EXCEPTION 'queued filter hides pre-submission task'; END IF;
  IF public.s2a_batch_image_content_resolve(h,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_not_completed' THEN RAISE EXCEPTION 'pending output readable'; END IF;
  IF public.s2a_batch_image_content_resolve(other_hash,ident,'cover')->>'error' IS DISTINCT FROM 'batch_image_forbidden' THEN RAISE EXCEPTION 'cross-key content'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
