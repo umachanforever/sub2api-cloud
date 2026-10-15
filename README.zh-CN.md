@@ -48,7 +48,7 @@ Gemini 的 `cachedContent` 引用限定于创建缓存的密钥和分组，并�
 `POST /v1beta/cachedContents` 通过 Gemini API Key 账号创建缓存，支持模型映射，默认有效期 1 小时、最长 24 小时，并固定密钥、分组和账号归属。上游资源携带唯一创建标识，请求发送前保存创建意图。
 `GET /v1beta/cachedContents` 分页列出当前密钥和分组所属的有效缓存，支持 `pageSize` 和 `pageToken`。`GET /v1beta/cachedContents/{id}` 返回公开缓存信息，不暴露上游资源名或账号标识。
 `DELETE /v1beta/cachedContents/{id}` 通过缓存绑定的 API Key 账号删除资源，仅在上游确认资源不存在后移除本地绑定。
-`PATCH /v1beta/cachedContents/{id}` 支持更新 `ttl` 或 `expireTime`（最长 24 小时），保留缓存身份，并串行处理更新与删除。中断操作保留占用状态，恢复时先检查绑定的上游资源。
+`PATCH /v1beta/cachedContents/{id}` 支持更新 `ttl` 或 `expireTime`（最长 24 小时），保留缓存身份，并串行处理更新与删除。中断操作保留占用状态，恢复时先将绑定上游的有效期回滚到记录值；不存在或即将过期的资源会被移除。
 
 ## 本地 Supabase
 

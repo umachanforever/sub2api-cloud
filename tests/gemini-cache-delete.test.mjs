@@ -42,3 +42,19 @@ for(const scenario of ['wrong-account','provider-network','persistence-failure']
  assert.equal(response.status,scenario==='wrong-account'?503:scenario==='provider-network'?502:409);
  assert.equal(forwards,scenario==='wrong-account'?0:1);assert.equal(writes,scenario==='persistence-failure'?1:0);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'failed');
 });
+for(const expired of [false,true])test(`delete recovery completes when the upstream cache is ${expired?'expiring':'already absent'}`,async()=>{
+ const credentials=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);let forwards=0,deletions=0;const finishes=[];
+ const rollback=new Date(Date.now()+(expired?500:3600000)).toISOString();
+ const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_cache_read'))return Response.json({model:'models/gemini-cache'});
+  if(String(url).endsWith('/s2a_personal_cache_resolve'))return Response.json({account_id:'1',upstream_name:'cachedContents/private',upstream_model:'gemini-upstream'});
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...credentials,id:'1',platform:'gemini',credential_version:1}});
+  if(String(url).endsWith('/s2a_personal_cache_mutation'))return Response.json({claimed:true,recover:true,rollback_expire_time:rollback});
+  if(String(url).endsWith('/s2a_personal_cache_deleted')){deletions++;return Response.json({deleted:true});}
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(String(url).includes('/rpc/'))return Response.json(null);
+  forwards++;assert.equal(init.method,expired?'DELETE':'PATCH');if(!expired)assert.equal(JSON.parse(init.body).expireTime,rollback);return new Response(null,{status:expired?204:404});
+ });
+ const response=await handler(new Request('https://gateway/v1beta/cachedContents/public',{method:'DELETE',headers:{authorization:'Bearer sk-client'}}));
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),{});assert.equal(forwards,1);assert.equal(deletions,1);assert.equal(finishes[0].p_outcome,'completed');
+});

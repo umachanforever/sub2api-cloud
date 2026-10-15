@@ -89,7 +89,7 @@ Gemini `cachedContent` references are scoped to their owning key and group and s
 `POST /v1beta/cachedContents` creates a cache through a Gemini API-key account, with model mapping, a default one-hour lifetime, a maximum 24-hour lifetime, and key/group/account ownership. Provider resources carry a unique creation tag; creation intents are retained before dispatch.
 `GET /v1beta/cachedContents` lists active caches owned by the current key and group, with `pageSize` and `pageToken` pagination. `GET /v1beta/cachedContents/{id}` returns the public cache metadata without exposing provider resource names or account identifiers.
 `DELETE /v1beta/cachedContents/{id}` deletes an owned cache through its bound API-key account and removes its local binding only after the provider confirms absence.
-`PATCH /v1beta/cachedContents/{id}` updates `ttl` or `expireTime` (up to 24 hours), with immutable cache identity and serialized updates/deletions. Interrupted mutations retain ownership until recovery checks the bound provider.
+`PATCH /v1beta/cachedContents/{id}` updates `ttl` or `expireTime` (up to 24 hours), with immutable cache identity and serialized updates/deletions. Interrupted mutations retain ownership until recovery restores the recorded expiry on the bound provider; resources that are absent or expiring are removed.
 
 ### Subscription usage
 

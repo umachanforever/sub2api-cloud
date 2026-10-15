@@ -41,9 +41,25 @@ export async function geminiCacheMutation(request:Request,path:string,token:stri
   if(claim?.claimed!==true)throw new HttpError(503,'cache_mutation_unavailable');
   claimed=true;
   if(claim.recover){
-   const recovery=await accountFetch(db,account,outgoing.url,{...outgoing.init,method:'GET'});
-   await recovery.body?.cancel();
-   if(!recovery.ok&&recovery.status!==404)throw new HttpError(502,'cache_mutation_recovery_failed');
+   const rollback=claim.rollback_expire_time;
+   if(typeof rollback!=='string'||!Number.isFinite(Date.parse(rollback)))throw new HttpError(503,'invalid_cache_recovery_state');
+   const expired=Date.parse(rollback)<=Date.now()+1000;
+   const recovery=await accountFetch(db,account,outgoing.url+(expired?'':'?updateMask=expireTime'),{
+    ...outgoing.init,method:expired?'DELETE':'PATCH',...(expired?{}:{body:JSON.stringify({expireTime:rollback})}),
+   });
+   if((expired&&recovery.ok)||recovery.status===404){
+    await recovery.body?.cancel();
+    const forgotten=await db.rpc<Result>('s2a_personal_cache_deleted',{p_key_hash:keyHash,p_name:name,p_lease_id:reservation.lease_id,p_client_ip:ip});
+    if(forgotten?.error)throw new HttpError(forgotten.status??503,forgotten.error);
+    if(forgotten?.deleted!==true)throw new HttpError(503,'cache_recovery_persistence_failed');
+    confirmed=true;
+    if(patch)throw new HttpError(404,'cached_content_not_found');
+    completed=true;status=200;return json(200,{});
+   }
+   if(!recovery.ok){await recovery.body?.cancel();throw new HttpError(502,'cache_mutation_recovery_failed');}
+   let restored:Record<string,unknown>;
+   try{restored=await readBody(new Request('https://cache.invalid',{method:'POST',body:recovery.body,duplex:'half'} as RequestInit),1048576);}catch{throw new HttpError(502,'invalid_cache_recovery_response');}
+   if(restored.name!==binding.upstream_name||typeof restored.expireTime!=='string'||!Number.isFinite(Date.parse(restored.expireTime))||Math.abs(Date.parse(restored.expireTime)-Date.parse(rollback))>1000)throw new HttpError(502,'invalid_cache_recovery_response');
   }
   outgoing.init.method=patch?'PATCH':'DELETE';
   if(patch){

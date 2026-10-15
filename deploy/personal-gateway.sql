@@ -405,7 +405,7 @@ BEGIN
         END IF;
         recovering:=item.mutation_lease IS NOT NULL AND item.mutation_lease<>p_lease_id;
         UPDATE public.gemini_cached_contents SET mutation_lease=p_lease_id,mutation_until=lease.expires_at+interval '30 seconds' WHERE id=item.id;
-        RETURN jsonb_build_object('claimed',true,'recover',recovering);
+        RETURN jsonb_build_object('claimed',true,'recover',recovering,'rollback_expire_time',item.expire_time);
     END IF;
     IF item.mutation_lease IS DISTINCT FROM p_lease_id THEN RETURN jsonb_build_object('error','cache_mutation_conflict','status',409); END IF;
     IF p_action='apply' THEN

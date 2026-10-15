@@ -175,7 +175,9 @@ BEGIN
     UPDATE public.gemini_cached_contents SET mutation_lease=gen_random_uuid(),mutation_until=now()+interval '1 hour' WHERE public_id='cache-fixture';
     IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim')->>'error' IS DISTINCT FROM 'cache_mutation_in_progress' THEN RAISE EXCEPTION 'concurrent cache mutation admitted'; END IF;
     UPDATE public.gemini_cached_contents SET mutation_until=now()-interval '1 second' WHERE public_id='cache-fixture';
-    IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim')->>'recover' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache mutation recovery not requested'; END IF;
+    result:=public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim');
+    IF result->>'recover' IS DISTINCT FROM 'true' OR (result->>'rollback_expire_time')::timestamptz IS DISTINCT FROM
+        (SELECT expire_time FROM public.gemini_cached_contents WHERE public_id='cache-fixture') THEN RAISE EXCEPTION 'cache recovery omitted canonical expiry'; END IF;
     IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'apply',now()+interval '2 hours')->>'updated' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache expiry mutation failed'; END IF;
     IF NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id='cache-fixture' AND expire_time>now()+interval '110 minutes' AND upstream_name='cachedContents/provider-private') THEN RAISE EXCEPTION 'cache expiry or immutable binding changed incorrectly'; END IF;
     PERFORM public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'release');
