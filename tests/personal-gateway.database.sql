@@ -407,3 +407,28 @@ BEGIN
  IF r ? 'error' THEN RAISE EXCEPTION 'RPM did not reset at minute boundary'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint; g bigint; a bigint; b bigint; h text; r jsonb;
+BEGIN
+ IF NOT s2a_private.account_mapping_accepts('gemini','{}','{"gemini-3.1-pro-preview":"target"}','gemini-3.1-pro-preview-customtools')
+     OR NOT s2a_private.account_mapping_accepts('openai','{}','{"gpt-6*":"target"}','gpt-6.1')
+     OR s2a_private.account_mapping_accepts('openai','{}','{"gpt-6*":"target"}','GPT-6.1')
+     OR NOT s2a_private.account_mapping_accepts('openai','{"openai_passthrough":true}','{"only":"target"}','other')
+     OR s2a_private.account_mapping_accepts('openai','{"openai_passthrough":false,"openai_oauth_passthrough":true}','{"only":"target"}','other')
+     OR NOT s2a_private.account_mapping_accepts('openai','{}','{"only":"target"}','__models__')
+     THEN RAISE EXCEPTION 'account mapping rules mismatch'; END IF;
+ INSERT INTO public.users(email,password_hash,concurrency) VALUES('mapping-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('Mapping fixture','openai') RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Mapping') RETURNING s2a_key_hash INTO h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Unsupported preferred account','openai','apikey','{"api_key":"synthetic","model_mapping":{"other":"other"}}',10,0) RETURNING id INTO a;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Supported fallback account','openai','apikey','{"api_key":"synthetic","model_mapping":{"gpt-*":"gpt-6-sol"}}',10,10) RETURNING id INTO b;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
+ r:=public.s2a_personal_acquire(h,'gpt-6',gen_random_uuid());
+ IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'scheduler selected unsupported mapped account'; END IF;
+ IF EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE account_id=a) THEN RAISE EXCEPTION 'unsupported account consumed a slot'; END IF;
+ IF public.s2a_personal_acquire(h,'unmapped-model',gen_random_uuid())->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'scheduler ignored explicit account allowlists'; END IF;
+END $$;
+ROLLBACK;

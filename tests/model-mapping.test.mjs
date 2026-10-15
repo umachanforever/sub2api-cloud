@@ -18,6 +18,7 @@ test('mapping lookup is exact then longest case-sensitive wildcard with prototyp
  const mapping=modelMapping(JSON.parse('{"*":"fallback","alias*":"broad","alias-long*":"specific","alias-long":"exact","__proto__":"safe"}'));
  assert.equal(mappedTarget(mapping,'alias-long','openai'),'exact');assert.equal(mappedTarget(mapping,'alias-longer','openai'),'specific');assert.equal(mappedTarget(mapping,'Alias-long','openai'),'fallback');assert.equal(mappedTarget(mapping,'__proto__','openai'),'safe');assert.equal(mappedTarget({},'constructor','openai'),undefined);
  assert.equal(mappedTarget({'gemini-3.1-pro-preview':'mapped'},'gemini-3.1-pro-preview-customtools','gemini'),'mapped');
+ assert.equal(mappedTarget({'gemini-3.1-pro-preview':'mapped'},'gemini-3.1-pro-preview-customtools','antigravity'),'mapped');
 });
 test('mapped catalogs preserve metadata and envelope fields while exposing only configured aliases',()=>{
  const sources={mapping:{alias:'gpt-4.1','family*':'gpt-4.1'},include_upstream:false};

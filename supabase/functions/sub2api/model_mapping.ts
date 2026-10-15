@@ -25,7 +25,7 @@ export type ModelSources={mapping:Record<string,string>;include_upstream:boolean
 export function mappedTarget(mapping:Record<string,string>,model:string,platform:string):string|undefined {
  const lookup=(name:string)=>Object.hasOwn(mapping,name)?mapping[name]:Object.keys(mapping).filter(pattern=>pattern.endsWith('*')&&name.startsWith(pattern.slice(0,-1))).sort((a,b)=>new TextEncoder().encode(b).length-new TextEncoder().encode(a).length || (a<b?-1:a>b?1:0)).map(pattern=>mapping[pattern])[0];
  const exact=lookup(model);if(exact!==undefined)return exact;
- const normalized=platform==='gemini'&&model.trim()==='gemini-3.1-pro-preview-customtools'?'gemini-3.1-pro-preview':model.trim();
+ const normalized=['gemini','antigravity'].includes(platform)&&model.trim()==='gemini-3.1-pro-preview-customtools'?'gemini-3.1-pro-preview':model.trim();
  return normalized!==model?lookup(normalized):undefined;
 }
 export function mappedCatalog(value:Record<string,any>,sources:ModelSources|undefined,platform:string):Record<string,any> {
