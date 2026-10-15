@@ -75,7 +75,8 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   if(transport){const endpoint=new URL(`${transport.protocol}://${transport.host.includes(':')?'['+transport.host+']':transport.host}:${transport.port}`);endpoint.username=transport.username;endpoint.password=transport.password;agent=new ProxyAgent({getProxyForUrl:()=>endpoint.href});}
   signal.throwIfAborted();upstream=dial(target,{headers:Object.fromEntries(headers),agent,followRedirects:false,handshakeTimeout:15000,maxPayload:MAX,perMessageDeflate:false});
   upstream.on('error',()=>fail(new HttpError(502,'upstream_unavailable')));
-  upstream.on('close',code=>{void close(code===1000?1000:1011,active?502:200,active?'incomplete':'completed');});
+  // Completion persistence can outlast the provider's close handshake.
+  upstream.on('close',code=>{void events.then(()=>close(code===1000?1000:1011,active?502:200,active?'incomplete':'completed'));});
   upstream.on('message',(bytes,binary)=>{
    if(ended)return;
    const size=Array.isArray(bytes)?bytes.reduce((sum,chunk)=>sum+chunk.byteLength,0):bytes.byteLength;eventBytes+=size;eventCount++;

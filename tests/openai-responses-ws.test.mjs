@@ -16,7 +16,7 @@ async function setup(t,options={}){
  const db=new Database({url:'https://db.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),dataModel:'native'},async(url,init)=>{
   if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:options.platform??'openai'});
   if(String(url).endsWith('/s2a_personal_acquire')){requests.push(JSON.parse(init.body));return Response.json({lease_id:'lease-'+requests.length,account:{...stored,id:'1',type:'apikey',platform:options.platform??'openai',websocket_settings:options.settings,credential_version:1}});}
-  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));if(options.finishDelay)await new Promise(resolve=>setTimeout(resolve,options.finishDelay));return Response.json({applied:true});}
   if(options.fetch)return options.fetch(url,init);
   throw Error('Unexpected RPC');
  });
@@ -68,4 +68,17 @@ test('Responses WebSocket HTTP bridge preserves two-turn history for OpenAI and 
 test('disabled Responses WebSocket account cannot open an upstream connection',async t=>{
  const f=await setup(t,{settings:{openai_apikey_responses_websockets_v2_enabled:false}}),done=waitFor(f.client,e=>e.type==='error');
  f.client.onmessage({data:JSON.stringify({model:'gpt-6.1',input:'Hello'})});assert.equal((await done).error.code,'websocket_disabled_for_account');assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_status,403);
+});
+
+test('Responses WebSocket drains completed frames before a provider clean close',async t=>{
+ const f=await setup(t,{finishDelay:100});
+ f.server.on('connection',socket=>socket.on('message',()=>{
+  socket.send(JSON.stringify({type:'response.output_text.delta',delta:'OK'}));
+  socket.send(JSON.stringify({type:'response.completed',response:{id:'resp_closed',usage:{input_tokens:10,output_tokens:2}}}));
+  socket.close(1000);
+ }));
+ const done=waitFor(f.client,event=>event.type==='response.completed');
+ f.client.onmessage({data:JSON.stringify({model:'gpt-6.1',input:'Hello'})});
+ await done;
+ assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_outcome,'completed');
 });
