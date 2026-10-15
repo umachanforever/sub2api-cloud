@@ -82,13 +82,16 @@ export async function proxy(
   }
   const models = (path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
+  const images = ["/v1/images/generations", "/images/generations"].includes(path) && request.method === "POST";
   const chat = path === "/v1/chat/completions" && request.method === "POST";
   const messages = path === "/v1/messages" && request.method === "POST";
   const gemini = request.method === "POST"
     ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent)$/
       .exec(path)
     : null;
-  const protocol: NativeProtocol = models
+  const protocol: NativeProtocol = images
+    ? "images"
+    : models
     ? "models"
     : chat
     ? "chat"
@@ -106,7 +109,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini) {
+  if (!models && !responses && !chat && !messages && !gemini && !images) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -124,7 +127,7 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = chat || messages ? raw.stream === true : raw.stream !== false;
+      stream = chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -139,6 +142,7 @@ export async function proxy(
         (chat || messages) &&
         (!Array.isArray(raw.messages) || !raw.messages.length)
       ) throw new HttpError(400, "invalid_request");
+      if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
       if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
         throw new HttpError(400, "invalid_request");
       }
@@ -243,6 +247,7 @@ export async function proxy(
       return finishing;
     };
     try {
+      if (images && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";

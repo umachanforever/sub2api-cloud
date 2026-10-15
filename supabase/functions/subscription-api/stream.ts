@@ -9,6 +9,7 @@ export type Usage = {
 
 export function hasGeneratedToken(event: Record<string, any>): boolean {
   const nonempty = (value: unknown) => typeof value === "string" && value.length > 0;
+  if (["image_generation.partial_image", "image_generation.completed"].includes(event.type)) return nonempty(event.partial_image_b64) || nonempty(event.b64_json);
   if (typeof event.type === "string" && event.type.startsWith("response.") && event.type.endsWith(".delta")) return nonempty(event.delta);
   if (event.type === "content_block_delta") return [event.delta?.text, event.delta?.thinking, event.delta?.partial_json].some(nonempty);
   if (Array.isArray(event.choices)) return event.choices.some((choice: any) =>

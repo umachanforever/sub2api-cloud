@@ -41,6 +41,8 @@ The local Node service serves the Vue console, proxies management HTTP and WebSo
 
 ## Provider protocols
 
+OpenAI API-key accounts support image generation through `/v1/images/generations` and `/images/generations`. Image options and JSON results are preserved; SSE accepts image frames up to 16 MiB, records provider-reported input/output tokens, and marks streams without a completion event as incomplete. Upstream errors remain sanitized.
+
 OpenAI API-key accounts also accept Anthropic Messages requests through the Responses API. The bridge preserves system instructions, images, tool definitions and results, output limits, sampling options, and provider-reported usage. Clients receive Anthropic JSON or SSE according to their requested stream mode; upstream streaming is used for both modes.
 
 The TypeScript gateway retains protocol-specific provider transports, model mappings, JSON and SSE response handling, tool definitions, and provider-reported usage. Model catalogs come from the selected account. Codex requests use one consistent client version for model discovery, User-Agent, and version headers. Administrator settings take precedence over the synchronized official stable version. A Supabase Cron job checks for stable updates every six hours, including when the local services are stopped. Request handling also checks for stale versions. Both paths respect the automatic synchronization setting, persists the result in shared settings, and retains the last known version when synchronization is unavailable. Provider credentials and network routes are resolved on the cloud side.

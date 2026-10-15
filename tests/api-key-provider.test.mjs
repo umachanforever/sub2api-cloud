@@ -814,3 +814,52 @@ test('OpenAI API-key Messages bridge rejects invalid requests before dispatch an
   assert.equal((await value.request('/v1/messages', body)).status, 502);
   assert.equal(value.finishes.at(-1).p_outcome, 'incomplete');
 });
+
+test('OpenAI image generation forwards image options and records provider-reported tokens', async () => {
+ const body={model:'gpt-image-1',prompt:'A blue bird',size:'1024x1024',quality:'low',n:1};
+ const result={created:123,data:[{b64_json:'aW1hZ2U='}],usage:{input_tokens:15,output_tokens:20,input_tokens_details:{cached_tokens:2}}};
+ const value=await fixture('openai',(url,init)=>{
+  assert.equal(url,'https://api.openai.com/v1/images/generations');
+  assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
+  assert.deepEqual(JSON.parse(init.body),body);
+  return Response.json(result,{headers:{'set-cookie':'private'}});
+ });
+ const response=await value.request('/images/generations',body);
+ assert.equal(response.status,200);assert.deepEqual(await response.json(),result);
+ assert.equal(response.headers.get('set-cookie'),null);
+ assert.equal(value.finishes[0].p_input_tokens,15);assert.equal(value.finishes[0].p_output_tokens,20);
+ assert.equal(value.finishes[0].p_cache_read_tokens,2);assert.equal(value.finishes[0].p_outcome,'completed');
+});
+
+test('OpenAI image streams preserve large images and account the final image event',async()=>{
+ const image='A'.repeat(1100000);
+ const events=[{type:'image_generation.partial_image',partial_image_b64:'aW1hZ2U=',partial_image_index:0},{type:'image_generation.completed',b64_json:image,usage:{input_tokens:3,output_tokens:9}}];
+ const value=await fixture('openai',()=>{
+  const bytes=new TextEncoder().encode(events.map(v=>'data: '+JSON.stringify(v)+'\n\n').join(''));
+  return new Response(new ReadableStream({start(controller){for(let i=0;i<bytes.length;i+=65536)controller.enqueue(bytes.slice(i,i+65536));controller.close();}}),{headers:{'content-type':'text/event-stream'}});
+ });
+ const response=await value.request('/v1/images/generations',{model:'gpt-image-1',prompt:'A bird',stream:true});
+ assert.equal(response.status,200);
+ const text=await response.text();assert.ok(text.includes(image));
+ assert.equal(value.finishes[0].p_input_tokens,3);assert.equal(value.finishes[0].p_output_tokens,9);assert.equal(value.finishes[0].p_outcome,'completed');
+});
+
+test('image generation validates prompts, rejects other providers and sanitizes stream failures',async()=>{
+ let dispatched=0;
+ const value=await fixture('openai',()=>{dispatched++;return sse([{error:{message:'provider-secret'}}]);});
+ assert.equal((await value.request('/v1/images/generations',{model:'gpt-image-1',prompt:''})).status,400);assert.equal(dispatched,0);
+ const response=await value.request('/v1/images/generations',{model:'gpt-image-1',prompt:'A bird',stream:true});
+ await assert.rejects(response.text(),error=>!error.message.includes('provider-secret'));
+ assert.equal(value.finishes.at(-1).p_outcome,'failed');
+ const other=await fixture('anthropic',()=>assert.fail('Wrong provider dispatched'));
+ assert.equal((await other.request('/v1/images/generations',{model:'gpt-image-1',prompt:'A bird'})).status,501);
+});
+
+
+test('image streams without a terminal event retain incomplete usage and never invent tokens',async()=>{
+ const value=await fixture('openai',()=>sse([{type:'image_generation.partial_image',partial_image_b64:'aW1hZ2U='}]));
+ const response=await value.request('/v1/images/generations',{model:'gpt-image-1',prompt:'A bird',stream:true});
+ await response.text();
+ assert.equal(value.finishes[0].p_outcome,'incomplete');
+ assert.equal(value.finishes[0].p_input_tokens,null);assert.equal(value.finishes[0].p_output_tokens,null);
+});

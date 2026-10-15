@@ -23,10 +23,11 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/(?:sub2api|subscription-api)(?=\/|$)/,
         "",
       ) || "/";
+      if (pathname === "/images/generations") pathname = "/v1/images/generations";
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/responses", "/backend-api/codex/responses"].includes(pathname);
-      if (gatewayRequest) errorContext.endpoint = ["/responses", "/backend-api/codex/responses"].includes(pathname) ? pathname : /^\/v1\/(?:responses|messages|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      if (gatewayRequest) errorContext.endpoint = ["/responses", "/backend-api/codex/responses"].includes(pathname) ? pathname : /^\/v1\/(?:responses|messages|images\/generations|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);

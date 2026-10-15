@@ -10,6 +10,7 @@ import { json } from "./http.ts";
 
 type Item = Record<string, any>;
 export type NativeProtocol =
+  | "images"
   | "chat"
   | "responses"
   | "messages"
@@ -45,7 +46,7 @@ export function apiKeyRequest(
   ) as ApiKeyCredentials;
   if (
     (["openai", "grok"].includes(platform) &&
-      !["chat", "responses", "models"].includes(protocol)) ||
+      !["chat", "responses", "models", ...(platform === "openai" ? ["images"] : [])].includes(protocol)) ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
     (path.startsWith("/v1beta/models") && protocol === "models" &&
@@ -66,6 +67,7 @@ export function apiKeyRequest(
   if (platform === "openai" || platform === "grok") {
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
+    if (protocol === "images") providerPath = "/v1/images/generations";
   } else if (platform === "anthropic") {
     headers.set("x-api-key", validated.api_key);
     const version = request.headers.get("anthropic-version") ?? "2023-06-01";
@@ -184,15 +186,15 @@ export function nativeUsage(
       ? (value.response?.usage ?? value.usage)
       : value.usage;
     const input = tokens(
-      protocol === "responses" ? totals?.input_tokens : totals?.prompt_tokens,
+      ["responses", "images"].includes(protocol) ? totals?.input_tokens : totals?.prompt_tokens,
     );
     const output = tokens(
-      protocol === "responses"
+      ["responses", "images"].includes(protocol)
         ? totals?.output_tokens
         : totals?.completion_tokens,
     );
     const cacheRead = tokens(
-      protocol === "responses"
+      ["responses", "images"].includes(protocol)
         ? totals?.input_tokens_details?.cached_tokens
         : totals?.prompt_tokens_details?.cached_tokens,
     );
@@ -205,7 +207,7 @@ export function nativeUsage(
       value.type === "response.incomplete" || value.status === "incomplete"
     ) usage.outcome = "incomplete";
     else if (
-      value.type === "response.completed" || value.status === "completed"
+      value.type === "response.completed" || value.status === "completed" || protocol === "images" && value.type === "image_generation.completed"
     ) usage.outcome = "completed";
     else if (
       protocol === "chat" &&
@@ -301,7 +303,7 @@ class NativeUsageObserver {
     while ((boundary = /\r?\n\r?\n/.exec(this.pending))) {
       const frame = this.pending.slice(0, boundary.index);
       this.pending = this.pending.slice(boundary.index + boundary[0].length);
-      if (frame.length > 1_048_576) throw new Error("upstream_event_too_large");
+      if (frame.length > (this.protocol === "images" ? 16 * 1024 * 1024 : 1_048_576)) throw new Error("upstream_event_too_large");
       const data = frame.split(/\r?\n/).filter((line) =>
         line.startsWith("data:")
       ).map((line) => line.slice(5).trimStart()).join("\n");
@@ -314,7 +316,7 @@ class NativeUsageObserver {
         throw new Error("upstream_stream_failed");
       }
     }
-    if (this.pending.length > 1_048_576) {
+    if (this.pending.length > (this.protocol === "images" ? 16 * 1024 * 1024 : 1_048_576)) {
       throw new Error("upstream_event_too_large");
     }
   }
@@ -323,6 +325,7 @@ class NativeUsageObserver {
 // Buffer complete frames before forwarding, so an upstream SSE error cannot leak in partial chunks.
 function nativeFrames(
   body: ReadableStream<Uint8Array>,
+  maxFrame = 1_048_576,
 ): ReadableStream<Uint8Array> {
   let pending = "";
   const encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -333,11 +336,11 @@ function nativeFrames(
         let boundary: RegExpExecArray | null;
         while ((boundary = /\r?\n\r?\n/.exec(pending))) {
           const length = boundary.index + boundary[0].length;
-          if (length > 1_048_576) throw new Error("upstream_event_too_large");
+          if (length > maxFrame) throw new Error("upstream_event_too_large");
           controller.enqueue(encoder.encode(pending.slice(0, length)));
           pending = pending.slice(length);
         }
-        if (pending.length > 1_048_576) {
+        if (pending.length > maxFrame) {
           throw new Error("upstream_event_too_large");
         }
       },
@@ -373,6 +376,7 @@ export async function nativeResponse(
       value.error || (protocol === "chat" && !Array.isArray(value.choices)) ||
       (protocol === "messages" && value.type !== "message") ||
       (protocol === "responses" && value.object !== "response") ||
+      (protocol === "images" && (!Array.isArray(value.data) || !value.data.length || value.data.some((item: Item) => !item || !(typeof item.b64_json === "string" && item.b64_json || typeof item.url === "string" && item.url)))) ||
       (protocol === "gemini" && !Array.isArray(value.candidates) &&
         !value.promptFeedback)
     ) throw new HttpError(502, "invalid_upstream_response");
@@ -405,7 +409,7 @@ export async function nativeResponse(
   }
   return new Response(
     trackedStream(
-      nativeFrames(upstream.body),
+      nativeFrames(upstream.body, protocol === "images" ? 16 * 1024 * 1024 : undefined),
       signal,
       (usage) => finish(upstream.status, usage),
       new NativeUsageObserver(platform, protocol, started),
