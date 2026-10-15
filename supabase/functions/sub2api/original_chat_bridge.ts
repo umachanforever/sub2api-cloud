@@ -84,6 +84,7 @@ export async function originalMessagesToResponses(body:Item):Promise<Item>{
   const converted=(await converter())('messages_request',body);
   // Keep validated PDF, URL and tool-result attachments supported by the cloud bridge.
   converted.input=validated.input;converted.model=validated.model;
+  if(validated.text!==undefined)converted.text=validated.text;
   // API bridges retain the caller's output budget; Codex OAuth has separate limits.
   converted.max_output_tokens=body.max_tokens;
   converted.stream=true;converted.store=false;

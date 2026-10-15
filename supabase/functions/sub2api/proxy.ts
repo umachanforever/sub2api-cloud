@@ -64,7 +64,6 @@ import {
 } from "./openai_protocol.ts";
 
 import {
-  messagesToResponses,
   responseToMessages,
   streamMessages,
 } from "./anthropic_protocol.ts";
@@ -632,7 +631,7 @@ async function proxyWithIdentity(
               chat
                 ? chatToResponses(forwardedBody!)
                 : messages
-                ? messagesToResponses(forwardedBody!)
+                ? await originalMessagesToResponses(forwardedBody!)
                 : forwardedBody,
             );
           } catch (error) {
