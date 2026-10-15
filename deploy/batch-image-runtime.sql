@@ -284,6 +284,10 @@ BEGIN
     IF jsonb_array_length(p_items)<>native.item_count OR jsonb_array_length(p_items) NOT BETWEEN 1 AND 200
         OR (SELECT count(DISTINCT value->>'custom_id') FROM jsonb_array_elements(p_items))<>jsonb_array_length(p_items)
         THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
+    IF (SELECT count(*) FROM public.batch_image_items WHERE job_id=p_id)<>native.item_count
+        OR EXISTS(SELECT 1 FROM jsonb_array_elements(p_items) v WHERE NOT EXISTS(
+            SELECT 1 FROM public.batch_image_items pending WHERE pending.job_id=p_id AND pending.custom_id=v->>'custom_id'))
+        THEN RETURN jsonb_build_object('error','invalid_batch_image_index','status',400); END IF;
     FOR item IN SELECT value FROM jsonb_array_elements(p_items) LOOP
         IF jsonb_typeof(item)<>'object' OR jsonb_typeof(item->'custom_id') IS DISTINCT FROM 'string' OR octet_length(item->>'custom_id') NOT BETWEEN 1 AND 255
             OR item->>'custom_id' ~ '[[:cntrl:]]' OR coalesce(item->>'status','') NOT IN ('success','failed')
