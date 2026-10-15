@@ -30,6 +30,12 @@ async function run(command, args, env, capture = false) {
   await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', code => code === 0 ? resolve() : reject(Error(`${command} ${args[0]} failed`))); });
   return output;
 }
+export async function buildLocalImages(env, execute = run) {
+  // Keep Go compilation and Vue type checking out of the same Docker memory peak.
+  for (const service of ['management', 'console']) {
+    await execute('docker', ['compose', '-p', 'sub2api-cloud', 'build', service], env);
+  }
+}
 export async function administrator(env, fetchImpl = fetch) {
   const email = env.SUB2API_LOCAL_ADMIN_EMAIL || 'admin@sub2api.local';
   const password = env.SUB2API_LOCAL_ADMIN_PASSWORD;
@@ -75,7 +81,7 @@ async function up() {
   await mkdir(new URL('../.local/', import.meta.url), { recursive: true, mode: 0o700 });
   if (mode === 'local') {
     // Build before starting the full local stack to reduce peak Docker memory use.
-    await run('docker', ['compose', '-p', 'sub2api-cloud', 'build'], { ...env, SUPABASE_URL: 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_build_placeholder' });
+    await buildLocalImages({ ...env, SUPABASE_URL: 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_build_placeholder' });
     console.log('Starting local Supabase (first run downloads Docker images)...');
     await run('supabase', ['start'], env, true);
     await run('supabase', ['migration', 'up', '--local'], env);
@@ -97,7 +103,8 @@ async function up() {
   }
   if (mode === 'cloud') { await chmod(new URL('../.env.local', import.meta.url), 0o600); await deploy(env); }
   if (mode === 'local') await provisionManagement(env);
-  await run('docker', ['compose', '-p', 'sub2api-cloud', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
+  if (mode === 'cloud') await run('docker', ['compose', '-p', 'sub2api-cloud', 'build', 'console'], env);
+  await run('docker', ['compose', '-p', 'sub2api-cloud', 'up', '-d', '--no-build'], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
   if (mode === 'local') {
     const file = new URL('../.local/functions.env', import.meta.url);
     await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env)+oauthSecrets(env)+requestLimitSecrets(env), { mode: 0o600 });

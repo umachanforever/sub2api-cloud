@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { administrator, deploymentMode, localProject } from '../scripts/up.mjs';
+import { administrator, buildLocalImages, deploymentMode, localProject } from '../scripts/up.mjs';
 import { validateConfig } from '../scripts/console.mjs';
 const key = 'sb_publishable_12345678901234567890';
 test('deployment modes are explicit and local origins never relax cloud validation', () => {
@@ -20,4 +20,23 @@ test('administrator setup reuses correct credentials and never resets existing a
   const paths=[];
   assert.equal(await administrator(env,async(url,init)=>{paths.push(url);if(url.includes('grant_type')) return Response.json({},{status:400});if(url.includes('/rpc/s2a_registration_authorize'))return Response.json({token:'a'.repeat(64)});assert.equal(JSON.parse(init.body).email_confirm,true);return Response.json({id:'created'});}), 'created');assert.equal(paths.length,3);
   await assert.rejects(administrator(env,async()=>Response.json({secret:'must not leak'},{status:422})),/login unavailable/);
+});
+
+test('local image builds wait for management before starting the console build', async () => {
+  const calls=[];let finishManagement;
+  const pending=buildLocalImages({SUPABASE_MODE:'local'},async(command,args,env)=>{
+    assert.equal(command,'docker');assert.equal(env.SUPABASE_MODE,'local');
+    calls.push(args.at(-1));
+    if(args.at(-1)==='management')await new Promise(resolve=>{finishManagement=resolve;});
+  });
+  assert.deepEqual(calls,['management']);
+  finishManagement();await pending;
+  assert.deepEqual(calls,['management','console']);
+});
+test('a failed management image build never starts the console build', async () => {
+  const calls=[];
+  await assert.rejects(buildLocalImages({},async(_command,args)=>{
+    calls.push(args.at(-1));throw Error('build failed');
+  }),/build failed/);
+  assert.deepEqual(calls,['management']);
 });
