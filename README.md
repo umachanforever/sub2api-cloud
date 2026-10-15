@@ -129,7 +129,7 @@ OpenAI API-key accounts support `/v1/embeddings` (also `/embeddings`) with text 
 
 Chat Completions accepts inline file data and provider file IDs. The Messages-to-OpenAI bridge accepts base64 PDFs, document URLs, and plain text documents, including files in tool results. Document citations are supported only by providers that handle them natively; enabling citations through the OpenAI bridge returns an explicit error.
 
-Request bodies default to 256 MiB, matching upstream Sub2API. Text-specific routes (embeddings, search, and systemone) use 32 MiB. Configure `SERVER_MAX_REQUEST_BODY_SIZE`, `GATEWAY_MAX_BODY_SIZE`, and `GATEWAY_TEXT_MAX_BODY_SIZE` in bytes before deployment. Setting the server limit to `0` disables only the server-wide cap; gateway limits still apply. Supabase runtime memory and provider limits may reduce the practical maximum for large attachments.
+AI request bodies default to 256 MiB at both the cloud gateway and the local console proxy, matching upstream Sub2API. Text-specific routes (embeddings, search, and systemone) use 32 MiB. Configure `SERVER_MAX_REQUEST_BODY_SIZE`, `GATEWAY_MAX_BODY_SIZE`, and `GATEWAY_TEXT_MAX_BODY_SIZE` in bytes before deployment. Setting the server limit to `0` disables only the server-wide cap; gateway limits still apply. Supabase runtime memory and provider limits may reduce the practical maximum for large attachments.
 
 ## License
 

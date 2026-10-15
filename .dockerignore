@@ -28,3 +28,5 @@ frontend/**/.DS_Store
 !supabase/functions/
 !supabase/functions/sub2api/
 !supabase/functions/sub2api/public_settings.json
+
+!supabase/functions/sub2api/request_limits.ts

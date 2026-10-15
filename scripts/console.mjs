@@ -1,3 +1,4 @@
+import { requestBodyLimit, resolveRequestLimits } from '../supabase/functions/sub2api/request_limits.ts';
 import { proxyWebsocket } from "./console-ws.mjs";
 import { createServer } from "node:http";
 import { Readable } from "node:stream";
@@ -34,7 +35,7 @@ export function validateConfig(input) {
   return { supabase_url: url.origin, publishable_key: key, management_url: management.origin };
 }
 
-export function createConsoleServer({ config, fetchImpl = fetch, staticDir } = {}) {
+export function createConsoleServer({ config, fetchImpl = fetch, staticDir, requestLimits = resolveRequestLimits(process.env) } = {}) {
   const project = config ? validateConfig(config) : null;
   const server = createServer(async (request, response) => {
     const reply = (status, data, message = "") => {
@@ -61,7 +62,8 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir } = {
         ) return reply(403, null, "local_origin_required");
       }
       const url = new URL(request.url, "http://127.0.0.1");
-      if (await serveStatic(request, response, url.pathname, staticDir)) return;
+      const gatewayPath = /^\/(?:(?:antigravity\/)?(?:v1\/(?:responses|models(?:\/[^/]+)?|chat\/completions|messages|embeddings|images\/generations|usage)|v1beta\/models(?:\/[^/]+)?)|responses|backend-api\/codex\/responses|models(?:\/[^/]+)?|chat\/completions|embeddings|images\/generations)$/.test(url.pathname);
+      if (!gatewayPath && await serveStatic(request, response, url.pathname, staticDir)) return;
       if (
         url.pathname === "/api/v1/settings/public" && request.method === "GET"
       ) { if (!project) return reply(200, publicSettings); }
@@ -76,14 +78,19 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir } = {
         );
       }
       if (
-        !/^\/(api\/v1\/|v1\/(responses|models(?:\/[^/]+)?|chat\/completions|messages)$|v1beta\/models(?:\/[^/]+)?$)/.test(url.pathname) ||
+        (!url.pathname.startsWith("/api/v1/") && !gatewayPath) ||
         (/%/.test(url.pathname) && !/^\/api\/v1\/pages\/[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}\/images\//.test(url.pathname)) || /\\/.test(url.pathname)
       ) return reply(404, null, "not_found");
+      const bodyLimit = gatewayPath ? requestBodyLimit(url.pathname, requestLimits) : 1_048_576;
+      if (Number(request.headers["content-length"]) > bodyLimit) {
+        request.resume();
+        return reply(413, null, "request_too_large");
+      }
       let bytes = 0;
       const chunks = [];
       for await (const chunk of request.iterator({ destroyOnReturn: false })) {
         bytes += chunk.length;
-        if (bytes > 1_048_576) {
+        if (bytes > bodyLimit) {
           request.resume();
           return reply(413, null, "request_too_large");
         }
@@ -284,6 +291,7 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir } = {
           "application/json",
         "cache-control": "no-store",
         "x-content-type-options": "nosniff",
+        "referrer-policy": "no-referrer",
         ...(upstream.headers.has("content-security-policy") ? {"content-security-policy": upstream.headers.get("content-security-policy")} : {}),
       });
       if (upstream.body) {

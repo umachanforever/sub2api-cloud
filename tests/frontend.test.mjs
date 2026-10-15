@@ -159,3 +159,50 @@ test('local proxy forwards encoded page images and preserves private storage sec
   assert.equal((await fetch(`${base}/api/v1/admin/groups/%2fid`)).status,404);
  });
 });
+
+test('local gateway paths bypass SPA fallback and preserve cloud targets and query strings',async()=>{
+  const {mkdtemp,writeFile,rm}=await import('node:fs/promises');
+  const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+  const directory=await mkdtemp(join(tmpdir(),'s2a-gateway-static-'));
+  try{
+    await writeFile(join(directory,'index.html'),'<html>Console</html>');
+    const calls=[];
+    await serverTest({staticDir:directory,config:{supabase_url:config.url,publishable_key:'sb_publishable_12345678901234567890'},fetchImpl:async(url,init)=>{
+      calls.push(url);assert.equal(init.headers.authorization,'Bearer client-key');return Response.json({gateway:true});
+    }},async base=>{
+      for(const path of ['/models','/models/gpt-6.1-sol','/chat/completions','/responses','/backend-api/codex/responses','/embeddings','/images/generations','/v1/embeddings','/v1/images/generations','/v1/usage?key=sk-usage-fixture','/antigravity/v1/messages','/antigravity/v1beta/models/gemini:generateContent']){
+        const r=await fetch(base+path,{headers:{authorization:'Bearer client-key'}});
+        assert.equal(r.status,200);assert.deepEqual(await r.json(),{gateway:true});
+        assert.equal(calls.at(-1),config.url+'/functions/v1/sub2api'+path);
+      }
+      assert.match(await (await fetch(base+'/dashboard')).text(),/Console/);
+    });
+  }finally{await rm(directory,{recursive:true,force:true});}
+});
+
+test('local inference accepts attachments above 1 MiB without changing payload bytes',async()=>{
+  const body=JSON.stringify({model:'gpt-6.1-sol',input:'图片 '+ 'x'.repeat(2*1024*1024)});
+  let calls=0;
+  await serverTest({config:{supabase_url:config.url,publishable_key:'sb_publishable_12345678901234567890'},fetchImpl:async(_url,init)=>{
+    calls++;assert.equal(init.body,body);return Response.json({ok:true});
+  }},async base=>{
+    const r=await fetch(base+'/v1/responses',{method:'POST',headers:{authorization:'Bearer key','content-type':'application/json'},body});
+    assert.equal(r.status,200);assert.equal(calls,1);
+    const admin=await fetch(base+'/api/v1/admin/accounts',{method:'POST',body});
+    assert.equal(admin.status,413);assert.equal(calls,1);
+  });
+});
+
+test('local inference enforces global, gateway and text caps for fixed and chunked uploads',async()=>{
+  let calls=0;
+  await serverTest({requestLimits:{server:4096,gateway:8192,text:1024},config:{supabase_url:config.url,publishable_key:'sb_publishable_12345678901234567890'},fetchImpl:async()=>{
+    calls++;return Response.json({ok:true});
+  }},async base=>{
+    for(const [path,size,expected] of [['/v1/responses',4096,200],['/responses',4097,413],['/embeddings',1024,200],['/v1/embeddings',1025,413]]){
+      const r=await fetch(base+path,{method:'POST',body:'x'.repeat(size)});assert.equal(r.status,expected);
+    }
+    const chunks=async function*(){yield 'x'.repeat(600);yield 'x'.repeat(600);};
+    const r=await fetch(base+'/embeddings',{method:'POST',body:chunks(),duplex:'half'});assert.equal(r.status,413);
+    assert.equal(calls,2);
+  });
+});
