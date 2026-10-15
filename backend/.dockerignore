@@ -1,0 +1,12 @@
+.cache/
+.DS_Store
+data/
+bin/
+server
+main
+.env*
+**/.env*
+**/*.credentials.json
+**/auth.json
+**/*.log
+.git/
