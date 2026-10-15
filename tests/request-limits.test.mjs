@@ -21,6 +21,7 @@ test('configuration matches upstream defaults and layered limits',()=>{
  const limits=resolveRequestLimits({});
  assert.equal(requestBodyLimit('/v1/responses',limits),256*1024*1024);
  assert.equal(requestBodyLimit('/v1/embeddings',limits),32*1024*1024);
+ for(const path of ['/v1/alpha/search','/alpha/search','/backend-api/codex/alpha/search'])assert.equal(requestBodyLimit(path,limits),limits.text);
  assert.equal(requestBodyLimit('/v1/chat/completions',limits),limits.gateway);
  assert.equal(requestBodyLimit('/v1/messages',{server:10,gateway:20,text:5}),10);
  assert.equal(requestBodyLimit('/v1/messages',{server:0,gateway:20,text:5}),20);

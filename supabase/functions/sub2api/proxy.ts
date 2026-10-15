@@ -1,3 +1,4 @@
+import {alphaSearch} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
 import {requestBodyLimit} from './request_limits.ts';
 import { currentCodexIdentity } from "./codex_identity.ts";
@@ -82,6 +83,7 @@ export async function proxy(
       decoded === ".."
     ) throw new HttpError(400, "invalid_model_id");
   }
+  const search = ["/v1/alpha/search", "/alpha/search", "/backend-api/codex/alpha/search"].includes(path) && request.method === "POST";
   const codexModels = path === "/backend-api/codex/models";
   const models = (codexModels || path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
@@ -117,7 +119,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -135,7 +137,7 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = embeddings || inputTokens || messageTokens ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = embeddings || inputTokens || messageTokens || search ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -189,9 +191,10 @@ export async function proxy(
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(policyModel),
         ...(inputTokens || messageTokens ? {count_only:true} : {}),
+        ...(search ? {web_search:true} : {}),
         service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
         stream: models ? false : stream,
-        native_stream: gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true,
+        native_stream: search ? false : gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true,
       },
     });
     if (reservation.error) {
@@ -264,6 +267,13 @@ export async function proxy(
     };
     try {
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
+      if (search) {
+        const result=await alphaSearch(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;});
+        const windows=quotaHeaderWindows(result.headers);
+        if(windows && account.type!=="apikey")quotaSnapshot=db.rpc(db.config.dataModel === "native" ? "s2a_personal_windows_save" : "s2a_openai_windows_save",{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn("quota_window_save_failed"));
+        await finish(200,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:"completed"});
+        return json(200,result.value);
+      }
       if (inputTokens || messageTokens) {
         const input_tokens=messageTokens
           ? await countMessageTokens(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;})

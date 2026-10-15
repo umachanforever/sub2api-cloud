@@ -59,6 +59,19 @@ BEGIN
     result:=public.s2a_personal_finish(lease,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
     IF result->>'applied' IS DISTINCT FROM 'true' OR EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text)
         OR NOT EXISTS(SELECT FROM s2a_private.personal_gateway_leases WHERE id=lease AND finished_at IS NOT NULL AND count_only) THEN RAISE EXCEPTION 'preflight counted as generation or leaked account slot'; END IF;
+    request:=gen_random_uuid();
+    acquired:=public.s2a_personal_acquire(h,'alias',request,'{}',true,NULL,'{"web_search":true}');
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'search admission failed'; END IF;
+    lease:=(acquired->>'lease_id')::uuid;
+    result:=public.s2a_personal_finish(lease,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
+    IF NOT EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text AND input_tokens=0 AND output_tokens=0
+        AND actual_cost=0 AND s2a_personal_details->>'operation'='alpha_search' AND s2a_personal_details->>'web_search_calls'='1')
+        THEN RAISE EXCEPTION 'successful search missing canonical uncharged usage'; END IF;
+    request:=gen_random_uuid();
+    acquired:=public.s2a_personal_acquire(h,'alias',request,'{}',true,NULL,'{"web_search":true}');
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'failed search admission failed'; END IF;
+    result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,403,'failed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
+    IF EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text) THEN RAISE EXCEPTION 'failed search counted as success'; END IF;
     UPDATE public.api_keys SET status='inactive' WHERE id=k;
     IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
 END $$;

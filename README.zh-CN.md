@@ -135,4 +135,6 @@ Anthropic 格式客户端可通过 `POST /v1/messages/count_tokens` 或 `/messag
 
 Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清单；OpenAI OAuth 账号无需传入 `client_version` 即可返回 Codex 模型元数据。
 
+Codex 独立网页搜索支持 `POST /v1/alpha/search`、`/alpha/search` 和 `/backend-api/codex/alpha/search`。OpenAI OAuth 与 API Key 账号使用各自原生接口，个人访问令牌通过 Responses 托管网页搜索工具兜底。成功搜索记录一次不扣费的调用，失败搜索不会写入成功用量。
+
 云端网关和本地控制台代理的 AI 请求体默认上限均为 256 MiB，与原版 Sub2API 一致；embeddings、搜索和 systemone 专用文本路由上限为 32 MiB。部署前可通过 `SERVER_MAX_REQUEST_BODY_SIZE`、`GATEWAY_MAX_BODY_SIZE` 和 `GATEWAY_TEXT_MAX_BODY_SIZE` 按字节配置。服务器上限设为 `0` 仅关闭全局限制，网关限制仍然生效。Supabase 运行内存及上游服务限制可能使大型附件的实际可用上限更低。

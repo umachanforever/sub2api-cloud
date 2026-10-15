@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS s2a_private.personal_gateway_leases (
     completion_hash text, completion jsonb
 );
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS count_only boolean NOT NULL DEFAULT false;
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS web_search boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
 ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
@@ -97,8 +98,8 @@ BEGIN
             FOR UPDATE OF accounts LOOP
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
-            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only)
-                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false)) RETURNING * INTO lease;
+            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search)
+                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false),coalesce((p_billing_context->>'web_search')::boolean,false)) RETURNING * INTO lease;
             UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
             EXIT;
         END LOOP;
@@ -148,7 +149,7 @@ BEGIN
             coalesce(p_upstream_model,lease.model),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),
             coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.stream THEN 2 ELSE 1 END,
             least(2147483647,greatest(0,floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer,p_first_token_ms,
-            'token',payload) RETURNING id INTO usage_id;
+            'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation','alpha_search') ELSE '{}'::jsonb END) RETURNING id INTO usage_id;
     END IF;
     IF p_cooldown_seconds>0 THEN
         UPDATE s2a_private.accounts SET temp_unschedulable_until=greatest(temp_unschedulable_until,now_at+make_interval(secs=>p_cooldown_seconds)),
