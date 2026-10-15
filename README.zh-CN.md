@@ -166,7 +166,7 @@ Grok API Key 和 OAuth 账号也支持 `POST /v1/images/generations` 图片生�
 
 Grok 分组支持异步视频创建 `POST /v1/videos`、`/v1/videos/generations`，视频编辑 `/v1/videos/edits`，以及视频延长 `/v1/videos/extensions`。请指定视频模型和提示词；编辑与延长通过 `video.url` 提供源视频，延长可省略提示词。使用创建任务的网关 Key 轮询 `GET /v1/videos/{request_id}`，通过 `GET /v1/videos/{request_id}/content` 下载，支持二进制流、Range 分段读取和取消下载。状态响应返回本项目的鉴权下载地址，不暴露上游签名。Supabase 将公开任务 ID 绑定至 Key、分组、模型和订阅账号。若创建结果不确定，错误响应会包含公开任务 ID，查询返回 `creation_unknown`，网关不会自动重复提交。
 
-Grok 分组支持 `POST /v1/tts` 语音合成和 `/v1/stt` 语音转文字，可使用 API Key 或 OAuth 鉴权。网关保留合成参数、multipart 上传边界、转写 JSON 和二进制音频响应，使用官方 xAI 语音接口，并在请求完成或取消后释放账号。
+Grok 分组支持 `POST /v1/tts` 语音合成和 `/v1/stt` 语音转文字，可使用 API Key 或 OAuth 鉴权。网关保留合成参数、multipart 上传边界、转写 JSON 和二进制音频响应，使用官方 xAI 语音接口，并在请求完成或取消后释放账号。 自定义语音支持 `POST /v1/custom-voices` 创建、`GET /v1/custom-voices` 列表，以及 `GET`、`PATCH`、`DELETE /v1/custom-voices/{voice_id}` 查询、修改和删除。通过 `GET /v1/custom-voices/{voice_id}/audio` 获取音频样本，上传内容和查询参数原样转发。
 
 Grok 分组支持 `POST /v1/web_search`、`/v1/x_search` 及其根路径别名，可使用 API Key 或 OAuth 账号。支持 `query` 或 `input`，最多返回 20 条结果；X 搜索还支持账号、日期及图片和视频理解选项。返回的摘要须匹配上游真实搜索来源。
 
