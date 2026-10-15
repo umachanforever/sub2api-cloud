@@ -1,4 +1,4 @@
-import {oauthImageRequest} from './oauth_images.ts';
+import {oauthImageRequest,oauthImageOutput} from './oauth_images.ts';
 import {imageForm,validateImageEdit} from './image_input.ts';
 import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
@@ -486,6 +486,7 @@ export async function proxy(
           model_sources,
           aliasCatalog?decodeURIComponent(modelId!):undefined,
           errorContext.started,
+          images && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
         );
       }
       if (models) {

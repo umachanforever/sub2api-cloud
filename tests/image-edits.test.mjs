@@ -71,3 +71,32 @@ test('OAuth multipart images and masks become lossless data URLs with numeric op
  const data=form();data.set('n','2');data.set('output_compression','0');
  const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client'},body:data}));assert.equal(response.status,200);
 });
+test('OAuth url responses use MIME-aware data URLs and retain the client model alias',async()=>{
+ for(const format of ['png','jpeg','webp']){
+  const value=await fixture(()=>Response.json({...output,output_format:format}),{type:'oauth'});
+  const response=await value.handler(new Request('https://gateway/v1/images/generations',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'image-alias',prompt:'Draw',response_format:'url'})}));
+  assert.equal(response.status,200);const result=await response.json();assert.equal(result.data[0].url,`data:image/${format};base64,aW1hZ2U=`);assert.equal(result.data[0].b64_json,undefined);assert.equal(result.data[0].model,'image-alias');assert.equal(value.finishes[0].p_output_tokens,7);
+ }
+});
+test('OAuth streaming edits normalize event names, retain base64 in url mode and complete usage',async()=>{
+ const value=await fixture(()=>new Response('event: image_generation.completed\r\nid: event-1\r\ndata: '+JSON.stringify({type:'image_generation.completed',model:'upstream-internal',output_format:'webp',b64_json:'aW1hZ2U=',usage:output.usage})+'\r\n\r\n',{headers:{'content-type':'text/event-stream'}}),{type:'oauth'});
+ const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'image-alias',prompt:'Edit',images:[{image_url:'https://example.com/image.png'}],stream:true,response_format:'url'})}));
+ assert.equal(response.status,200);const text=await response.text();assert.match(text,/event: image_edit.completed/);assert.match(text,/id: event-1/);assert.doesNotMatch(text,/image_generation.completed|upstream-internal/);
+ const result=JSON.parse(text.split('\n').find(line=>line.startsWith('data:')).slice(5));assert.equal(result.type,'image_edit.completed');assert.equal(result.url,'data:image/webp;base64,aW1hZ2U=');assert.equal(result.b64_json,'aW1hZ2U=');assert.equal(result.model,'image-alias');assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_input_tokens,12);
+});
+test('URL-mode image streams accept duplicated representations larger than one raw image frame',async()=>{
+ const image='A'.repeat(9*1024*1024);
+ const value=await fixture(()=>new Response('data: '+JSON.stringify({type:'image_generation.completed',b64_json:image,usage:output.usage})+'\n\n',{headers:{'content-type':'text/event-stream'}}),{type:'oauth'});
+ const response=await value.handler(new Request('https://gateway/v1/images/generations',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-image-2',prompt:'Draw',stream:true,response_format:'url'})}));
+ let bytes=0;for await(const chunk of response.body)bytes+=chunk.length;
+ assert.ok(bytes>18*1024*1024);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_output_tokens,7);
+});
+
+test('OAuth JSON image fallback emits edit completion and records aggregate usage once',async()=>{
+ const value=await fixture(()=>Response.json({...output,data:[{b64_json:'Zmlyc3Q='},{b64_json:'c2Vjb25k'}]}),{type:'oauth'});
+ const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'image-alias',prompt:'Edit',images:[{image_url:'https://example.com/image.png'}],stream:true,response_format:'url'})}));
+ assert.equal(response.status,200);assert.match(response.headers.get('content-type'),/text\/event-stream/);
+ const events=(await response.text()).split('\n').filter(line=>line.startsWith('data:')).map(line=>JSON.parse(line.slice(5)));
+ assert.equal(events.length,2);assert.ok(events.every(event=>event.type==='image_edit.completed'&&event.url==='data:image/png;base64,'+event.b64_json&&event.model==='image-alias'));
+ assert.equal(events[0].usage,undefined);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_input_tokens,12);assert.equal(value.finishes[0].p_output_tokens,7);
+});

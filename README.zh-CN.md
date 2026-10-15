@@ -139,6 +139,7 @@ Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清�
 
 OpenAI API Key 账号支持 `POST /v1/images/edits` 和 `/images/edits`，可传入 JSON 图片 URL 或 multipart 附件，支持多图与蒙版。模型映射、流式图片事件和上游 Token 用量复用图片生成处理链路，默认图片模型为 `gpt-image-2`。
 OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst` 及其已支持快照的 Codex 原生图片生成与编辑。multipart 图片和蒙版在云端网关内转换为 data URL。
+图片响应支持 `b64_json` 和 `response_format=url` 的 data URL，并保留正确的图片类型。流式编辑使用 `image_edit.*` 事件；上游返回完整 JSON 时，网关会转换为 SSE 完成事件，Token 用量只记录一次。
 
 
 Codex 独立网页搜索支持 `POST /v1/alpha/search`、`/alpha/search` 和 `/backend-api/codex/alpha/search`。OpenAI OAuth 与 API Key 账号使用各自原生接口，个人访问令牌通过 Responses 托管网页搜索工具兜底。成功搜索记录一次不扣费的调用，失败搜索不会写入成功用量。

@@ -210,7 +210,7 @@ export function nativeUsage(
       value.type === "response.incomplete" || value.status === "incomplete"
     ) usage.outcome = "incomplete";
     else if (
-      value.type === "response.completed" || value.status === "completed" || protocol === "images" && value.type === "image_generation.completed"
+      value.type === "response.completed" || value.status === "completed" || protocol === "images" && ["image_generation.completed", "image_edit.completed"].includes(value.type)
     ) usage.outcome = "completed";
     else if (
       protocol === "chat" &&
@@ -306,7 +306,7 @@ class NativeUsageObserver {
     while ((boundary = /\r?\n\r?\n/.exec(this.pending))) {
       const frame = this.pending.slice(0, boundary.index);
       this.pending = this.pending.slice(boundary.index + boundary[0].length);
-      if (frame.length > (this.protocol === "images" ? 16 * 1024 * 1024 : 1_048_576)) throw new Error("upstream_event_too_large");
+      if (frame.length > (this.protocol === "images" ? 32 * 1024 * 1024 : 1_048_576)) throw new Error("upstream_event_too_large");
       const data = frame.split(/\r?\n/).filter((line) =>
         line.startsWith("data:")
       ).map((line) => line.slice(5).trimStart()).join("\n");
@@ -319,7 +319,7 @@ class NativeUsageObserver {
         throw new Error("upstream_stream_failed");
       }
     }
-    if (this.pending.length > (this.protocol === "images" ? 16 * 1024 * 1024 : 1_048_576)) {
+    if (this.pending.length > (this.protocol === "images" ? 32 * 1024 * 1024 : 1_048_576)) {
       throw new Error("upstream_event_too_large");
     }
   }
@@ -329,9 +329,18 @@ class NativeUsageObserver {
 function nativeFrames(
   body: ReadableStream<Uint8Array>,
   maxFrame = 1_048_576,
+  transformValue?: (value:Item,streaming:boolean)=>Item,
 ): ReadableStream<Uint8Array> {
   let pending = "";
   const encoder = new TextEncoder(), decoder = new TextDecoder();
+  const frameBytes=(frame:string)=>{
+    if(!transformValue)return encoder.encode(frame);
+    const lines=frame.split(/\r?\n/),data=lines.filter(line=>line.startsWith("data:")).map(line=>line.slice(5).trimStart()).join("\n");
+    if(!data||data==="[DONE]")return encoder.encode(frame);
+    const value=transformValue(JSON.parse(data),true);
+    const metadata=lines.filter(line=>line&&!line.startsWith("data:")&&!line.startsWith("event:"));
+    return encoder.encode([...metadata,...(typeof value.type==="string"?[`event: ${value.type}`]:[]),`data: ${JSON.stringify(value)}`,"", ""].join("\n"));
+  };
   return body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
       transform(bytes, controller) {
@@ -340,7 +349,7 @@ function nativeFrames(
         while ((boundary = /\r?\n\r?\n/.exec(pending))) {
           const length = boundary.index + boundary[0].length;
           if (length > maxFrame) throw new Error("upstream_event_too_large");
-          controller.enqueue(encoder.encode(pending.slice(0, length)));
+          controller.enqueue(frameBytes(pending.slice(0, length)));
           pending = pending.slice(length);
         }
         if (pending.length > maxFrame) {
@@ -350,7 +359,7 @@ function nativeFrames(
       flush(controller) {
         pending += decoder.decode();
         if (pending.trim()) {
-          controller.enqueue(encoder.encode(pending + "\n\n"));
+          controller.enqueue(frameBytes(pending + "\n\n"));
         }
       },
     }),
@@ -370,6 +379,7 @@ export async function nativeResponse(
   modelSources?:ModelSources,
   aliasModel?:string,
   started = Date.now(),
+  transformValue?: (value:Item,streaming:boolean)=>Item,
 ): Promise<Response> {
   if (!upstream.body) throw new HttpError(502, "invalid_upstream_response");
   if (!streaming) {
@@ -404,16 +414,30 @@ export async function nativeResponse(
         outcome: "completed",
       });
     await finish(upstream.status, usage);
-    return json(upstream.status, value);
+    return json(upstream.status, transformValue?transformValue(value,false):value);
   }
   const contentType = upstream.headers.get("content-type");
+  if (protocol === "images" && contentType?.includes("application/json")) {
+    // Some Codex deployments return a complete JSON image even with stream enabled.
+    const validated = await nativeResponse(upstream, platform, protocol, false, signal, requestId, async () => {}, path, allowlist, modelSources, aliasModel, started);
+    const value = await validated.json();
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({ start(controller) {
+      for (const [index, item] of value.data.entries()) {
+        const event = { ...item, type: "image_generation.completed", created_at: value.created, output_format: item.output_format ?? value.output_format, ...(index === value.data.length - 1 ? { usage: value.usage } : {}) };
+        controller.enqueue(encoder.encode(`event: image_generation.completed\ndata: ${JSON.stringify(event)}\n\n`));
+      }
+      controller.close();
+    } });
+    return nativeResponse(new Response(body, {status:upstream.status,headers:{"content-type":"text/event-stream"}}), platform, protocol, true, signal, requestId, finish, path, allowlist, modelSources, aliasModel, started, transformValue);
+  }
   if (contentType && !contentType.includes("text/event-stream")) {
     await upstream.body.cancel();
     throw new HttpError(502, "invalid_upstream_stream");
   }
   return new Response(
     trackedStream(
-      nativeFrames(upstream.body, protocol === "images" ? 16 * 1024 * 1024 : undefined),
+      nativeFrames(upstream.body, protocol === "images" ? 16 * 1024 * 1024 : undefined, transformValue),
       signal,
       (usage) => finish(upstream.status, usage),
       new NativeUsageObserver(platform, protocol, started),

@@ -27,3 +27,20 @@ export async function oauthImageRequest(credentials:OAuthCredentials,identity:Co
   const headers=buildHeaders(credentials,identity);headers.set('accept',body.stream===true?'text/event-stream':'application/json');
   return {url:'https://chatgpt.com/backend-api/codex/images/'+(path.endsWith('/edits')?'edits':'generations'),init:{method:'POST',headers,signal,redirect:'error',body:JSON.stringify(payload)},streaming:body.stream===true};
 }
+
+// Native edit events use a generation prefix; preserve the upstream client contract.
+export function oauthImageOutput(value:Record<string,any>,body:Record<string,unknown>,edit:boolean,streaming:boolean):Record<string,any>{
+  const mime=(format:unknown)=>format==='jpeg'||format==='jpg'?'image/jpeg':format==='webp'?'image/webp':'image/png';
+  const convert=(item:Record<string,any>)=>{
+    if(typeof body.model==='string')item.model=body.model;
+    if(body.response_format==='url'&&typeof item.b64_json==='string'&&item.b64_json){
+      item.url=`data:${mime(item.output_format??value.output_format??body.output_format)};base64,${item.b64_json}`;
+      if(!streaming)delete item.b64_json;
+    }
+  };
+  if(streaming){
+    if(edit&&typeof value.type==='string'&&value.type.startsWith('image_generation.'))value.type=value.type.replace('image_generation.','image_edit.');
+    convert(value);
+  }else for(const item of value.data??[])convert(item);
+  return value;
+}
