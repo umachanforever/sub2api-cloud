@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">sub2api-supabase</title>
+  <desc id="desc">Connected gateway nodes on a dark background.</desc>
+  <rect width="128" height="128" rx="30" fill="#10251d"/>
+  <path d="M32 40h27a18 18 0 0 1 18 18v12a18 18 0 0 0 18 18M32 88h27a18 18 0 0 0 18-18V58a18 18 0 0 1 18-18" fill="none" stroke="#3ecf8e" stroke-width="9" stroke-linecap="round"/>
+  <g fill="#a7f3d0"><circle cx="32" cy="40" r="10"/><circle cx="32" cy="88" r="10"/><circle cx="96" cy="40" r="10"/><circle cx="96" cy="88" r="10"/></g>
+</svg>
