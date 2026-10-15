@@ -828,14 +828,22 @@ try {
   );
   assert.equal(admit(undefined, "claude-test").error, "model_not_allowed");
   assert.ok(admit().lease_id);
+  // Refresh fixture requests and evaluate the fixed-minute limit atomically.
+  const rateLimitError = () => JSON.parse(sql(`
+    BEGIN;
+    UPDATE s2a_private.gateway_requests SET admitted_at=now() WHERE user_id=${me.id};
+    SET LOCAL ROLE service_role;
+    SELECT public.s2a_gateway_key_admit('${keyHash}',gen_random_uuid(),'gpt-test','192.0.2.8');
+    COMMIT;
+  `).split('\n').find(line=>line.startsWith('{'))).error;
   sql(
     `UPDATE groups SET model_allowlist='{}',rpm_limit=1 WHERE id=${group.id}`,
   );
-  assert.equal(admit().error, "group_rate_limit_exceeded");
+  assert.equal(rateLimitError(), "group_rate_limit_exceeded");
   sql(
     `INSERT INTO user_group_rate_multipliers(user_id,group_id,rpm_override) VALUES(${me.id},${group.id},0) ON CONFLICT(user_id,group_id) DO UPDATE SET rpm_override=0; UPDATE users SET rpm_limit=1 WHERE id=${me.id}`,
   );
-  assert.equal(admit().error, "rate_limit_exceeded");
+  assert.equal(rateLimitError(), "rate_limit_exceeded");
   sql(
     `UPDATE users SET rpm_limit=0 WHERE id=${me.id}; UPDATE groups SET rpm_limit=0 WHERE id=${group.id}`,
   );
