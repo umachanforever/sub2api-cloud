@@ -248,8 +248,30 @@ BEGIN
     UPDATE s2a_private.batch_image_runtime SET stage='completed',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_read(p_key_hash text,p_id text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE; native public.batch_image_jobs%ROWTYPE; items jsonb;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity||jsonb_build_object('status',403); END IF;
+    IF p_id IS NULL OR p_id !~ '^imgbatch_[a-f0-9]{32}$' THEN RETURN jsonb_build_object('error','invalid_batch_id','status',400); END IF;
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_not_found','status',404); END IF;
+    IF task.user_id IS DISTINCT FROM (identity->>'user_id')::bigint OR task.key_id IS DISTINCT FROM (identity->>'key_id')::bigint OR task.group_id IS DISTINCT FROM (identity->>'group_id')::bigint
+        THEN RETURN jsonb_build_object('error','batch_image_forbidden','status',403); END IF;
+    SELECT * INTO native FROM public.batch_image_jobs WHERE batch_id=p_id AND user_deleted_at IS NULL;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_not_found','status',404); END IF;
+    SELECT coalesce(jsonb_agg(jsonb_strip_nulls(jsonb_build_object('custom_id',custom_id,'status',status,'image_count',image_count,
+        'mime_type',mime_type,'file_extension',file_extension,'error_code',error_code)) ORDER BY id),'[]'::jsonb) INTO items FROM public.batch_image_items WHERE job_id=p_id;
+    RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
+        'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
+        'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
+        'output_expires_at',native.output_expires_at,'error_code',native.last_error_code,'items',items));
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail','s2a_batch_image_prepare','s2a_batch_image_ready','s2a_batch_image_runtime_admit','s2a_batch_image_runtime_indexed','s2a_batch_image_read') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

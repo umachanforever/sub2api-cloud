@@ -60,6 +60,11 @@ BEGIN
  IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'unpersisted request claimed'; END IF;
  IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','gemini_api',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'prepare replay'; END IF;
  IF public.s2a_batch_image_prepare(h,ident,repeat('b',64),'gemini-image','gemini_api',1,'images')->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'request overwritten'; END IF;
+ r:=public.s2a_batch_image_read(h,ident);
+ IF r->>'id' IS DISTINCT FROM ident OR r ? 'key_hash' OR r ? 'account_id' OR r ? 'request_hash' OR r ? 'lease_id' THEN RAISE EXCEPTION 'unsafe batch view'; END IF;
+ UPDATE public.groups SET allow_batch_image_generation=false WHERE id=g;
+ IF public.s2a_batch_image_read(h,ident)->>'id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'prior batch hidden after permission disabled'; END IF;
+ UPDATE public.groups SET allow_batch_image_generation=true WHERE id=g;
  IF public.s2a_batch_image_ready(h,ident,repeat('b',64))->>'error' IS DISTINCT FROM 'batch_image_conflict' THEN RAISE EXCEPTION 'ready changed hash'; END IF;
  IF public.s2a_batch_image_ready(h,ident,repeat('a',64))->>'ready' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'ready failed'; END IF;
  leased:=public.s2a_batch_image_runtime_claim()->0;
