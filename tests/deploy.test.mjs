@@ -21,11 +21,11 @@ test('deployment refuses missing config and never sends local credentials as clo
       assert.doesNotMatch(content,/SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|SUPABASE_DB_PASSWORD/);
       assert.equal((await stat(path)).mode & 0o777,0o600);
     }
-  },async config=>{assert.equal(config,env);calls.push(['scheduler']);});
-  assert.deepEqual(calls.map(args=>args[0]),['link','db','secrets','functions','scheduler']);
+  },async config=>{assert.deepEqual(config,{...env,SUB2API_DATA_MODEL:'native'});calls.push(['scheduler']);},async config=>{assert.equal(config.SUB2API_DATA_MODEL,'native');calls.push(['management']);});
+  assert.deepEqual(calls.map(args=>args[0]),['link','db','management','secrets','functions','scheduler']);
   assert.equal(calls[0][2],'project');
   assert.ok(calls[1].includes('--yes'));
-  assert.ok(calls[3].includes('--use-api'));
+  assert.ok(calls[4].includes('--use-api'));
   await assert.rejects(stat(path),{code:'ENOENT'});
 });
 
@@ -37,12 +37,12 @@ test('a failed migration stops deployment and cleans the temporary directory',as
 
 test('scheduler failure after function deployment still cleans private temporary files',async()=>{
  let path;const calls=[];
- await assert.rejects(deploy(env,async args=>{calls.push(args[0]);if(args[0]==='secrets')path=args[args.indexOf('--env-file')+1];},async()=>{throw Error('scheduler_failed');}),/scheduler_failed/);
- assert.deepEqual(calls,['link','db','secrets','functions']);await assert.rejects(stat(path),{code:'ENOENT'});
+ await assert.rejects(deploy(env,async args=>{calls.push(args[0]);if(args[0]==='secrets')path=args[args.indexOf('--env-file')+1];},async()=>{throw Error('scheduler_failed');},async()=>{calls.push('management');}),/scheduler_failed/);
+ assert.deepEqual(calls,['link','db','management','secrets','functions']);await assert.rejects(stat(path),{code:'ENOENT'});
 });
 
  test('native deployment selects the canonical gateway without leaking database access',()=>{
- const config=deploymentConfig({...env,SUB2API_DATA_MODEL:'native',DATABASE_URL:'private'});
+ const config=deploymentConfig({...env,DATABASE_URL:'private'});
  assert.match(config.secrets,/SUB2API_DATA_MODEL=native\n/);
  assert.doesNotMatch(config.secrets,/DATABASE_URL|private/);
  assert.throws(()=>deploymentConfig({...env,SUB2API_DATA_MODEL:'invalid'}),/SUB2API_DATA_MODEL/);

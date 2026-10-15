@@ -11,8 +11,8 @@ const encryptionKey = Deno.env.get("GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64")
 if (!url || !serviceKey || !encryptionKey) {
   throw new Error("Missing Supabase or encryption configuration");
 }
-const dataModel = Deno.env.get("SUB2API_DATA_MODEL")?.trim();
-if (dataModel && dataModel !== "native") throw new Error("SUB2API_DATA_MODEL must be native or unset");
+const dataModel = Deno.env.get("SUB2API_DATA_MODEL")?.trim() || "native";
+if (dataModel !== "native") throw new Error("SUB2API_DATA_MODEL must be native or unset");
 const adminIds = (Deno.env.get("SUB2API_ADMIN_USER_IDS") ?? "").split(",").map((
   id,
 ) => id.trim().toLowerCase()).filter(Boolean);
@@ -30,7 +30,7 @@ Deno.serve(
     jobSigningKey: await jobSigningKey(encryptionKey),
     adminIds,
     googleOAuth: googleOAuthClients(Object.fromEntries(googleOAuthVariables.map(key => [key, Deno.env.get(key)]))),
-    ...(dataModel === "native" ? {dataModel} : {}),
+    dataModel,
     ...(mailKey && mailFrom ? { mail: { apiKey: mailKey, from: mailFrom } } : {}),
   }),
 );

@@ -41,7 +41,7 @@ export function deploymentConfig(env) {
   if (Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key) throw new Error('The credential encryption key must be 32 bytes encoded as Base64');
   return {
     ref,
-    secrets: batchImageSecrets(env)+requestLimitSecrets(env)+`GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
+    secrets: batchImageSecrets(env)+requestLimitSecrets(env)+`GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+'SUB2API_DATA_MODEL=native\n',
   };
 }
 
@@ -50,6 +50,7 @@ export async function deploy(env = process.env, run = (args) => {
   if (result.error || result.status !== 0) throw new Error(`Supabase ${args[0]} failed; deployment stopped`);
 }, configure = configureJobScheduler, provision = provisionManagement) {
   env = await resolveProjectCredentials(env);
+  if (!env.SUB2API_DATA_MODEL?.trim()) env = { ...env, SUB2API_DATA_MODEL: 'native' };
   const config = deploymentConfig(env);
   const directory = await mkdtemp(join(tmpdir(), 'sub2api-deploy-'));
   try {
