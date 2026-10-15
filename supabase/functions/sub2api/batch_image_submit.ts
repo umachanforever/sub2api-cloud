@@ -15,7 +15,8 @@ export async function submitBatchImage(db:Database,keyHash:string,input:unknown,
  if(!/^imgbatch_[a-f0-9]{32}$/.test(id)||!/^[a-f0-9]{64}$/.test(keyHash))throw new HttpError(400,'invalid_batch_submission');
  let normalized=batchImageInput(input);
  const raw=input as Record<string,unknown>;
- if(options.id&&(raw.task_name===undefined||raw.task_name===null||typeof raw.task_name==='string'&&!raw.task_name.trim())){
+ const automaticName=Boolean(options.id&&(raw.task_name===undefined||raw.task_name===null||typeof raw.task_name==='string'&&!raw.task_name.trim()));
+ async function restoreName(){
   const existing=await db.rpc<Record<string,unknown>>('s2a_batch_image_read',{p_key_hash:keyHash,p_id:id,p_client_ip:options.clientIP??null});
   if(!existing||typeof existing!=='object'||Array.isArray(existing))throw new HttpError(503,'invalid_batch_submission_response');
   if(typeof existing.error==='string'){
@@ -25,8 +26,18 @@ export async function submitBatchImage(db:Database,keyHash:string,input:unknown,
    normalized=batchImageInput({...raw,task_name:existing.task_name});
   }
  }
- const body=new TextEncoder().encode(JSON.stringify(normalized)),hash=await imageBytesHash(body);
- const prepared=checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket),p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
+ if(automaticName)await restoreName();
+ let hash=await imageBytesHash(new TextEncoder().encode(JSON.stringify(normalized)));
+ const prepare=async()=>checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket),p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
+ let prepared:Record<string,unknown>;
+ try{prepared=await prepare();}
+ catch(error){
+  if(!automaticName||!(error instanceof HttpError)||error.status!==409||error.code!=='batch_image_conflict')throw error;
+  // A concurrent first submission may persist its generated name after our initial read.
+  await restoreName();hash=await imageBytesHash(new TextEncoder().encode(JSON.stringify(normalized)));
+  prepared=await prepare();
+ }
+
  if(prepared.ready===true)return {id,ready:true};
  const stored=await storeBatchRequest(db,id,normalized,signal);
  if(stored.requestHash!==hash)throw new HttpError(503,'batch_submission_hash_changed');

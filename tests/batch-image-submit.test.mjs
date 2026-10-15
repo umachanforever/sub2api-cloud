@@ -32,3 +32,17 @@ test('submission derives Vertex eligibility from server configuration rather tha
   await submitBatchImage(db,hash,{model:'gemini-image',task_name:'fixed',vertex_enabled:!enabled,items:[{prompt:'blue square'}]});
  }
 });
+test('concurrent first submissions recover a committed automatic name only once',async()=>{
+ for(const changed of [false,true]){
+  let reads=0,prepares=0;const names=[];
+  const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{
+   const rpc=String(url).split('/').at(-1),args=JSON.parse(init.body);
+   if(rpc.endsWith('_read'))return Response.json(++reads===1?{error:'batch_image_not_found',status:404}:{id,task_name:'2026-01-01 00:00:00'});
+   assert.ok(rpc.endsWith('_prepare'));prepares++;names.push(args.p_name);
+   return Response.json(prepares===1||changed?{error:'batch_image_conflict',status:409}:{id,ready:true});
+  });
+  const result=submitBatchImage(db,hash,{model:'gemini-image',items:[{prompt:changed?'different':'same'}]},{id});
+  if(changed)await assert.rejects(result,error=>error.status===409);else assert.equal((await result).id,id);
+  assert.equal(reads,2);assert.equal(prepares,2);assert.equal(names[1],'2026-01-01 00:00:00');
+ }
+});
