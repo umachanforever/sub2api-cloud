@@ -111,7 +111,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 执行 `npm run verify:websocket`，可验收 Responses WebSocket 的两轮真实调用、输入 Token 用量及 `previous_response_id` 上下文复用。第二轮不会再次提供验证码，模型必须从第一轮上下文中读取。执行 `npm run verify:independence -- --websocket`，可在本地服务停机期间同时检查该能力。命令使用 `.local/agent-access.json`，WebSocket 验收会发送两次 AI 请求。
 
-执行 `npm run verify:schedulers`，可使用 `.env.local` 检查四项云端调度以及 `pg_net` 发出签名请求后的实际 HTTP 响应。命令需要 `SUPABASE_ACCESS_TOKEN`，不会读取请求头、密钥或响应正文。检查会触发现有任务处理器，因此可能执行已排队的任务；HTTP 接收成功不代表上游推理已完成。
+执行 `npm run verify:schedulers`，可使用 `.env.local` 检查五项云端调度：每小时请求维护，以及四项任务处理器通过 `pg_net` 发出签名请求后的实际 HTTP 响应。命令需要 `SUPABASE_ACCESS_TOKEN`，不会读取请求头、密钥或响应正文。检查会触发现有任务处理器，因此可能执行已排队的任务；HTTP 接收成功不代表上游推理已完成。
 
 执行 `npm run verify:storage`，可使用 `.env.local` 验收 Supabase 私有文件存储。命令上传一个小型临时文件，检查授权读取、公开访问被拒绝和短期签名下载，然后删除文件并确认清理完成，不会发送 AI 请求。
 
