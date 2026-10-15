@@ -1,3 +1,4 @@
+import { validateCodexReasoning } from "./codex_models.ts";
 import { grokOAuthRequest } from './grok_oauth.ts';
 import { accountFetch } from "./account_proxy.ts";
 import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
@@ -304,6 +305,7 @@ export async function proxy(
         let normalized: Record<string, unknown> | undefined;
         if (body) {
           try {
+            validateCodexReasoning(forwardedBody!);
             normalized = normalizeBody(
               chat
                 ? chatToResponses(forwardedBody!)

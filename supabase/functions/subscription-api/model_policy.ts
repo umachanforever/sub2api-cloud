@@ -1,3 +1,4 @@
+import { modernCodexModel } from "./codex_models.ts";
 import { DEFAULT_PROVIDER_CATALOGS } from "./provider_models.ts";
 import { HttpError } from "./db.ts";
 export const DEFAULT_PROVIDER_MODELS:Record<string,string[]> = Object.fromEntries(Object.entries(DEFAULT_PROVIDER_CATALOGS).map(([provider,models])=>[provider,models.map(model=>String(model.id))]));
@@ -73,6 +74,8 @@ function claudeModel(model:string) {
   return CLAUDE_ALIASES[base] ?? base;
 }
 function compatModel(model:string) {
+  const modern = modernCodexModel(model);
+  if (modern) return modern.id;
   const segment = model.split("/").at(-1)!.trim();
   const suffix = segment.toLowerCase().split(/[-_ ]/).filter(Boolean).at(-1);
   if (!/^gpt-/i.test(segment) || !["none","minimal","low","medium","high","xhigh","extrahigh"].includes(suffix ?? "")) return model;

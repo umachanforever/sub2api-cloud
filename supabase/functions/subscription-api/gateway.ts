@@ -1,3 +1,4 @@
+import { validateCodexReasoning } from "./codex_models.ts";
 export type Platform = "openai" | "anthropic" | "gemini" | "antigravity" | "grok";
 export type ApiKeyCredentials = { api_key: string; base_url?: string };
 export type AccountCredentials = OAuthCredentials | ApiKeyCredentials;
@@ -139,6 +140,7 @@ export function normalizeBody(input: unknown): Record<string, unknown> {
   ) {
     throw new Error("Invalid Responses request");
   }
+  validateCodexReasoning(body);
   body.instructions ??= "";
   body.store = false;
   body.stream = true;
