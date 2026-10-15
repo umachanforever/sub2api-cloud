@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-A developer-friendly AI API gateway with a Supabase cloud backend and the original Sub2API management console. Connect OpenAI OAuth accounts and supported provider API keys, manage account pools and access keys, and inspect provider-reported token usage.
+A developer-friendly AI API gateway with a Supabase cloud backend and the original Sub2API management console. Connect OpenAI and Anthropic OAuth accounts and supported provider API keys, manage account pools and access keys, and inspect provider-reported token usage.
 
 Supabase runs API authentication, credential refresh, provider requests, streaming, and usage recording. The local Go service and Vue console manage the same cloud records. **AI requests continue working when the local management services are stopped.** Mini Program authentication remains separate.
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向开发者的 AI API 网关：核心请求运行在 Supabase 云端，管理端沿用原版 Sub2API 的 Go 后端和 Vue 控制台。支持接入 OpenAI OAuth 账号与受支持供应商的 API Key，管理账号池、调用密钥与 Token 用量。
+面向开发者的 AI API 网关：核心请求运行在 Supabase 云端，管理端沿用原版 Sub2API 的 Go 后端和 Vue 控制台。支持接入 OpenAI、Anthropic OAuth 账号与受支持供应商的 API Key，管理账号池、调用密钥与 Token 用量。
 
 Supabase 负责 API 鉴权、凭据刷新、供应商请求、流式响应和用量记录。本地管理端直接读写同一套云端数据，**关闭本地服务后，云端 AI API 仍可独立使用**。小程序自身的登录认证保持独立。
 

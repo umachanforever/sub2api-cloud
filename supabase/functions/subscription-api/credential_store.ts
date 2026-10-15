@@ -64,8 +64,8 @@ export async function decryptCredentials(
   if (
     typeof value.access_token !== "string" ||
     !value.access_token.trim() ||
-    typeof value.refresh_token !== "string" ||
-    !value.refresh_token.trim()
+    (value.refresh_token !== undefined &&
+      (typeof value.refresh_token !== "string" || !value.refresh_token.trim()))
   ) {
     throw new Error("云端 OAuth 凭据不完整");
   }

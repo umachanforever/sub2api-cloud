@@ -1,4 +1,5 @@
 import { accountFetch } from "./account_proxy.ts";
+import { anthropicOAuthRequest } from "./anthropic_oauth.ts";
 import { recordOpsError, type ErrorContext } from "./ops_errors.ts";
 import { mappedCatalog, mappedTarget, type ModelSources } from "./model_mapping.ts";
 import { quotaHeaderWindows } from "./openai_quota_pause.ts";
@@ -255,6 +256,21 @@ export async function proxy(
         );
         providerDispatched = true;
         upstream = await accountFetch(db, account, native.url, native.init);
+      } else if (platform === "anthropic") {
+        let credentials = await credentialsFor(db, account);
+        const forward = () => {
+          native = anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
+          return accountFetch(db, account, native.url, native.init);
+        };
+        providerDispatched = true;
+        upstream = await forward();
+        if (upstream.status === 401) {
+          await upstreamFailure(401);
+          await upstream.body?.cancel();
+          credentials = await credentialsFor(db, account, credentials.access_token);
+          providerFailureRecorded = false;
+          upstream = await forward();
+        }
       } else {
         if (platform !== "openai" || gemini || nativeGeminiModels) {
           throw new HttpError(501, "provider_protocol_unsupported");
@@ -338,8 +354,8 @@ export async function proxy(
           "upstream_rejected_request",
         );
       }
-      responseAccepted = apiKey ? native!.streaming : stream;
-      if (apiKey) {
+      responseAccepted = native ? native.streaming : stream;
+      if (native) {
         return await nativeResponse(
           upstream,
           platform,

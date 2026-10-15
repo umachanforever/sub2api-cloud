@@ -1,4 +1,5 @@
 import { proxyFetcher } from "./account_proxy.ts";
+import { refreshAnthropicCredentials } from "./anthropic_oauth.ts";
 import {
   decryptCredentials,
   encryptCredentials,
@@ -15,6 +16,7 @@ import {
 
 export type Account = StoredCredentials & {
   id: string;
+  platform?: import("./gateway.ts").Platform;
   credential_version: number;
   proxy_id?: number | string | null;
   privacy_mode?: unknown;
@@ -87,7 +89,7 @@ export async function credentialsFor(
   );
   if (acquired) {
     try {
-      const refreshed = await refreshCredentials(
+      const refreshed = await (account.platform === "anthropic" ? refreshAnthropicCredentials : refreshCredentials)(
         current,
         proxyFetcher(db, account.proxy_id, isVaultCredentials(account)),
       );
@@ -115,9 +117,11 @@ export async function credentialsFor(
         { credential_version: latest.credential_version + 1 },
       );
       // Credentials are already durable; privacy failure must not fail their rotation.
-      await ensureOpenAIPrivacy(db, account.id, false, account).catch(() =>
-        console.warn("account_privacy_update_failed"),
-      );
+      if (!account.platform || account.platform === "openai") {
+        await ensureOpenAIPrivacy(db, account.id, false, account).catch(() =>
+          console.warn("account_privacy_update_failed"),
+        );
+      }
       return refreshed;
     } finally {
       await db.rpc(
