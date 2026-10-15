@@ -6,7 +6,7 @@ test('Grok multipart edits convert files and masks to native image references',a
  const form=new FormData();form.append('image[]',new Blob(['image'],{type:'image/png'}),'a.png');form.append('mask',new Blob(['mask'],{type:'image/png'}),'mask.png');
  const body=await grokImageForm(form,{model:'grok-imagine',prompt:'Edit',n:'2'});
  const native=grokImageBody(body,true);
- assert.equal(native.image.image_url,'data:image/png;base64,aW1hZ2U=');assert.equal(native.mask.image_url,'data:image/png;base64,bWFzaw==');assert.equal(native.n,2);
+ assert.equal(native.image.url,'data:image/png;base64,aW1hZ2U=');assert.equal(native.mask.url,'data:image/png;base64,bWFzaw==');assert.equal(native.n,2);assert.equal(native.image.type,'image_url');assert.equal(native.mask.type,'image_url');
  assert.equal(native.model,'grok-imagine-image-quality');
 });
 
@@ -37,4 +37,30 @@ test('Grok OAuth images preserve native responses rather than the OpenAI Codex b
  const response=await proxy(request,'/v1/images/generations','gateway-key',db,{requestId:'test'});
  assert.equal(response.status,200);assert.equal((await response.json()).data[0].url,'https://images.example/result.png');
  assert.deepEqual(calls,['https://cli-chat-proxy.grok.com/v1/images/generations']);assert.equal(finished.length,1);
+});
+
+test('Grok native image references match the original wire contract',()=>{
+ const body=grokImageBody({model:'grok-imagine-image',image:'https://images.example/one.png',reference_images:[{image_url:{url:'https://images.example/two.png'}}],mask:{url:'https://images.example/mask.png'}},true);
+ assert.deepEqual(body.image,{url:'https://images.example/one.png',type:'image_url'});
+ assert.deepEqual(body.images,[{url:'https://images.example/one.png',type:'image_url'},{url:'https://images.example/two.png',type:'image_url'}]);
+ assert.deepEqual(body.mask,{url:'https://images.example/mask.png',type:'image_url'});
+ assert.equal(body.reference_images,undefined);
+ assert.throws(()=>grokImageBody({image:{file_id:'private-file'}},true),/image_input_required/);
+});
+
+test('Grok multipart editing passes through parsing, OAuth routing and native serialization',async()=>{
+ const {proxy}=await import('../supabase/functions/sub2api/proxy.ts');
+ let dispatched=0;const finished=[];
+ const db={config:{dataModel:'native'},async rpc(name,body){
+  if(name==='s2a_personal_acquire')return {lease_id:'lease',account:{id:'1',platform:'grok',type:'oauth',credential_storage:'vault',credential_version:1,credentials:{access_token:'private-access',expires_at:Date.now()+3600000}}};
+  if(name==='s2a_personal_finish'){finished.push(body);return;}
+  assert.fail(name);
+ },async fetchImpl(url,init){
+  dispatched++;assert.equal(url,'https://cli-chat-proxy.grok.com/v1/images/edits');assert.equal(new Headers(init.headers).get('content-type'),'application/json');
+  const body=JSON.parse(init.body);assert.deepEqual(body.image,{url:'data:image/png;base64,aW1hZ2U=',type:'image_url'});assert.deepEqual(body.mask,{url:'data:image/png;base64,bWFzaw==',type:'image_url'});assert.equal(body.n,2);assert.equal(body.resolution,'2k');assert.equal(body.aspect_ratio,'3:4');
+  return Response.json({data:[{url:'https://images.example/result.png'}]});
+ }};
+ const form=new FormData();form.set('model','grok-imagine-image');form.set('prompt','Edit');form.set('n','2');form.set('size','1152x1536');form.set('image',new Blob(['image'],{type:'image/png'}),'image.png');form.set('mask',new Blob(['mask'],{type:'image/png'}),'mask.png');
+ const response=await proxy(new Request('https://gateway/v1/images/edits',{method:'POST',body:form}),'/v1/images/edits','gateway-key',db,{requestId:'test'});
+ assert.equal(response.status,200);await response.json();assert.equal(dispatched,1);assert.equal(finished.length,1);
 });

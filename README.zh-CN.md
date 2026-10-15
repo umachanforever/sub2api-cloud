@@ -153,7 +153,7 @@ Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清�
 OpenAI API Key 账号支持 `POST /v1/images/edits` 和 `/images/edits`，可传入 JSON 图片 URL 或 multipart 附件，支持多图与蒙版。模型映射、流式图片事件和上游 Token 用量复用图片生成处理链路，默认图片模型为 `gpt-image-2`。
 OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst` 及其已支持快照的 Codex 原生图片生成与编辑。multipart 图片和蒙版在云端网关内转换为 data URL。
 
-Grok API Key 和 OAuth 账号也支持 `POST /v1/images/generations` 图片生成及 `/v1/images/edits` 图片编辑。请指定 Imagine 图片模型，`grok-imagine` 会解析为 `grok-imagine-image-quality`。编辑支持 JSON `images` 引用或 multipart 上传，最多三张源图片及可选蒙版。网关将 `size` 转换为原生分辨率与宽高比参数。
+Grok API Key 和 OAuth 账号也支持 `POST /v1/images/generations` 图片生成及 `/v1/images/edits` 图片编辑。请指定 Imagine 图片模型，`grok-imagine` 会解析为 `grok-imagine-image-quality`。编辑支持 JSON `image`、`images`、`reference_images` 引用（URL 字符串或图片对象），或 multipart 上传，最多三张源图片及可选蒙版。网关将 `size` 转换为原生分辨率与宽高比参数。
 图片响应支持 `b64_json` 和 `response_format=url` 的 data URL，并保留正确的图片类型。流式编辑使用 `image_edit.*` 事件；上游返回完整 JSON 时，网关会转换为 SSE 完成事件，Token 用量只记录一次。
 其他 OAuth 图片模型通过 Responses 的 `image_generation` 工具桥接，支持输入图片、蒙版、渐进图片事件和完成用量记录。图片模型与 Responses 驱动模型分别选择。
 

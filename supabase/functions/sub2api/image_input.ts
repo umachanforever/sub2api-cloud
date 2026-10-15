@@ -19,11 +19,25 @@ export async function imageForm(request:Request,maxBytes:number):Promise<{form:F
   return {form,body};
 }
 export function validateImageEdit(body:Record<string,unknown>):void{
-  const imageReference=(value:unknown):boolean=>{
-    if(!value||typeof value!=='object'||Array.isArray(value))return false;
+  const reference=(value:unknown):{image_url:string}=>{
+    if(typeof value==='string'&&/^(?:https?:\/\/|data:image\/)/i.test(value.trim()))return {image_url:value.trim()};
+    if(!value||typeof value!=='object'||Array.isArray(value)||'file_id' in value)throw new HttpError(400,'image_input_required');
     const image=value as Record<string,unknown>;
-    return !('file_id' in image)&&typeof image.image_url==='string'&&image.image_url.trim().length>0;
+    const nested=image.image_url;
+    const url=typeof image.url==='string'?image.url:typeof nested==='string'?nested:nested&&typeof nested==='object'&&!Array.isArray(nested)?(nested as Record<string,unknown>).url:undefined;
+    if(typeof url!=='string'||!url.trim())throw new HttpError(400,'image_input_required');
+    return {image_url:url.trim()};
   };
-  if(!Array.isArray(body.images)||!body.images.length||!body.images.every(imageReference))throw new HttpError(400,'image_input_required');
-  if(body.mask!==undefined&&!imageReference(body.mask))throw new HttpError(400,'invalid_image_mask');
+  const images:unknown[]=[];
+  for(const key of ['image','images','reference_images']){
+    if(body[key]!==undefined){
+      if(Array.isArray(body[key])){for(const image of body[key])images.push(image);}else images.push(body[key]);
+    }
+  }
+  if(!images.length)throw new HttpError(400,'image_input_required');
+  body.images=images.map(reference);
+  delete body.image;delete body.reference_images;
+  if(body.mask!==undefined){
+    try{body.mask=reference(body.mask);}catch{throw new HttpError(400,'invalid_image_mask');}
+  }
 }

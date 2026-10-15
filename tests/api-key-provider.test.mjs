@@ -917,7 +917,7 @@ test('Grok images use native generation and edit endpoints with shared accountin
  assert.equal(calls[0].body.model,'grok-imagine-image-quality');assert.equal(calls[0].body.resolution,'1k');assert.equal(calls[0].body.aspect_ratio,'1:1');assert.equal(calls[0].body.size,undefined);
  const edited=await value.request('/v1/images/edits',{model:'grok-imagine-image',prompt:'Make blue',images:[{image_url:'https://images.example/source.png'}]});
  assert.equal(edited.status,200);await edited.json();
- assert.equal(calls[1].url,'https://api.x.ai/v1/images/edits');assert.deepEqual(calls[1].body.image,{image_url:'https://images.example/source.png'});assert.equal(calls[1].body.images,undefined);
+ assert.equal(calls[1].url,'https://api.x.ai/v1/images/edits');assert.deepEqual(calls[1].body.image,{url:'https://images.example/source.png',type:'image_url'});assert.equal(calls[1].body.images,undefined);
  assert.equal(value.finishes.at(-1).p_input_tokens,2);assert.equal(value.finishes.at(-1).p_output_tokens,7);
  const rejected=await value.request('/v1/images/edits',{model:'grok-imagine-image',prompt:'Make blue',images:Array.from({length:4},()=>({image_url:'https://images.example/source.png'}))});
  assert.equal(rejected.status,400);assert.equal(calls.length,2);

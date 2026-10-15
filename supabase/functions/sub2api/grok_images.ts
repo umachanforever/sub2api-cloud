@@ -1,4 +1,5 @@
 import {HttpError} from './db.ts';
+import {validateImageEdit} from './image_input.ts';
 
 const ratios=['1:1','16:9','9:16','4:3','3:4','3:2','2:3','2:1','1:2','19.5:9','9:19.5','20:9','9:20'];
 
@@ -22,9 +23,13 @@ export function grokImageBody(body:Record<string,unknown>,edit:boolean):Record<s
   }
   delete out.size;
   if(edit){
-    if(!Array.isArray(out.images)||!out.images.length||out.images.length>3)throw new HttpError(400,'invalid_image_count');
-    out.image=out.images[0];
-    if(out.images.length===1)delete out.images;
+    validateImageEdit(out);
+    const images=out.images as {image_url:string}[];
+    if(images.length>3)throw new HttpError(400,'invalid_image_count');
+    const native=images.map(image=>({url:image.image_url,type:'image_url'}));
+    out.image=native[0];
+    if(native.length>1)out.images=native;else delete out.images;
+    if(out.mask)out.mask={url:(out.mask as {image_url:string}).image_url,type:'image_url'};
   }
   return out;
 }
