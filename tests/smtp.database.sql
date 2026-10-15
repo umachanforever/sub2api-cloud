@@ -1,0 +1,32 @@
+begin;
+do $$
+declare cfg jsonb;before jsonb;secret jsonb;v jsonb;batch jsonb;d uuid;rid bigint;
+begin
+ before:=public.s2a_smtp_worker_config();
+ secret:='{"ciphertext":"YWJjZGVmZ2hpamtsbW5vcHFyc3Q=","iv":"YWJjZGVmZ2hpamts"}';
+ v:=public.s2a_settings_update(jsonb_build_object('smtp_host','smtp.example.com','smtp_username','fixture','smtp_from_email','ops@example.com','smtp_credentials',secret));
+ assert not v?'error';assert v->'smtp_password_configured'='true'::jsonb;
+ assert not v?'smtp_credentials' and not v?'ciphertext','ordinary settings cannot return encrypted secrets';
+ cfg:=public.s2a_smtp_worker_config();assert cfg->'ciphertext'=secret->'ciphertext';assert cfg->>'smtp_port'='587';
+ v:=public.s2a_settings_update('{"smtp_from_name":"Ops"}');assert not v?'error','omitted defaults do not change credential scope';
+ v:=public.s2a_settings_update('{"site_name":"Should not save","smtp_host":"changed.example.com"}');assert v->>'error'='smtp_password_required_for_changed_server';
+ assert (select data->>'site_name' from public.s2a_settings)<>'Should not save','SMTP validation is atomic with ordinary settings';
+ v:=public.s2a_settings_update(jsonb_build_object('site_name','Should not save','unsupported_setting',true,'smtp_credentials',secret));assert v?'error';
+ assert (select data->>'site_name' from public.s2a_settings)<>'Should not save';
+ assert not has_table_privilege('service_role','public.s2a_smtp_credentials','SELECT');
+ assert not has_function_privilege('authenticated','public.s2a_smtp_worker_config()','EXECUTE');
+ assert not has_function_privilege('service_role','public.s2a_settings_update_without_smtp(jsonb)','EXECUTE');
+ delete from public.s2a_ops_mail_queue;delete from public.s2a_ops_mail_delivery;
+ insert into public.s2a_ops_mail_delivery(recipient,kind,payload,status,attempts,lease_id,lease_until) values('fixture@example.com','alert','[]','sending',1,gen_random_uuid(),now()+interval '120 seconds') returning id into d;
+ assert public.s2a_ops_mail_finish(d,(select lease_id from public.s2a_ops_mail_delivery where id=d),'smtp_delivery_uncertain');
+ assert (select status from public.s2a_ops_mail_delivery where id=d)='failed';
+ assert (select last_error from public.s2a_ops_mail_delivery where id=d)='smtp_delivery_uncertain';
+ insert into public.s2a_ops_mail_delivery(recipient,kind,payload,status,attempts,transport,lease_id,lease_until) values('fixture@example.com','alert','[]','sending',1,'smtp',gen_random_uuid(),now()-interval '1 second') returning id into d;
+ perform public.s2a_ops_mail_claim('smtp');
+ assert (select status from public.s2a_ops_mail_delivery where id=d)='failed','expired SMTP leases cannot resend uncertain messages';
+ insert into public.s2a_ops_mail_delivery(recipient,kind,payload,status,attempts,transport,ready_at) values('fixture@example.com','alert','[]','pending',1,'http',now()) returning id into d;
+ perform public.s2a_ops_mail_claim('smtp');
+ assert (select last_error from public.s2a_ops_mail_delivery where id=d)='delivery_transport_changed','provider changes cannot duplicate delivery';
+ assert not has_function_privilege('service_role','public.s2a_ops_mail_claim_without_transport()','EXECUTE');
+end $$;
+rollback;

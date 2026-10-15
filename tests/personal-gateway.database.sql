@@ -1,0 +1,38 @@
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE u bigint:=current_setting('s2a.acceptance.user_id')::bigint;
+    k bigint:=current_setting('s2a.acceptance.key_id')::bigint;
+    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid;
+BEGIN
+    IF has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text)','EXECUTE')
+        OR has_table_privilege('service_role','s2a_private.personal_gateway_leases','SELECT') THEN RAISE EXCEPTION 'personal gateway ACL mismatch'; END IF;
+    INSERT INTO public.groups(name,platform) VALUES('Personal cloud contract','openai') RETURNING id INTO g;
+    UPDATE public.api_keys SET group_id=g,ip_whitelist='[]',ip_blacklist='[]' WHERE id=k RETURNING s2a_key_hash INTO h;
+    UPDATE public.users SET balance=0,restrict_public_groups=false WHERE id=u;
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority)
+        VALUES('Personal cloud account','openai','apikey','{"api_key":"synthetic-private-token","model_mapping":{"alias":"gpt-5.4"}}',1,0) RETURNING id INTO a;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+    acquired:=public.s2a_personal_acquire(h,'alias',request);
+    IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM a::text
+        OR acquired->'account'->>'credential_storage' IS DISTINCT FROM 'vault'
+        OR acquired->'model_sources'->'mapping'->>'alias' IS DISTINCT FROM 'gpt-5.4' THEN RAISE EXCEPTION 'personal acquisition failed: %',acquired->>'error'; END IF;
+    lease:=(acquired->>'lease_id')::uuid;
+    IF public.s2a_personal_acquire(h,'alias',request)->>'lease_id' IS DISTINCT FROM lease::text THEN RAISE EXCEPTION 'acquisition replay changed slot'; END IF;
+    IF public.s2a_personal_acquire(h,'different',request)->>'error' IS DISTINCT FROM 'request_conflict' THEN RAISE EXCEPTION 'request replay changed model'; END IF;
+    IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'account concurrency ignored'; END IF;
+    result:=public.s2a_personal_finish(lease,200,'completed',100,20,NULL,40,0,1,5,'gpt-5.4');
+    IF result->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'personal finish failed: %',result; END IF;
+    IF NOT EXISTS(SELECT FROM public.usage_logs WHERE id=(result->>'usage_log_id')::bigint AND user_id=u AND api_key_id=k AND account_id=a
+        AND input_tokens=100 AND output_tokens=20 AND cache_read_tokens=40 AND actual_cost=0 AND total_cost=0
+        AND upstream_model='gpt-5.4' AND s2a_personal_details->'cacheCreation'='null'::jsonb) THEN RAISE EXCEPTION 'raw usage was not recorded without charging'; END IF;
+    IF (SELECT balance FROM public.users WHERE id=u)<>0 THEN RAISE EXCEPTION 'personal usage charged balance'; END IF;
+    IF public.s2a_personal_finish(lease,200,'completed',100,20,NULL,40,0,1,5,'gpt-5.4')->>'applied' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'completion replay not deduplicated'; END IF;
+    IF public.s2a_personal_finish(lease,200,'completed',101,20,NULL,40,0,1,5,'gpt-5.4')->>'error' IS DISTINCT FROM 'completion_conflict' THEN RAISE EXCEPTION 'completion replay changed usage'; END IF;
+    IF public.s2a_personal_acquire(h,'alias',request)->>'error' IS DISTINCT FROM 'request_finished' THEN RAISE EXCEPTION 'completed request restarted'; END IF;
+    UPDATE public.api_keys SET status='inactive' WHERE id=k;
+    IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
+END $$;
+ROLLBACK;

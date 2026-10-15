@@ -1,0 +1,20 @@
+begin;
+insert into auth.users(id,email) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','group-metadata@example.com');
+do $$ declare a uuid; b uuid; r jsonb; absent uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';owner uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';begin
+ r:=public.s2a_group_create('Metadata',owner,'openai',1,'{"description":"Details","sort_order":9}');a:=(r->>'id')::uuid;
+ if a is null or r->>'description'<>'Details' or r->>'sort_order'<>'9' then raise exception 'creation lost metadata %',r;end if;
+ r:=public.s2a_group_create('Second',owner);b:=(r->>'id')::uuid;
+ r:=public.s2a_groups_sort(jsonb_build_array(jsonb_build_object('id',a,'sort_order',1),jsonb_build_object('id',absent,'sort_order',2)));
+ if r->>'status'<>'404' or (select sort_order from public.s2a_groups where id=a)<>9 then raise exception 'missing group caused partial reorder';end if;
+ r:=public.s2a_groups_sort(jsonb_build_array(jsonb_build_object('id',a,'sort_order',1),jsonb_build_object('id',a,'sort_order',2)));
+ if r->>'error'<>'duplicate_group_ids' then raise exception 'duplicate reorder allowed';end if;
+ r:=public.s2a_groups_sort(jsonb_build_array(jsonb_build_object('id',a,'sort_order',1),jsonb_build_object('id',b,'sort_order',-2)));
+ if r->>'ok'<>'true' or (select sort_order from public.s2a_groups where id=a)<>1 or (select sort_order from public.s2a_groups where id=b)<>-2 then raise exception 'atomic reorder failed';end if;
+ r:=public.s2a_groups_sort('[{"id":"bad","sort_order":1}]');if r->>'status'<>'400' then raise exception 'invalid UUID accepted';end if;
+ r:=public.s2a_groups_sort('[{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2","sort_order":1.5}]');if r->>'status'<>'400' then raise exception 'fractional order accepted';end if;
+ update public.s2a_groups set description=null where id=a;
+ if not exists(select 1 from public.s2a_groups where id=a and description is null) then raise exception 'description clearing failed';end if;
+end $$;
+set local role authenticated;
+do $$ begin begin perform public.s2a_groups_sort('[]');raise exception 'direct user reorder allowed';exception when insufficient_privilege then null;end;end $$;
+rollback;

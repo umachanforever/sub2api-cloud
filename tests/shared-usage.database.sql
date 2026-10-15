@@ -1,0 +1,64 @@
+begin;
+insert into auth.users(id) values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1');
+insert into public.s2a_groups(id,name) values
+ ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2','Shared primary'),
+ ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3','Shared secondary');
+insert into public.s2a_memberships values ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3');
+insert into public.s2a_accounts(id,group_id,name,account_fingerprint,ciphertext,iv) values
+ ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2','Shared','shared-usage','encrypted','iv');
+insert into public.s2a_keys(user_id,group_id,name,key_hash,key_prefix,quota_total) values
+ ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3','Shared',repeat('e',64),'prefix',100);
+do $$ declare r jsonb; lease uuid; stats jsonb; begin
+ update public.s2a_accounts set group_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3' where id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4';
+ if not exists(select 1 from public.s2a_account_groups where account_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4' and group_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3') then raise exception 'primary group update did not change scheduling membership'; end if;
+ if exists(select 1 from public.s2a_account_groups where account_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4' and group_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2') then raise exception 'old primary group retained'; end if;
+ r := public.s2a_account_groups_replace('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee4',array['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee2','eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee3']::uuid[]);
+ if r ? 'error' then raise exception 'sharing failed: %',r; end if;
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid());
+ lease := (r->>'lease_id')::uuid;
+ if lease is null then raise exception 'secondary group cannot schedule: %',r; end if;
+ perform public.s2a_finish(lease,200,'completed',80,20,5,40);
+ perform public.s2a_finish(lease,200,'completed',80,20,5,40);
+ if (select quota_used from public.s2a_keys where key_hash=repeat('e',64)) <> 100 then raise exception 'quota finish is not idempotent'; end if;
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid());
+ if r->>'error' is distinct from 'quota_exceeded' then raise exception 'token quota not enforced'; end if;
+ stats := public.s2a_dashboard('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',now()-interval '1 day',now()+interval '1 second');
+ if (stats->'summary'->>'cache_read_tokens')::bigint <> 40 or (stats->'summary'->>'cache_creation_tokens')::bigint <> 5 then raise exception 'cache aggregation mismatch'; end if;
+ r := public.s2a_wallet_adjust('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',1.25,'test');
+ if (r->>'balance')::numeric <> 1.25 then raise exception 'wallet credit mismatch'; end if;
+ r := public.s2a_wallet_adjust('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',-2,'test');
+ if r->>'error' is distinct from 'insufficient_balance' then raise exception 'wallet overdraft accepted'; end if;
+ if (select count(*) from public.s2a_wallet_ledger where user_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1') <> 1 then raise exception 'failed debit wrote ledger'; end if;
+ r := public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',10,'set');
+ r := public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',2,'add','First');
+ r := public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',3,'add','Second');
+ stats := public.s2a_wallet_history('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',2,1,'admin_balance');
+ if (stats->>'total_recharged')::numeric <> 5 or jsonb_array_length(stats->'items') <> 1 then raise exception 'history total depends on page'; end if;
+ if not (stats->'items'->0 ? 'value') then raise exception 'history lacks frontend value'; end if;
+ r := public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',0,'set');
+ if (r->>'balance')::numeric <> 0 then raise exception 'zero reset failed'; end if;
+ perform public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',0,'set');
+ if (select count(*) from public.s2a_wallet_ledger where user_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1') <> 5 then raise exception 'no-op wrote ledger'; end if;
+ r := public.s2a_wallet_update('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1',0.000000001,'add');
+ if r->>'error' is distinct from 'invalid_balance' then raise exception 'subprecision amount accepted'; end if;
+ update public.s2a_keys set quota_total=null where key_hash=repeat('e',64);
+ perform public.s2a_user_limits_set(array['eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1']::uuid[],false,1,1);
+ update public.s2a_user_limits set window_start=now()-interval '61 seconds',window_count=0 where user_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid(),'{}',true,null);
+ lease := (r->>'lease_id')::uuid;
+ if lease is null then raise exception 'user limit initial request rejected: %',r; end if;
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid());
+ if r->>'error' is distinct from 'user_concurrency_limit_exceeded' then raise exception 'user concurrency not enforced'; end if;
+ perform public.s2a_finish(lease,200,'completed',1,1);
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid(),'{}',true,null);
+ if r->>'error' is distinct from 'user_rate_limit_exceeded' then raise exception 'IP overload bypassed user RPM'; end if;
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid(),'{}',false,null);
+ if r->>'lease_id' is null then raise exception 'failover counted user RPM again'; end if;
+ perform public.s2a_finish((r->>'lease_id')::uuid,200,'completed',1,1);
+ update public.s2a_user_limits set window_start=now()-interval '61 seconds' where user_id='eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1';
+ r := public.s2a_acquire(repeat('e',64),'model',gen_random_uuid());
+ if r->>'lease_id' is null then raise exception 'RPM window did not reset'; end if;
+ stats := public.s2a_wallet_get('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1');
+ if (stats->>'concurrency')::int<>1 or (stats->>'rpm_limit')::int<>1 then raise exception 'profile limits mismatch'; end if;
+end $$;
+rollback;

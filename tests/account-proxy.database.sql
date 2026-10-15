@@ -1,0 +1,32 @@
+begin;
+do $$
+declare source bigint;backup bigint;a uuid;g uuid:=gen_random_uuid();patch jsonb;v jsonb;r jsonb;owner uuid:=gen_random_uuid();ticket uuid:=gen_random_uuid();
+begin
+ insert into auth.users(id,email) values(owner,'account-proxy@example.com');
+ insert into public.s2a_groups(id,name,require_privacy_set) values(g,'Proxy routing fixture',false);
+ patch:='{"name":"Proxy","protocol":"http","host":"proxy.example.com","port":8080,"ciphertext":"encrypted","iv":"iv","fingerprint":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}';
+ v:=public.s2a_proxy_save(null,patch);source:=(v->>'id')::bigint;v:=public.s2a_proxy_save(null,patch||'{"name":"Backup"}');backup:=(v->>'id')::bigint;
+ patch:='{"name":"Proxied","platform":"openai","type":"apikey","status":"active","priority":50,"concurrency":3,"notes":"","extra":{},"schedulable":true,"auto_pause_on_expired":true,"account_fingerprint":"proxied-fixture","ciphertext":"encrypted","iv":"iv"}'||jsonb_build_object('proxy_id',source);
+ v:=public.s2a_account_save(null,patch,array[g]);a:=(v->>'id')::uuid;assert a is not null;assert (select proxy_id from public.s2a_accounts where id=a)=source;
+ v:=public.s2a_account_save(null,patch||'{"account_fingerprint":"bad-proxy","proxy_id":999999999}',array[g]);assert v->>'error'='proxy_not_found';assert not exists(select 1 from public.s2a_accounts where account_fingerprint='bad-proxy');
+ v:=public.s2a_account_save(a,'{"proxy_id":"1"}',array[g]);assert v->>'error'='invalid_proxy_id';
+ v:=public.s2a_account_save(a,jsonb_build_object('proxy_id',backup),array[g]);assert not v?'error';assert (select proxy_id from public.s2a_accounts where id=a)=backup;
+ v:=public.s2a_apikey_account_update(a,'openai',1,repeat('b',64),'next','next',jsonb_build_object('proxy_id',source));assert not v?'error';assert (select proxy_id from public.s2a_accounts where id=a)=source;
+ update public.s2a_proxies set expires_at=now()-interval '1 second',fallback_mode='proxy',backup_proxy_id=backup where id=source;
+ r:=public.s2a_proxy_route(source);assert (r->>'changed')::boolean;assert (r->>'target_id')::bigint=backup;
+ assert public.s2a_proxy_sweep()=1;assert (select proxy_id=backup and proxy_fallback_origin_id=source from public.s2a_accounts where id=a);
+ update public.s2a_proxies set expires_at=now()-interval '1 second',fallback_mode='direct' where id=backup;
+ assert public.s2a_proxy_sweep()=1;assert (select proxy_id is null and proxy_fallback_origin_id=source from public.s2a_accounts where id=a),'repeated fallback keeps the first origin';
+ v:=public.s2a_account_proxy_revert(a);assert not v?'error';assert (select proxy_id=source and proxy_fallback_origin_id is null from public.s2a_accounts where id=a);
+ perform public.s2a_proxy_sweep();
+ v:=public.s2a_account_save(a,jsonb_build_object('proxy_id',source),array[g]);assert not v?'error';assert (select proxy_fallback_origin_id is null from public.s2a_accounts where id=a),'manual binding clears fallback state';
+ update public.s2a_proxies set fallback_mode='none',backup_proxy_id=null where id=source;
+ assert (public.s2a_proxy_route(source)->>'target_id')::bigint=source;
+ insert into public.s2a_oauth_tickets(id,user_id,account_fingerprint,ciphertext,iv,metadata) values(ticket,owner,'proxied-oauth','encrypted','iv','{}');
+ v:=public.s2a_account_save(null,patch||jsonb_build_object('type','oauth','proxy_id',source),array[g],ticket,owner);assert not v?'error';assert (select proxy_id from public.s2a_accounts where id=(v->>'id')::uuid)=source;
+ assert not has_table_privilege('service_role','public.s2a_proxies','SELECT');
+ assert has_table_privilege('service_role','public.s2a_proxy_public','SELECT');
+ assert not exists(select 1 from information_schema.columns where table_schema='public' and table_name='s2a_proxy_public' and column_name in('ciphertext','iv','password','fingerprint'));
+ assert not has_function_privilege('authenticated','public.s2a_proxy_route(bigint)','EXECUTE');
+end $$;
+rollback;

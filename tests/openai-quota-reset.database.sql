@@ -1,0 +1,36 @@
+begin;
+do $$
+declare a uuid:=gen_random_uuid();b uuid:=gen_random_uuid();actor uuid:=gen_random_uuid();j jsonb;r jsonb;lease uuid;request_id uuid;
+ receipt jsonb:='{"code":"success","windows_reset":1,"credit":{"id":"credit-1","status":"redeemed","private_token":"discard"},"private_token":"discard"}';
+begin
+ insert into auth.users(id) values(actor);
+ insert into public.s2a_accounts(id,name,account_fingerprint,ciphertext,iv,extra) values(a,'Reset journal','reset-journal','cipher','iv','{"privacy_mode":"training_off"}');
+ j:=public.s2a_openai_quota_reset_begin(a,actor,'original-key',1);request_id:=(j->>'id')::uuid;lease:=(j->>'lease_id')::uuid;
+ if request_id is null then raise exception 'operation not created %',j;end if;
+ r:=public.s2a_openai_quota_reset_begin(a,actor,'other-key',1);
+ if r->>'error'<>'openai_quota_reset_in_progress' then raise exception 'concurrent operation admitted %',r;end if;
+ if not public.s2a_openai_quota_reset_dispatch(request_id,lease) then raise exception 'dispatch not persisted';end if;
+ update public.s2a_openai_quota_resets set lease_until=now()-interval '1 second' where id=request_id;
+ j:=public.s2a_openai_quota_reset_begin(a,actor,'other-key',1);
+ if (j->>'id')::uuid<>request_id or (j->>'lease_id')::uuid=lease then raise exception 'retry changed upstream id or reused lease';end if;
+ if public.s2a_openai_quota_reset_consumed(request_id,lease,receipt) then raise exception 'stale receipt worker accepted';end if;
+ lease:=(j->>'lease_id')::uuid;
+ if not public.s2a_openai_quota_reset_consumed(request_id,lease,receipt) then raise exception 'receipt not saved';end if;
+ if (select consumed_result::text from public.s2a_openai_quota_resets where id=request_id) like '%private_token%' then raise exception 'raw provider fields persisted';end if;
+ if public.s2a_openai_quota_reset_dispatch(request_id,lease) then raise exception 'known consumption dispatched again';end if;
+ delete from public.s2a_accounts where id=a;
+ if (select account_id from public.s2a_openai_quota_resets where id=request_id) is not null then raise exception 'journal not retained independently';end if;
+ insert into public.s2a_accounts(id,name,account_fingerprint,ciphertext,iv,extra) values(b,'Restored reset account','reset-journal','new-cipher','new-iv','{"privacy_mode":"training_off"}');
+ update public.s2a_openai_quota_resets set lease_until=now()-interval '1 second' where id=request_id;
+ j:=public.s2a_openai_quota_reset_begin(b,actor,'restored-key',1);
+ if (j->>'id')::uuid<>request_id or j->'consumed'->>'code'<>'success' then raise exception 'restoration lost irreversible receipt';end if;
+ lease:=(j->>'lease_id')::uuid;
+ if not public.s2a_openai_quota_reset_finish(request_id,lease,'{"code":"wrong","quota":null,"cache_refreshed":false,"account_state_recovered":true,"warning_code":"reset_credit_cache_refresh_failed"}') then raise exception 'completion rejected';end if;
+ r:=public.s2a_openai_quota_reset_begin(b,actor,'original-key',1);
+ if r->>'replayed'<>'true' or r->'response'->>'code'<>'success' then raise exception 'original response not replayed %',r;end if;
+ r:=public.s2a_openai_quota_reset_begin(b,actor,'other-key',1);if r->>'replayed'<>'true' then raise exception 'concurrent retry alias lost';end if;
+ r:=public.s2a_openai_quota_reset_begin(b,actor,'fresh-key',0);if r->>'error'<>'account_credentials_changed_retry' then raise exception 'stale token version admitted';end if;
+ r:=public.s2a_openai_quota_reset_begin(b,actor,'fresh-key',1);if (r->>'id')::uuid=request_id then raise exception 'a new explicit action replayed old receipt';end if;
+ if has_table_privilege('anon','public.s2a_openai_quota_resets','select') or has_function_privilege('authenticated','public.s2a_openai_quota_reset_begin(uuid,uuid,text,bigint,text,bigint,uuid)','execute') then raise exception 'journal exposed';end if;
+end $$;
+rollback;

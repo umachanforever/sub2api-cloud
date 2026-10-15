@@ -1,0 +1,66 @@
+begin;
+do $$
+declare actor uuid:='d3000000-0000-4000-8000-000000000001';other uuid:='d3000000-0000-4000-8000-000000000002';
+ gid uuid:='d3000000-0000-4000-8000-000000000003';aid uuid:='d3000000-0000-4000-8000-000000000004';
+ rid uuid:=gen_random_uuid();unknown_id bigint;lease_id uuid:=gen_random_uuid();alternate_group uuid:=gen_random_uuid();event jsonb;client_id bigint;provider_id bigint;record public.s2a_ops_error_details;result jsonb;
+begin
+ insert into auth.users(id,email) values(actor,'ops-owner@example.com'),(other,'other@example.com');
+ perform public.s2a_admin_context(array[actor]);
+ insert into public.s2a_groups(id,name) values(gid,'Ops error group');
+ insert into public.s2a_accounts(id,name,group_id,account_fingerprint,ciphertext,iv) values(aid,'Ops error account',gid,'ops-error-account','private-encrypted','private-iv');
+ insert into public.s2a_keys(user_id,group_id,name,key_hash,key_prefix) values(actor,gid,'Ops error key',repeat('e',64),'prefix');
+ event:=jsonb_build_object('event_id',rid,'request_id',rid,'kind','request','phase','routing','type','service_unavailable','owner','platform','source','gateway','code','no_available_account','limited',false,
+  'status_code',503,'key_hash',repeat('e',64),'account_id',aid,'model','alias','upstream_model','gpt-4.1','platform','openai','stream',false,'endpoint','/v1/responses','duration_ms',123);
+ client_id:=public.s2a_ops_error_record(event);
+ assert public.s2a_ops_error_record(event)=client_id,'response retries share one error identity';
+ select * into record from public.s2a_ops_error_details where public.s2a_ops_error_details.id=client_id;
+ assert record.user_id=actor and record.account_id=aid and record.group_id=gid;
+ assert record.api_key_name='Ops error key' and record.user_email='ops-owner@example.com';
+ assert record.model='alias' and record.upstream_model='gpt-4.1' and record.response_latency_ms=123;
+ assert not to_jsonb(record)::text like '%private-%','credential fields never enter the journal';
+ begin perform public.s2a_ops_error_record(event||jsonb_build_object('request_id',gen_random_uuid()));raise exception 'collision accepted';exception when raise_exception then assert sqlerrm='ops_error_identity_conflict';end;
+ begin perform public.s2a_ops_error_record(event||'{"body":"private-prompt"}');raise exception 'body accepted';exception when raise_exception then assert sqlerrm='invalid_ops_error';end;
+ begin perform public.s2a_ops_error_record(event||'{"status_code":999}');raise exception 'status accepted';exception when raise_exception then assert sqlerrm='invalid_ops_error';end;
+ unknown_id:=public.s2a_ops_error_record(event||jsonb_build_object('event_id',gen_random_uuid(),'request_id',gen_random_uuid(),'stream',null));
+ assert (select e.stream is null from public.s2a_ops_errors e where e.id=unknown_id),'unknown stream mode remains unknown';
+ insert into public.s2a_groups(id,name) values(alternate_group,'Ops routing snapshot');
+ insert into public.s2a_leases(id,request_id,account_id,key_id,model,billing)
+ select lease_id,rid,aid,k.id,'alias',jsonb_build_object('group_id',alternate_group) from public.s2a_keys k where k.user_id=actor;
+ unknown_id:=public.s2a_ops_error_record(event||jsonb_build_object('event_id',gen_random_uuid(),'kind','upstream','owner','provider','phase','upstream','type','upstream_error','code','upstream_request_failed','source','upstream_http','lease_id',lease_id));
+ assert (select e.group_id=alternate_group from public.s2a_ops_errors e where e.id=unknown_id),'error group follows the reservation snapshot';
+ delete from public.s2a_leases l where l.id=lease_id;
+ insert into public.s2a_usage(id,request_id,account_id,key_id,user_id,model,status,outcome,group_id,duration_ms)
+ select lease_id,rid,aid,k.id,actor,'alias',200,'completed',alternate_group,123 from public.s2a_keys k where k.user_id=actor;
+ unknown_id:=public.s2a_ops_error_record(event||jsonb_build_object('event_id',gen_random_uuid(),'kind','upstream','owner','provider','phase','upstream','type','upstream_error','code','upstream_request_failed','source','upstream_http','lease_id',lease_id));
+ assert (select e.group_id=alternate_group from public.s2a_ops_errors e where e.id=unknown_id),'settled requests retain the routed group';
+ provider_id:=public.s2a_ops_error_record(event||jsonb_build_object('event_id',gen_random_uuid(),'kind','upstream','phase','upstream','type','upstream_error','owner','provider','source','upstream_http','code','upstream_request_failed','status_code',429));
+ assert (select count(*)=1 from public.s2a_ops_errors e where e.request_id=rid and kind='request');
+ assert (select count(*)=3 from public.s2a_ops_errors e where e.request_id=rid and kind='upstream'),'recovered attempts are independent rows';
+ perform set_config('request.headers',jsonb_build_object('x-s2a-actor-id',actor,'x-s2a-actor-role','admin','x-s2a-request-id','ops-error-resolve-fixture')::text,true);
+ assert public.s2a_ops_error_resolve(other,client_id,'request',true)->>'error'='admin_required';
+ assert public.s2a_ops_error_resolve(actor,provider_id,'request',true)->>'error'='not_found';
+ assert public.s2a_ops_error_resolve(actor,client_id,'request',true)->>'resolved'='true';
+ assert (select e.resolved and e.resolved_by_user_id=actor and e.resolved_at is not null from public.s2a_ops_errors e where e.id=client_id);
+ assert public.s2a_ops_error_resolve(actor,client_id,'request',true)->>'resolved'='true';
+ assert (select count(*)=1 from public.s2a_audit_logs where request_id='ops-error-resolve-fixture'),'repeated resolution is idempotent';
+ assert public.s2a_ops_error_resolve(actor,client_id,'request',false)->>'resolved'='false';
+ assert (select not e.resolved and e.resolved_at is null and e.resolved_by_user_id is null from public.s2a_ops_errors e where e.id=client_id);
+ update public.s2a_keys set revoked=true,deleted_at=now() where user_id=actor;
+ assert (select e.api_key_deleted and e.api_key_name='Ops error key' from public.s2a_ops_error_details e where e.id=client_id),'soft deletion preserves attribution';
+ result:=public.s2a_ops_error_user_window('2026-03-08','2026-03-08','America/New_York');
+ assert extract(epoch from ((result->>'end_time')::timestamptz-(result->>'start_time')::timestamptz))=82800,'calendar ranges follow DST';
+ result:=public.s2a_ops_error_user_window('2026-10-14','2026-10-14','Asia/Shanghai');
+ assert (result->>'start_time')::timestamptz='2026-10-13T16:00:00Z'::timestamptz;
+ assert (result->>'end_time')::timestamptz='2026-10-14T16:00:00Z'::timestamptz;
+ update public.s2a_ops_errors set created_at=now()-interval '40 days' where public.s2a_ops_errors.id=provider_id;
+ assert (public.s2a_ops_cleanup()->>'errors_deleted')::integer=1;
+ assert exists(select 1 from public.s2a_ops_errors e where e.id=client_id);
+ assert not exists(select 1 from public.s2a_ops_errors e where e.id=provider_id);
+ assert not has_table_privilege('authenticated','public.s2a_ops_error_details','select');
+ assert not has_table_privilege('anon','public.s2a_ops_errors','select');
+ assert not has_table_privilege('service_role','public.s2a_ops_errors','update');
+ assert not has_function_privilege('authenticated','public.s2a_ops_error_record(jsonb)','execute');
+ assert not has_function_privilege('anon','public.s2a_ops_error_resolve(uuid,bigint,text,boolean)','execute');
+ assert not has_function_privilege('service_role','public.s2a_log_retention_without_ops_errors()','execute');
+end $$;
+rollback;

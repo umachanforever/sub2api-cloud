@@ -1,0 +1,23 @@
+begin;
+insert into auth.users(id,email) values('aabbccdd-ffff-4fff-8fff-fffffffffff2','unbound@example.com');
+do $$ declare actor uuid:='aabbccdd-ffff-4fff-8fff-fffffffffff2';g uuid;r jsonb;a uuid;k uuid:=gen_random_uuid();ticket uuid:=gen_random_uuid();patch jsonb:='{"name":"Unbound","platform":"openai","type":"apikey","status":"active","priority":50,"concurrency":3,"notes":"","extra":{},"schedulable":true,"expires_at":null,"auto_pause_on_expired":true,"account_fingerprint":"unbound-fingerprint","ciphertext":"encrypted","iv":"iv"}';lease uuid;begin
+ r:=public.s2a_group_create('Unbound accounts',actor,'openai',1);g:=(r->>'id')::uuid;
+ r:=public.s2a_account_save(null,patch,'{}');a:=(r->>'id')::uuid;
+ if a is null or (select group_id from public.s2a_accounts where id=a) is not null or exists(select 1 from public.s2a_account_groups where account_id=a) then raise exception 'unbound creation failed %',r;end if;
+ insert into public.s2a_keys(id,user_id,group_id,name,key_hash,key_prefix) values(k,actor,g,'Unbound key',repeat('9',64),'prefix');
+ r:=public.s2a_acquire(repeat('9',64),'__models__',gen_random_uuid(),'{}',true,null,'{}');if r->>'error'<>'no_available_account' then raise exception 'unbound account entered scheduling %',r;end if;
+ r:=public.s2a_account_save(a,'{"notes":"Bind"}',array[g]);if r ? 'error' or (select count(*) from public.s2a_account_groups where account_id=a)<>1 then raise exception 'unbound binding failed';end if;
+ r:=public.s2a_acquire(repeat('9',64),'__models__',gen_random_uuid(),'{}',true,null,'{}');lease:=(r->>'lease_id')::uuid;if lease is null then raise exception 'bound account unavailable %',r;end if;
+ r:=public.s2a_account_save(a,'{"notes":"Clear"}','{}');if r ? 'error' or (select group_id from public.s2a_accounts where id=a) is not null or exists(select 1 from public.s2a_account_groups where account_id=a) then raise exception 'clearing bindings failed %',r;end if;
+ if not exists(select 1 from public.s2a_leases where id=lease) then raise exception 'clearing bindings deleted in-flight lease';end if;
+ perform public.s2a_finish(lease,200,'completed');if not exists(select 1 from public.s2a_usage where id=lease and account_id=a and group_id=g) then raise exception 'unbinding changed historical group';end if;
+ r:=public.s2a_acquire(repeat('9',64),'__models__',gen_random_uuid(),'{}',true,null,'{}');if r->>'error'<>'no_available_account' then raise exception 'cleared account still schedulable';end if;
+ insert into public.s2a_oauth_tickets(id,user_id,account_fingerprint,ciphertext,iv,metadata) values(ticket,actor,'unbound-oauth','encrypted','iv','{}');
+ r:=public.s2a_account_save(null,patch||'{"type":"oauth"}'::jsonb,'{}',ticket,actor);a:=(r->>'id')::uuid;
+ if a is null or (select group_id from public.s2a_accounts where id=a) is not null or exists(select 1 from public.s2a_account_groups where account_id=a) then raise exception 'unbound OAuth create failed %',r;end if;
+ r:=public.s2a_account_save(null,patch||'{"type":"oauth","name":"Changed"}'::jsonb,array[g],ticket,actor);
+ if r->>'id'<>a::text or (select name from public.s2a_accounts where id=a)<>'Unbound' or exists(select 1 from public.s2a_account_groups where account_id=a) then raise exception 'ticket retry rebound account';end if;
+ r:=public.s2a_account_groups_replace(a,array[null::uuid]);if r->>'status'<>'400' then raise exception 'null binding accepted';end if;
+ r:=public.s2a_account_groups_replace(a,array[g,g]);if r->>'status'<>'400' then raise exception 'duplicate binding accepted';end if;
+end $$;
+rollback;

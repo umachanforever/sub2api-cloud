@@ -1,0 +1,32 @@
+begin;
+insert into auth.users(id,email) values('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','first-admin@example.com'),('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','second-admin@example.com'),('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3','ordinary@example.com');
+do $$ declare a uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';b uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';u uuid:='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3';r jsonb;begin
+ r:=public.s2a_admin_context(array[a]);if r->'admin_ids'<>jsonb_build_array(a) then raise exception 'bootstrap failed %',r;end if;
+ r:=public.s2a_admin_context(array[u]);if r->'admin_ids'<>jsonb_build_array(a) then raise exception 'bootstrap configuration restored revoked roles';end if;
+ r:=public.s2a_admin_role_set(u,b,'admin');if r->>'status'<>'403' then raise exception 'ordinary user promoted admin';end if;
+ r:=public.s2a_admin_role_set(a,a,'user');if r->>'error'<>'cannot_demote_yourself' then raise exception 'self-demotion allowed';end if;
+ begin update auth.users set banned_until=now()+interval '1 day' where id=a;raise exception 'sole admin disabled';exception when check_violation then null;end;
+ begin delete from auth.users where id=a;raise exception 'sole admin deleted';exception when check_violation then null;end;
+ begin update auth.users set deleted_at=now() where id=a;raise exception 'sole admin soft-deleted';exception when check_violation then null;end;
+ r:=public.s2a_admin_role_set(a,b,'admin');if jsonb_array_length(r->'admin_ids')<>2 then raise exception 'promotion failed %',r;end if;
+ update auth.users set banned_until=now()+interval '1 day' where id=b;
+ if public.s2a_active_admin_ids()<>array[a] then raise exception 'disabled admin authorized';end if;
+ r:=public.s2a_admin_role_set(a,b,'admin');if r->>'error'<>'cannot_promote_disabled_user' then raise exception 'disabled promotion accepted';end if;
+ update auth.users set banned_until=null where id=b;
+ r:=public.s2a_admin_role_set(a,b,'user');if r->'admin_ids'<>jsonb_build_array(a) then raise exception 'demotion failed';end if;
+ r:=public.s2a_admin_context(array[b]);if r->'admin_ids'<>jsonb_build_array(a) then raise exception 'demotion reverted from environment';end if;
+ update auth.users set raw_user_meta_data='{"role":"admin","s2a_role":"admin"}',raw_app_meta_data='{"role":"admin","s2a_role":"admin"}' where id=u;
+ if u=any(public.s2a_active_admin_ids()) then raise exception 'metadata granted admin';end if;
+ r:=public.s2a_admin_role_set(a,gen_random_uuid(),'admin');if r->>'status'<>'404' then raise exception 'missing user promoted';end if;
+ r:=public.s2a_admin_role_set(a,u,'unknown');if r->>'status'<>'400' then raise exception 'invalid role accepted';end if;
+end $$;
+set local role service_role;
+select public.s2a_admin_context('{}');
+select public.s2a_admin_role_set('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2','admin');
+set local role authenticated;
+do $$ begin
+ begin perform public.s2a_admin_context('{}');raise exception 'user bootstrapped admin';exception when insufficient_privilege then null;end;
+ begin perform public.s2a_admin_role_set('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa3','admin');raise exception 'user invoked privileged roles';exception when insufficient_privilege then null;end;
+ begin perform * from public.s2a_admin_roles;raise exception 'user read admin table';exception when insufficient_privilege then null;end;
+end $$;
+rollback;
