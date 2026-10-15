@@ -508,5 +508,43 @@ END $$;
 ALTER FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) TO service_role;
+-- Scheduled recovery does not depend on a still-enabled client key or local management.
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_jobs_claim()
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE item public.gemini_cached_contents%ROWTYPE; a s2a_private.accounts%ROWTYPE; snapshot jsonb; token uuid; result jsonb:='[]'::jsonb;
+BEGIN
+    FOR item IN SELECT * FROM public.gemini_cached_contents WHERE deleted_at IS NULL
+        AND mutation_lease IS NOT NULL AND mutation_until<=clock_timestamp()
+        ORDER BY mutation_until,id LIMIT 3 FOR UPDATE SKIP LOCKED LOOP
+        SELECT * INTO a FROM s2a_private.accounts WHERE id=item.account_id AND deleted_at IS NULL;
+        IF NOT FOUND THEN
+            UPDATE public.gemini_cached_contents SET deleted_at=clock_timestamp(),mutation_lease=NULL,mutation_until=NULL WHERE id=item.id;
+            CONTINUE;
+        END IF;
+        token:=gen_random_uuid();
+        UPDATE public.gemini_cached_contents SET mutation_lease=token,mutation_until=clock_timestamp()+interval '180 seconds' WHERE id=item.id;
+        snapshot:=public.s2a_gateway_account_snapshot(a.id);
+        IF snapshot ? 'error' THEN CONTINUE; END IF;
+        result:=result||jsonb_build_array(jsonb_build_object('id',item.id::text,'lease_id',token::text,
+            'upstream_name',item.upstream_name,'expire_time',item.expire_time,
+            'account',snapshot||jsonb_build_object('platform',a.platform,'type',a.type,'proxy_id',a.proxy_id::text)));
+    END LOOP;
+    RETURN result;
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_jobs_finish(p_id bigint,p_lease_id uuid,p_success boolean,p_deleted boolean DEFAULT false)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    IF p_success IS DISTINCT FROM true THEN RETURN false; END IF;
+    UPDATE public.gemini_cached_contents SET mutation_lease=NULL,mutation_until=NULL,
+        deleted_at=CASE WHEN p_deleted THEN clock_timestamp() ELSE deleted_at END
+        WHERE id=p_id AND mutation_lease=p_lease_id AND mutation_until>clock_timestamp() AND deleted_at IS NULL;
+    RETURN FOUND;
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_jobs_claim() OWNER TO s2a_management;
+ALTER FUNCTION public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_jobs_claim() FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_jobs_claim() TO service_role;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

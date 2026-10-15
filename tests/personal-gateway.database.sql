@@ -181,6 +181,17 @@ BEGIN
     IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'apply',now()+interval '2 hours')->>'updated' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache expiry mutation failed'; END IF;
     IF NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id='cache-fixture' AND expire_time>now()+interval '110 minutes' AND upstream_name='cachedContents/provider-private') THEN RAISE EXCEPTION 'cache expiry or immutable binding changed incorrectly'; END IF;
     PERFORM public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'release');
+    IF has_function_privilege('anon','public.s2a_personal_cache_jobs_claim()','EXECUTE') OR has_function_privilege('authenticated','public.s2a_personal_cache_jobs_finish(bigint,uuid,boolean,boolean)','EXECUTE') THEN RAISE EXCEPTION 'cache recovery worker exposed'; END IF;
+    UPDATE public.gemini_cached_contents SET mutation_lease=gen_random_uuid(),mutation_until=now()-interval '1 second' WHERE public_id='cache-fixture';
+    UPDATE public.api_keys SET status='inactive' WHERE id=k;
+    result:=public.s2a_personal_cache_jobs_claim();
+    UPDATE public.api_keys SET status='active' WHERE id=k;
+    IF jsonb_array_length(result)<>1 OR result->0->'account'->>'id' IS DISTINCT FROM cache_account::text THEN RAISE EXCEPTION 'recovery did not retain account ownership with disabled key'; END IF;
+    IF public.s2a_personal_cache_jobs_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'recovery task claimed concurrently'; END IF;
+    IF public.s2a_personal_cache_jobs_finish((result->0->>'id')::bigint,gen_random_uuid(),true,false) THEN RAISE EXCEPTION 'foreign recovery lease accepted'; END IF;
+    IF public.s2a_personal_cache_jobs_finish((result->0->>'id')::bigint,(result->0->>'lease_id')::uuid,false,false) THEN RAISE EXCEPTION 'failed recovery cleared pending mutation'; END IF;
+    IF NOT public.s2a_personal_cache_jobs_finish((result->0->>'id')::bigint,(result->0->>'lease_id')::uuid,true,false) THEN RAISE EXCEPTION 'recovery completion failed'; END IF;
+
     PERFORM public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim');
     IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid)->>'deleted' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache deletion failed'; END IF;
     IF public.s2a_personal_cache_read(h)<>'{}'::jsonb THEN RAISE EXCEPTION 'deleted cache listed'; END IF;

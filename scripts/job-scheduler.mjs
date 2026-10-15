@@ -2,13 +2,15 @@ import {jobSigningKey} from '../supabase/functions/sub2api/job_signing.ts';
 export async function configureJobScheduler(env, target=env.SUPABASE_URL, fetchImpl=fetch) {
   if (env.SUB2API_DATA_MODEL === "native") {
     try {
-    const response = await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/s2a_codex_scheduler_configure`, {
-      method: 'POST', headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ p_url: target, p_service_key: await jobSigningKey(env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64), p_enabled: true }), signal: AbortSignal.timeout(20_000),
-    });
-    if (!response.ok) { await response.body?.cancel(); throw Error('Codex scheduler configuration failed'); }
-    if ((await response.json()).enabled !== true) throw Error('Codex scheduler extensions are unavailable');
-    } catch { throw Error('Codex scheduler configuration failed; verify Supabase extensions and service credentials'); }
+    for(const scheduler of ['s2a_codex_scheduler_configure','s2a_gemini_cache_scheduler_configure']){
+      const response=await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/${scheduler}`,{
+        method:'POST',headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,'content-type':'application/json'},
+        body:JSON.stringify({p_url:target,p_service_key:await jobSigningKey(env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64),p_enabled:true}),signal:AbortSignal.timeout(20000),
+      });
+      if(!response.ok){await response.body?.cancel();throw Error('Scheduler configuration failed');}
+      if((await response.json()).enabled!==true)throw Error('Scheduler extensions are unavailable');
+    }
+    } catch { throw Error('Native scheduler configuration failed; verify Supabase extensions and service credentials'); }
     return;
   }
   try {

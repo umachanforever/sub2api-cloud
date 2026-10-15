@@ -1,3 +1,4 @@
+import {geminiCacheJobs} from './gemini_cache_jobs.ts';
 import {geminiCacheCreate} from './gemini_cache_create.ts';
 import {geminiCacheMutation} from './gemini_cache_mutation.ts';
 import {geminiCacheRead} from './gemini_cache_read.ts';
@@ -35,6 +36,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
       if (gatewayRequest) errorContext.endpoint = ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname) ? pathname : /^\/v1\/(?:responses(?:\/input_tokens)?|messages(?:\/count_tokens)?|alpha\/search|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits)|chat\/completions|models)$/.test(pathname) ? pathname : pathname.startsWith("/v1beta/") ? "/v1beta/models/:model" : "/v1/unknown";
+      if (pathname === "/internal/jobs/gemini-cache") return await geminiCacheJobs(request,db);
       if (pathname === "/internal/jobs/codex") return await codexJobs(request,db);
       if (pathname === "/internal/jobs/mail") return await mailJobs(request,db,smtp);
       if (pathname === "/internal/jobs/privacy") return await privacyJobs(request,db);

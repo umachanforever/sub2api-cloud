@@ -1,3 +1,4 @@
+import {rollbackGeminiCache} from './gemini_cache_rollback.ts';
 import {cachePatch} from './gemini_cache_expiry.ts';
 import {readBody} from './validation.ts';
 import {requestBodyLimit} from './request_limits.ts';
@@ -42,13 +43,8 @@ export async function geminiCacheMutation(request:Request,path:string,token:stri
   claimed=true;
   if(claim.recover){
    const rollback=claim.rollback_expire_time;
-   if(typeof rollback!=='string'||!Number.isFinite(Date.parse(rollback)))throw new HttpError(503,'invalid_cache_recovery_state');
-   const expired=Date.parse(rollback)<=Date.now()+1000;
-   const recovery=await accountFetch(db,account,outgoing.url+(expired?'':'?updateMask=expireTime'),{
-    ...outgoing.init,method:expired?'DELETE':'PATCH',...(expired?{}:{body:JSON.stringify({expireTime:rollback})}),
-   });
-   if((expired&&recovery.ok)||recovery.status===404){
-    await recovery.body?.cancel();
+   if(typeof rollback!=='string')throw new HttpError(503,'invalid_cache_recovery_state');
+   if(await rollbackGeminiCache(db,account,credentials,binding.upstream_name,rollback,request,outgoing.init.signal!)){
     const forgotten=await db.rpc<Result>('s2a_personal_cache_deleted',{p_key_hash:keyHash,p_name:name,p_lease_id:reservation.lease_id,p_client_ip:ip});
     if(forgotten?.error)throw new HttpError(forgotten.status??503,forgotten.error);
     if(forgotten?.deleted!==true)throw new HttpError(503,'cache_recovery_persistence_failed');
@@ -56,10 +52,6 @@ export async function geminiCacheMutation(request:Request,path:string,token:stri
     if(patch)throw new HttpError(404,'cached_content_not_found');
     completed=true;status=200;return json(200,{});
    }
-   if(!recovery.ok){await recovery.body?.cancel();throw new HttpError(502,'cache_mutation_recovery_failed');}
-   let restored:Record<string,unknown>;
-   try{restored=await readBody(new Request('https://cache.invalid',{method:'POST',body:recovery.body,duplex:'half'} as RequestInit),1048576);}catch{throw new HttpError(502,'invalid_cache_recovery_response');}
-   if(restored.name!==binding.upstream_name||typeof restored.expireTime!=='string'||!Number.isFinite(Date.parse(restored.expireTime))||Math.abs(Date.parse(restored.expireTime)-Date.parse(rollback))>1000)throw new HttpError(502,'invalid_cache_recovery_response');
   }
   outgoing.init.method=patch?'PATCH':'DELETE';
   if(patch){
