@@ -14,3 +14,7 @@ test('restoring and editing a descriptor cannot mutate shared instructions or la
  const second=codexCatalogDescriptor('gpt-6.1-sol');assert.notEqual(second.model_messages.instructions_template,'changed');assert.ok(second.supported_reasoning_levels.length>0);
  assert.equal(codexCatalogDescriptor('another-model').slug,'another-model');assert.equal(codexCatalogDescriptor('custom-model').slug,'custom-model');
 });
+
+test('qualified known model targets preserve the original reasoning metadata',()=>{
+ const model=codexCatalogDescriptor('openai/gpt-6.1-sol');assert.equal(model.slug,'openai/gpt-6.1-sol');assert.ok(model.supported_reasoning_levels.some(level=>level.effort==='max'));assert.ok(!model.supported_reasoning_levels.some(level=>level.effort==='none'));
+});
