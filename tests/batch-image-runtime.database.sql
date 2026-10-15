@@ -125,10 +125,13 @@ BEGIN
  INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-auto-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING s2a_key_hash INTO h;
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Vertex batch auto','gemini','service_account','{"service_account":{"project_id":"fixture"}}',4) RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
- r:=public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images');
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images')->>'error' IS DISTINCT FROM 'no_available_batch_account' THEN RAISE EXCEPTION 'unconfigured Vertex auto-selected'; END IF;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','vertex',1,'images')->>'error' IS DISTINCT FROM 'vertex_managed_bucket_required' THEN RAISE EXCEPTION 'unconfigured Vertex accepted'; END IF;
+ IF EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident) THEN RAISE EXCEPTION 'unconfigured task persisted'; END IF;
+ r:=public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images',NULL,true);
  IF r->>'id' IS DISTINCT FROM ident THEN RAISE EXCEPTION 'auto provider selection failed: %',r; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND provider='vertex' AND account_id=a) THEN RAISE EXCEPTION 'auto provider did not bind Vertex'; END IF;
- IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images') IS DISTINCT FROM r THEN RAISE EXCEPTION 'auto provider replay mismatch'; END IF;
+ IF public.s2a_batch_image_prepare(h,ident,repeat('a',64),'gemini-image','',1,'images',NULL,true) IS DISTINCT FROM r THEN RAISE EXCEPTION 'auto provider replay mismatch'; END IF;
  IF public.s2a_batch_image_list(h,20,0,NULL,'{"task_name":"images","downloaded":false}'::jsonb)->>'total' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'list matching filters failed'; END IF;
  IF public.s2a_batch_image_list(h,20,0,NULL,'{"task_name":"missing"}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'list task filter ignored'; END IF;
  IF public.s2a_batch_image_list(h,20,0,NULL,'{"downloaded":true}'::jsonb)->>'total' IS DISTINCT FROM '0' THEN RAISE EXCEPTION 'list downloaded filter ignored'; END IF;

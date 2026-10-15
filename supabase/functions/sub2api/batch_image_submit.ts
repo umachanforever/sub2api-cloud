@@ -26,7 +26,7 @@ export async function submitBatchImage(db:Database,keyHash:string,input:unknown,
   }
  }
  const body=new TextEncoder().encode(JSON.stringify(normalized)),hash=await imageBytesHash(body);
- const prepared=checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
+ const prepared=checked(await db.rpc('s2a_batch_image_prepare',{p_key_hash:keyHash,p_id:id,p_hash:hash,p_model:normalized.model,p_provider:normalized.provider,p_vertex_enabled:Boolean(db.config.vertexBatch?.bucket),p_count:normalized.items.length,p_name:normalized.task_name,p_client_ip:options.clientIP??null}),id);
  if(prepared.ready===true)return {id,ready:true};
  const stored=await storeBatchRequest(db,id,normalized,signal);
  if(stored.requestHash!==hash)throw new HttpError(503,'batch_submission_hash_changed');

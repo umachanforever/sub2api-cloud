@@ -119,7 +119,8 @@ BEGIN
     UPDATE public.batch_image_jobs SET status='failed',last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
-CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL)
+DROP FUNCTION IF EXISTS public.s2a_batch_image_prepare(text,text,text,text,text,integer,text,text);
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_prepare(p_key_hash text,p_id text,p_hash text,p_model text,p_provider text,p_count integer,p_name text,p_client_ip text DEFAULT NULL,p_vertex_enabled boolean DEFAULT false)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE policy jsonb; identity jsonb; task s2a_private.batch_image_runtime%ROWTYPE; a s2a_private.accounts%ROWTYPE; pattern text; allowed boolean:=false;
 BEGIN
@@ -146,9 +147,10 @@ BEGIN
             THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
         RETURN jsonb_build_object('id',p_id,'ready',task.ready);
     END IF;
+    IF p_provider='vertex' AND NOT coalesce(p_vertex_enabled,false) THEN RETURN jsonb_build_object('error','vertex_managed_bucket_required','status',503); END IF;
     SELECT accounts.* INTO a FROM s2a_private.accounts accounts JOIN public.account_groups ag ON ag.account_id=accounts.id
         JOIN public.groups g ON g.id=ag.group_id WHERE g.id=(identity->>'group_id')::bigint AND accounts.platform='gemini'
-        AND accounts.type IN ('apikey','service_account') AND (p_provider='' OR accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END)
+        AND accounts.type IN ('apikey','service_account') AND (accounts.type<>'service_account' OR coalesce(p_vertex_enabled,false)) AND (p_provider='' OR accounts.type=CASE WHEN p_provider='vertex' THEN 'service_account' ELSE 'apikey' END)
         AND accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
         AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
         AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp() AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()

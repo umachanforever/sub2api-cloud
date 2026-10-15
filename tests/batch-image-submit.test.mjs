@@ -24,3 +24,11 @@ test('a retry cannot use another key to read the stored automatic name',async()=
  let calls=0;const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async()=>{calls++;return Response.json({error:'batch_image_forbidden',status:403});});
  await assert.rejects(submitBatchImage(db,hash,{model:'gemini-image',items:[{prompt:'blue square'}]},{id}),error=>error.status===403);assert.equal(calls,1);
 });
+test('submission derives Vertex eligibility from server configuration rather than client input',async()=>{
+ for(const enabled of [false,true]){
+  const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native',...(enabled?{vertexBatch:{bucket:'fixture-bucket',location:'global',environment:'production'}}:{})},async(url,init)=>{
+   const args=JSON.parse(init.body);assert.equal(args.p_vertex_enabled,enabled);return Response.json({id:args.p_id,ready:true});
+  });
+  await submitBatchImage(db,hash,{model:'gemini-image',task_name:'fixed',vertex_enabled:!enabled,items:[{prompt:'blue square'}]});
+ }
+});
