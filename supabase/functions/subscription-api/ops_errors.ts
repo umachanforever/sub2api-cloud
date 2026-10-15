@@ -5,6 +5,7 @@ export type ErrorContext = {
   model?: string; upstreamModel?: string; platform?: string; stream?: boolean; endpoint?: string;
 };
 export function errorClassification(code: string, status: number, provider = false) {
+  if (["upstream_model_not_found", "upstream_model_unsupported", "upstream_model_access_denied"].includes(code)) return { phase: "upstream", type: "upstream_error", owner: "provider", source: "upstream_http", code, limited: false };
   if (provider) return { phase: status === 401 ? "account_auth" : "upstream", type: "upstream_error", owner: "provider", source: "upstream_http", code: status === 401 ? "upstream_authentication_failed" : "upstream_request_failed", limited: false };
   if (["unauthorized", "invalid_api_key", "conflicting_credentials"].includes(code)) return { phase: "auth", type: "authentication_error", owner: "client", source: "client_request", code: "authentication_failed", limited: true };
   if (code === "insufficient_balance") return { phase: "request", type: "billing_error", owner: "client", source: "client_request", code, limited: true };

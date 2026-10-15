@@ -1,3 +1,4 @@
+import { upstreamErrorCode } from "./upstream_errors.ts";
 import { validateCodexReasoning } from "./codex_models.ts";
 import { grokOAuthRequest } from './grok_oauth.ts';
 import { accountFetch } from "./account_proxy.ts";
@@ -361,7 +362,8 @@ export async function proxy(
       }
       if (!upstream.ok) {
         const status = upstream.status;
-        await upstreamFailure(status);
+        const rejection = await upstreamErrorCode(upstream);
+        await upstreamFailure(status, rejection === "upstream_rejected_request" ? "upstream_http" : rejection);
         await upstream.body?.cancel();
         await finish(
           status,
@@ -379,7 +381,7 @@ export async function proxy(
         // Provider errors can contain account details; return a stable error only.
         throw new HttpError(
           status >= 400 && status < 500 ? status : 502,
-          "upstream_rejected_request",
+          rejection,
         );
       }
       responseAccepted = native ? native.streaming : stream;
