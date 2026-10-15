@@ -37,7 +37,7 @@ export async function issueAgentAccess(env = process.env) {
   const created = await api('/keys', 'POST', { name: 'Agent API access', group_id: source.group_id });
   if (typeof created.key !== 'string' || !created.key.startsWith('sk-')) throw Error('The API key prefix must be configured as sk-');
   const baseURL = env.SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/subscription-api/v1';
-  const config = { base_url: baseURL, api_key: created.key, model: 'gpt-5.6-sol', usage_url: baseURL + '/usage', refresh_url: baseURL + '/usage?refresh=true', authentication: 'Authorization: Bearer <api_key>', scope: 'api:full' };
+  const config = { base_url: baseURL, api_key: created.key, model: 'gpt-6.1-sol', usage_url: baseURL + '/usage', refresh_url: baseURL + '/usage?refresh=true', authentication: 'Authorization: Bearer <api_key>', scope: 'api:full' };
   await mkdir(directory, { recursive: true, mode: 0o700 });
   for (const name of ['agent-access.json']) {
     const path = new URL(name, directory);

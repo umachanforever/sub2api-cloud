@@ -97,3 +97,10 @@ test('API key Responses applies model compatibility without mutating the request
   assert.deepEqual(forwarded.include,['reasoning.encrypted_content']);assert.equal(body.temperature,0.5);
   assert.throws(()=>apiKeyRequest('openai',{api_key:'secret'},'responses','/v1/responses',{...body,reasoning:{effort:'none'}},new Request('https://gateway/v1/responses'),new AbortController().signal),{status:400});
 });
+
+
+test('the original GPT-6 alias resolves to Astra without downgrading the model', () => {
+  const body=normalizeBody({model:'gpt-6',input:'hello'});
+  assert.equal(body.model,'gpt-6-astra');
+  assert.equal(allowsModel({enabled:true,models:['gpt-6-astra']},'gpt-6'),true);
+});

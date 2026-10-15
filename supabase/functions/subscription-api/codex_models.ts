@@ -2,7 +2,8 @@
 export function modernCodexModel(model: string): { id: string; effort?: string } | undefined {
   const canonical = model.trim().split('/').at(-1)!.trim().toLowerCase()
     .replace(/[_\s]+/g, '-').replace(/-+/g, '-');
-  for (const id of ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna']) {
+  if (canonical === 'gpt-6') return { id: 'gpt-6-astra' };
+  for (const id of ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna', 'gpt-6-astra']) {
     if (canonical === id) return { id };
     if (!canonical.startsWith(id + '-')) continue;
     const suffix = canonical.slice(id.length + 1);
@@ -37,6 +38,7 @@ export function normalizeModernCodexResponses(body: Record<string, any>, canonic
   const model = modernCodexModel(body.model);
   if (!model) return;
   if (canonicalModel) body.model = model.id;
+  if (model.id === 'gpt-6-astra') return;
   if (body.reasoning?.effort === 'none') return;
   for (const field of ['temperature', 'top_p', 'logprobs', 'top_logprobs']) delete body[field];
   if (Array.isArray(body.include)) body.include = body.include.filter((value: unknown) => value !== 'message.output_text.logprobs');
