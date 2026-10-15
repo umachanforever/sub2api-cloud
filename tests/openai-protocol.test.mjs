@@ -5,9 +5,9 @@ import {
   completedResponse,
   responseToChat,
   streamChat,
-} from "../supabase/functions/subscription-api/openai_protocol.ts";
+} from "../supabase/functions/sub2api/openai_protocol.ts";
 import { createBackendHandler as createHandler } from './handler.mjs';
-import { encryptCredentials } from "../supabase/functions/subscription-api/credential_store.ts";
+import { encryptCredentials } from "../supabase/functions/sub2api/credential_store.ts";
 
 const config = {
   url: "https://project.supabase.co",

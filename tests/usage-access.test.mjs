@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHandler } from './handler.mjs';
-import { hashKey } from '../supabase/functions/subscription-api/validation.ts';
+import { hashKey } from '../supabase/functions/sub2api/validation.ts';
 
 const config = { url: 'https://db.example', serviceKey: 'service', encryptionKey: 'unused', adminIds: [], dataModel: 'native' };
 const now = Math.floor(Date.now() / 1000);

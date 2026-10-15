@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { proxy } from '../supabase/functions/subscription-api/proxy.ts';
-import { apiKeyRequest } from '../supabase/functions/subscription-api/api_key_provider.ts';
-import { refreshGrokCredentials, grokOAuthRequest } from '../supabase/functions/subscription-api/grok_oauth.ts';
-import { GROK_CLIENT_ID, grokOrigin } from '../supabase/functions/subscription-api/grok_config.ts';
+import { proxy } from '../supabase/functions/sub2api/proxy.ts';
+import { apiKeyRequest } from '../supabase/functions/sub2api/api_key_provider.ts';
+import { refreshGrokCredentials, grokOAuthRequest } from '../supabase/functions/sub2api/grok_oauth.ts';
+import { GROK_CLIENT_ID, grokOrigin } from '../supabase/functions/sub2api/grok_config.ts';
 
 async function fixture({ type = 'oauth', protocol = 'chat', stream = false, expired = false, reject = false, unknownExpiry = false, region = false, limited = false } = {}) {
   let version = 1, refreshes = 0;

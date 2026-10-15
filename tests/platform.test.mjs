@@ -25,7 +25,7 @@ const api = (path, method = "GET", body) =>
 for (const contentType of ["text/event-stream", null]) {
 test(`Responses forwarding records usage with Content-Type ${contentType}`, async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials({
     access_token: "upstream-access",
@@ -83,7 +83,7 @@ test(`Responses forwarding records usage with Content-Type ${contentType}`, asyn
 
 test("fails over after rate limiting without forwarding account error details", async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials({
     access_token: "token",
@@ -140,7 +140,7 @@ test("fails over after rate limiting without forwarding account error details", 
 
 test("client cancellation releases its lease and is recorded as cancelled", async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials({
     access_token: "token",
@@ -171,7 +171,7 @@ test("client cancellation releases its lease and is recorded as cancelled", asyn
 
 test("an expired account rotates once and persists the new token before forwarding", async () => {
   const { encryptCredentials, decryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials({
     access_token: "old",
@@ -227,7 +227,7 @@ test("an expired account rotates once and persists the new token before forwardi
 
 test("a 401 reuses another instance's rotated credentials without rotating them again", async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const old = await encryptCredentials({
     access_token: "old",
@@ -275,7 +275,7 @@ test("a 401 reuses another instance's rotated credentials without rotating them 
 
 test("refuses to use a rotated token that was not durably saved", async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials({
     access_token: "old",

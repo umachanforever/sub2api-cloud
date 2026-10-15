@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { upstreamErrorCode } from '../supabase/functions/subscription-api/upstream_errors.ts';
-import { errorClassification } from '../supabase/functions/subscription-api/ops_errors.ts';
+import { upstreamErrorCode } from '../supabase/functions/sub2api/upstream_errors.ts';
+import { errorClassification } from '../supabase/functions/sub2api/ops_errors.ts';
 
 test('provider model errors expose only fixed categories', async () => {
   for (const [error, expected] of [
@@ -32,8 +32,8 @@ test('untrusted oversized, malformed and stalled error bodies fall back safely',
 });
 
 test('gateway returns classified model rejection and persists it without provider text', async () => {
-  const {createHandler}=await import('../supabase/functions/subscription-api/app.ts');
-  const {encryptCredentials}=await import('../supabase/functions/subscription-api/credential_store.ts');
+  const {createHandler}=await import('../supabase/functions/sub2api/app.ts');
+  const {encryptCredentials}=await import('../supabase/functions/sub2api/credential_store.ts');
   const actor='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
   const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[actor]};
   const encrypted=await encryptCredentials({access_token:'secret'},config.encryptionKey);

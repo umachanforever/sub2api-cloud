@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHmac} from 'node:crypto';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
-import {accountMetadata} from '../supabase/functions/subscription-api/validation.ts';
-import {evaluateAutoReset} from '../supabase/functions/subscription-api/openai_auto_reset.ts';
-import {resetCreditCandidates,resetAssessment,resetCycle,resetHash,selectResetCredit} from '../supabase/functions/subscription-api/openai_auto_reset_values.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
+import {accountMetadata} from '../supabase/functions/sub2api/validation.ts';
+import {evaluateAutoReset} from '../supabase/functions/sub2api/openai_auto_reset.ts';
+import {resetCreditCandidates,resetAssessment,resetCycle,resetHash,selectResetCredit} from '../supabase/functions/sub2api/openai_auto_reset_values.ts';
 import {createHandler} from './handler.mjs';
 const id='11111111-1111-4111-8111-111111111111',operation='22222222-2222-4222-8222-222222222222',lease='33333333-3333-4333-8333-333333333333';
 const config={url:'https://db.example',serviceKey:'private-service',encryptionKey:Buffer.alloc(32,1).toString('base64'),adminIds:[]};

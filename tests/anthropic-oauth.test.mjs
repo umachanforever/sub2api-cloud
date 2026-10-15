@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { proxy } from '../supabase/functions/subscription-api/proxy.ts';
-import { refreshAnthropicCredentials } from '../supabase/functions/subscription-api/anthropic_oauth.ts';
+import { proxy } from '../supabase/functions/sub2api/proxy.ts';
+import { refreshAnthropicCredentials } from '../supabase/functions/sub2api/anthropic_oauth.ts';
 
 async function fixture({expired=false,reject=false,stream=false,setupToken=false}={}) {
  let credentials={access_token:'old-provider-token',refresh_token:'private-refresh-token',expires_at:Date.now()+(expired?-1000:3600000),provider_metadata:{preserved:true}};

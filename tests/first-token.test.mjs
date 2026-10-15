@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {hasGeneratedToken,UsageObserver} from '../supabase/functions/subscription-api/stream.ts';
-import {nativeResponse} from '../supabase/functions/subscription-api/api_key_provider.ts';
+import {hasGeneratedToken,UsageObserver} from '../supabase/functions/sub2api/stream.ts';
+import {nativeResponse} from '../supabase/functions/sub2api/api_key_provider.ts';
 import {createHandler} from './handler.mjs';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
 const encode=value=>new TextEncoder().encode('data: '+JSON.stringify(value)+'\n\n');
 test('first-token detection excludes heartbeats, role announcements, empty deltas and usage-only records',()=>{
  for(const event of [{type:'ping'},{type:'response.created'},{type:'response.output_text.delta',delta:''},{choices:[{delta:{role:'assistant'}}]},{choices:[],usage:{completion_tokens:3}},{type:'message_start',message:{usage:{output_tokens:1}}},{type:'content_block_delta',delta:{type:'text_delta',text:''}},{usageMetadata:{candidatesTokenCount:3}},{type:'response.completed',response:{usage:{output_tokens:2}}}])assert.equal(hasGeneratedToken(event),false);

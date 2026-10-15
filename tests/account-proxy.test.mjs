@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Database } from "../supabase/functions/subscription-api/db.ts";
+import { Database } from "../supabase/functions/sub2api/db.ts";
 import {
   encryptCredentials,
   decryptSecret,
-} from "../supabase/functions/subscription-api/credential_store.ts";
+} from "../supabase/functions/sub2api/credential_store.ts";
 import {
   accountFetch,
   proxyFetcher,
-} from "../supabase/functions/subscription-api/account_proxy.ts";
+} from "../supabase/functions/sub2api/account_proxy.ts";
 import { createHandler } from "./handler.mjs";
-import { credentialsFor } from "../supabase/functions/subscription-api/accounts.ts";
+import { credentialsFor } from "../supabase/functions/sub2api/accounts.ts";
 const id = "11111111-1111-4111-8111-111111111111",
   accountId = "22222222-2222-4222-8222-222222222222";
 const config = {

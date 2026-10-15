@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { currentCodexIdentity, resolveCodexIdentity } from '../supabase/functions/subscription-api/codex_identity.ts';
-import { Database } from '../supabase/functions/subscription-api/db.ts';
-import { buildHeaders } from '../supabase/functions/subscription-api/gateway.ts';
+import { currentCodexIdentity, resolveCodexIdentity } from '../supabase/functions/sub2api/codex_identity.ts';
+import { Database } from '../supabase/functions/sub2api/db.ts';
+import { buildHeaders } from '../supabase/functions/sub2api/gateway.ts';
 
 test('Codex version precedence and UA identity match the Go resolver',()=>{
  const settings={version:'0.162.1',synced:'0.161.0',user_agent:'CODEX_VSCODE/0.144.0 (Mac OS X; arm64) terminal'};
@@ -40,7 +40,7 @@ test('failed or nonstable sync keeps the last known version',async()=>{
 });
 
 test('cloud model discovery uses the same current version in catalog query and identity headers',async()=>{
- const {createHandler}=await import('../supabase/functions/subscription-api/app.ts');
+ const {createHandler}=await import('../supabase/functions/sub2api/app.ts');
  let upstream=0;
  const config={url:'https://db.example',serviceKey:'secret',encryptionKey:'',adminIds:[],dataModel:'native'};
  const app=createHandler(config,async(url,init)=>{

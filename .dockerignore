@@ -26,5 +26,5 @@ frontend/**/.DS_Store
 
 !supabase/
 !supabase/functions/
-!supabase/functions/subscription-api/
-!supabase/functions/subscription-api/public_settings.json
+!supabase/functions/sub2api/
+!supabase/functions/sub2api/public_settings.json

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHmac} from 'node:crypto';
-import {runMailJobs} from '../supabase/functions/subscription-api/ops_mail.ts';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
+import {runMailJobs} from '../supabase/functions/sub2api/ops_mail.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
 import {createHandler} from './handler.mjs';
 import {mailSecrets} from '../scripts/deploy.mjs';
 const id='11111111-1111-4111-8111-111111111111',config={url:'https://db',serviceKey:'private-key',encryptionKey:'',adminIds:[id]};

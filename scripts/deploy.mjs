@@ -1,6 +1,6 @@
 import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {provisionManagement} from './management.mjs';
-import {googleOAuthClients,googleOAuthVariables} from '../supabase/functions/subscription-api/google_oauth_config.ts';
+import {googleOAuthClients,googleOAuthVariables} from '../supabase/functions/sub2api/google_oauth_config.ts';
 import {configureJobScheduler} from './job-scheduler.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';

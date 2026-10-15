@@ -5,11 +5,11 @@ import nodemailer from 'nodemailer';
 import {mkdtemp,readFile,writeFile,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {execFileSync} from 'node:child_process';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
-import {encryptCredentials,decryptSecret} from '../supabase/functions/subscription-api/credential_store.ts';
-import {smtpDefaults,smtpField} from '../supabase/functions/subscription-api/smtp.ts';
-import {smtpOptions,smtpTransport} from '../supabase/functions/subscription-api/smtp_transport.mjs';
-import {runMailJobs} from '../supabase/functions/subscription-api/ops_mail.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
+import {encryptCredentials,decryptSecret} from '../supabase/functions/sub2api/credential_store.ts';
+import {smtpDefaults,smtpField} from '../supabase/functions/sub2api/smtp.ts';
+import {smtpOptions,smtpTransport} from '../supabase/functions/sub2api/smtp_transport.mjs';
+import {runMailJobs} from '../supabase/functions/sub2api/ops_mail.ts';
 const config={url:'https://db',serviceKey:'fixture-key',encryptionKey:Buffer.alloc(32,5).toString('base64'),adminIds:[]};
 const req=(path,body,method='POST')=>new Request('https://gateway'+path,{method,headers:{'x-s2a-frontend':'1'},...(body?{body:JSON.stringify(body)}:{})});
 test('SMTP protects remote authentication and certificate checks, and supports TLS greeting fallback',async()=>{

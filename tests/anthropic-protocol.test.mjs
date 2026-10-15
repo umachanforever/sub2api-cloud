@@ -4,7 +4,7 @@ import {
   messagesToResponses,
   responseToMessages,
   streamMessages,
-} from "../supabase/functions/subscription-api/anthropic_protocol.ts";
+} from "../supabase/functions/sub2api/anthropic_protocol.ts";
 const complete = {
   model: "gpt-test",
   status: "completed",

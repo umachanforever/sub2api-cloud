@@ -104,7 +104,7 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 | --- | --- |
 | `backend/` | 原版 Go 管理后端 |
 | `frontend/` | 原版 Vue 控制台与云端身份适配 |
-| `supabase/functions/subscription-api/` | 云端 AI 请求处理与供应商协议 |
+| `supabase/functions/sub2api/` | 云端 AI 请求处理与供应商协议 |
 | `supabase/migrations/` | Supabase 项目基础结构 |
 | `deploy/` | 管理数据权限、Vault 凭据存储与云端 RPC |
 | `scripts/` | 初始化、部署及本地控制台服务 |

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanAntigravitySchema as clean } from '../supabase/functions/subscription-api/antigravity_schema.ts';
-import { antigravityOAuthRequest } from '../supabase/functions/subscription-api/antigravity_oauth.ts';
+import { cleanAntigravitySchema as clean } from '../supabase/functions/sub2api/antigravity_schema.ts';
+import { antigravityOAuthRequest } from '../supabase/functions/sub2api/antigravity_oauth.ts';
 
 test('Antigravity expands definitions without dropping property names or mutating caller schemas', () => {
   const input = { type: 'object', $defs: { 'a/b': { type: 'string', minLength: 2 } }, properties: { type: { $ref: '#/$defs/a~1b' }, properties: { type: 'boolean' } }, required: ['type', 'absent'], additionalProperties: false };

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createHmac} from 'node:crypto';
 import {createHandler} from './handler.mjs';
-import {jobSigningKey} from '../supabase/functions/subscription-api/job_signing.ts';
+import {jobSigningKey} from '../supabase/functions/sub2api/job_signing.ts';
 
 test('Codex cron requires a scoped ticket and synchronizes without provider credentials', async () => {
  const calls=[];

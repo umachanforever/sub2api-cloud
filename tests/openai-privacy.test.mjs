@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {disableOpenAITraining,ensureOpenAIPrivacy} from '../supabase/functions/subscription-api/openai_privacy.ts';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
+import {disableOpenAITraining,ensureOpenAIPrivacy} from '../supabase/functions/sub2api/openai_privacy.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
 import {createHandler} from './handler.mjs';
 const id='22222222-2222-4222-8222-222222222222',user='11111111-1111-4111-8111-111111111111';
 const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[user]};
@@ -39,7 +39,7 @@ test('unsupported and missing accounts never contact the provider',async()=>{
 });
 
 test('native credential refresh persists privacy for the rotated token before returning',async()=>{
- const {credentialsFor}=await import('../supabase/functions/subscription-api/accounts.ts');
+ const {credentialsFor}=await import('../supabase/functions/sub2api/accounts.ts');
  const expiring=await encryptCredentials({access_token:'old',refresh_token:'refresh',expires_at:1},config.encryptionKey);
  let stored,providerCalls=0,privacyCalls=0,saves=0,released=false;
  const db=new Database(config,async(url,init)=>{

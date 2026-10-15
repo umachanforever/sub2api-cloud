@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
-import {createHandler} from '../supabase/functions/subscription-api/app.ts';
-import {errorClassification} from '../supabase/functions/subscription-api/ops_errors.ts';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
+import {createHandler} from '../supabase/functions/sub2api/app.ts';
+import {errorClassification} from '../supabase/functions/sub2api/ops_errors.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
 const user='11111111-1111-4111-8111-111111111111',other='22222222-2222-4222-8222-222222222222',account='33333333-3333-4333-8333-333333333333';
 const config={url:'https://db',serviceKey:'private-service-key',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[user]};
 const encrypted=await encryptCredentials({api_key:'private-provider-key'},config.encryptionKey);

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createHandler} from './handler.mjs';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
-import {codexCredits,completeResetCredits,quotaUsage,resetCreditDetails} from '../supabase/functions/subscription-api/openai_quota_values.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
+import {codexCredits,completeResetCredits,quotaUsage,resetCreditDetails} from '../supabase/functions/sub2api/openai_quota_values.ts';
 const user='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
 const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[user]};
 const encrypted=await encryptCredentials({access_token:'private-access',refresh_token:'private-refresh',chatgpt_account_id:'private-account',expires_at:2100000000},config.encryptionKey);
@@ -29,7 +29,7 @@ test('credit details accept upstream envelopes and string counts without leaking
  assert.equal(completeResetCredits({available_count:2,credits:[{expires_at:'2030-01-01'}]}),false);assert.equal(completeResetCredits({available_count:0}),true);
 });
 test('quota display caches survive backup metadata validation and discard unknown fields',async()=>{
- const {accountMetadata}=await import('../supabase/functions/subscription-api/validation.ts');
+ const {accountMetadata}=await import('../supabase/functions/sub2api/validation.ts');
  const extra={codex_credits_snapshot:{credits,fetched_at:10},codex_reset_credit_snapshot:{available_count:1,credits:[{expires_at:'2030-01-01T00:00:00Z',id:'private'}]}};
  const normalized=accountMetadata(extra);assert.deepEqual(normalized.codex_credits_snapshot,extra.codex_credits_snapshot);assert.equal(JSON.stringify(normalized).includes('private'),false);
  assert.throws(()=>accountMetadata({codex_credits_snapshot:{credits:{balance:0},fetched_at:10}}),{code:'invalid_codex_quota_snapshot'});

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { proxy } from '../supabase/functions/subscription-api/proxy.ts';
-import { antigravityOAuthRequest, forwardAntigravity } from '../supabase/functions/subscription-api/antigravity_oauth.ts';
-import { googleOAuthClients } from '../supabase/functions/subscription-api/google_oauth_config.ts';
+import { proxy } from '../supabase/functions/sub2api/proxy.ts';
+import { antigravityOAuthRequest, forwardAntigravity } from '../supabase/functions/sub2api/antigravity_oauth.ts';
+import { googleOAuthClients } from '../supabase/functions/sub2api/google_oauth_config.ts';
 import { oauthSecrets } from '../scripts/deploy.mjs';
 
 const events = [

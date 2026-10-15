@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { claudeToAntigravity, antigravityToClaude } from '../supabase/functions/subscription-api/antigravity_claude.ts';
-import { proxy } from '../supabase/functions/subscription-api/proxy.ts';
+import { claudeToAntigravity, antigravityToClaude } from '../supabase/functions/sub2api/antigravity_claude.ts';
+import { proxy } from '../supabase/functions/sub2api/proxy.ts';
 
 const body = { model: 'claude-test', system: [{ type: 'text', text: 'Keep instructions' }], max_tokens: 1200, messages: [
   { role: 'user', content: [{ type: 'text', text: 'Look' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'aGVsbG8=' } }] },
@@ -89,8 +89,8 @@ for (const streaming of [false, true]) test(`Antigravity Messages ${streaming ? 
 });
 
 test('Antigravity prefixed routes preserve native authentication and reject other providers', async () => {
-  const { createHandler } = await import('../supabase/functions/subscription-api/app.ts');
-  const { hashKey } = await import('../supabase/functions/subscription-api/validation.ts');
+  const { createHandler } = await import('../supabase/functions/sub2api/app.ts');
+  const { hashKey } = await import('../supabase/functions/sub2api/validation.ts');
   const finishes = [];
   const handler = createHandler({ url: 'https://db.test', serviceKey: 'service', encryptionKey: '', adminIds: [], dataModel: 'native' }, async (url, init) => {
     const name = new URL(url).pathname.split('/').at(-1), args = JSON.parse(init.body);

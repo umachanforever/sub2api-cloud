@@ -3,14 +3,14 @@ import test from "node:test";
 import {
   decryptCredentials,
   encryptCredentials,
-} from "../supabase/functions/subscription-api/credential_store.ts";
+} from "../supabase/functions/sub2api/credential_store.ts";
 import {
   buildHeaders,
   modelListFromManifest,
   normalizeBody,
   refreshCredentials,
   shouldRefresh,
-} from "../supabase/functions/subscription-api/gateway.ts";
+} from "../supabase/functions/sub2api/gateway.ts";
 
 test("encrypts persistent OAuth credentials and decrypts them losslessly", async () => {
   const key = Buffer.alloc(32, 7).toString("base64");

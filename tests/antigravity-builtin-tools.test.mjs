@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { antigravityOAuthRequest } from '../supabase/functions/subscription-api/antigravity_oauth.ts';
-import { antigravityToClaude } from '../supabase/functions/subscription-api/antigravity_claude.ts';
-import { proxy } from '../supabase/functions/subscription-api/proxy.ts';
+import { antigravityOAuthRequest } from '../supabase/functions/sub2api/antigravity_oauth.ts';
+import { antigravityToClaude } from '../supabase/functions/sub2api/antigravity_claude.ts';
+import { proxy } from '../supabase/functions/sub2api/proxy.ts';
 const input = { model: 'claude-test', messages: [{ role: 'user', content: 'Find a source' }], max_tokens: 1024 };
 const credentials = { access_token: 'private-token', project_id: 'private-project' };
 function envelope(tools) {

@@ -4,11 +4,7 @@ project_id = "sub2api-supabase"
 site_url = "http://127.0.0.1:3000"
 additional_redirect_urls = ["http://127.0.0.1:3000/auth/callback", "http://127.0.0.1:3000/reset-password"]
 
-[functions.subscription-api]
+[functions.sub2api]
 # The function validates its own Bearer key.
 verify_jwt = false
-import_map = "./functions/subscription-api/deno.json"
-
-[functions.sub2api]
-verify_jwt = false
-import_map = "./functions/subscription-api/deno.json"
+import_map = "./functions/sub2api/deno.json"

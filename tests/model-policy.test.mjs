@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {modelAllowlist,modelCandidates,allowsModel,allowlistedModels,filterModelCatalog,DEFAULT_PROVIDER_MODELS} from '../supabase/functions/subscription-api/model_policy.ts';
+import {modelAllowlist,modelCandidates,allowsModel,allowlistedModels,filterModelCatalog,DEFAULT_PROVIDER_MODELS} from '../supabase/functions/sub2api/model_policy.ts';
 import {createHandler} from './handler.mjs';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
 const actor='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
 const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[actor]};
 const request=(path,method='GET',body,envelope=true)=>new Request(`https://gateway${path}`,{method,headers:{authorization:'Bearer session',...(envelope?{'x-s2a-frontend':'1'}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});

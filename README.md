@@ -108,7 +108,7 @@ The console caches successful authenticated data queries in tab memory for 60 se
 | --- | --- |
 | `backend/` | Original Go management backend |
 | `frontend/` | Original Vue console and cloud identity integration |
-| `supabase/functions/subscription-api/` | Cloud AI request handling and provider transports |
+| `supabase/functions/sub2api/` | Cloud AI request handling and provider transports |
 | `supabase/migrations/` | Supabase project foundation |
 | `deploy/` | Shared management schema access, Vault storage, and cloud RPCs |
 | `scripts/` | Provisioning, deployment, and local console hosting |

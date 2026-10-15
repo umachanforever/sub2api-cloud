@@ -1,14 +1,14 @@
 import { resolveProjectCredentials } from "./project-credentials.mjs";
-import {modelMapping} from "../supabase/functions/subscription-api/model_mapping.ts";
-import { disableOpenAITraining } from "../supabase/functions/subscription-api/openai_privacy.ts";
+import {modelMapping} from "../supabase/functions/sub2api/model_mapping.ts";
+import { disableOpenAITraining } from "../supabase/functions/sub2api/openai_privacy.ts";
 import { readFile } from "node:fs/promises";
-import { encryptCredentials } from "../supabase/functions/subscription-api/credential_store.ts";
+import { encryptCredentials } from "../supabase/functions/sub2api/credential_store.ts";
 import {
   hashKey,
   label,
   parseCredentials,
   uuid,
-} from "../supabase/functions/subscription-api/validation.ts";
+} from "../supabase/functions/sub2api/validation.ts";
 export { parseCredentials };
 
 export async function importCredentials(

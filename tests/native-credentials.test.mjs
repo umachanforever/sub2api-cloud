@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { credentialsFor } from "../supabase/functions/subscription-api/accounts.ts";
+import { credentialsFor } from "../supabase/functions/sub2api/accounts.ts";
 import {
   decryptCredentials,
   decryptApiKeyCredentials,
-} from "../supabase/functions/subscription-api/credential_store.ts";
-import { Database } from "../supabase/functions/subscription-api/db.ts";
+} from "../supabase/functions/sub2api/credential_store.ts";
+import { Database } from "../supabase/functions/sub2api/db.ts";
 const config = {
   url: "https://db.example",
   serviceKey: "service",
@@ -246,7 +246,7 @@ test("the normal model gateway consumes native Vault API-key accounts without le
 
 test("native privacy updates bind the exact credential version and preserve upstream failure vocabulary", async () => {
   const { ensureOpenAIPrivacy } = await import(
-    "../supabase/functions/subscription-api/openai_privacy.ts"
+    "../supabase/functions/sub2api/openai_privacy.ts"
   );
   const account = fixture({ credential_version: 7, privacy_mode: null });
   let persisted;

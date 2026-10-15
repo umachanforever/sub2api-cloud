@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { modernCodexModel, validateCodexReasoning } from '../supabase/functions/subscription-api/codex_models.ts';
-import { allowsModel } from '../supabase/functions/subscription-api/model_policy.ts';
-import { normalizeBody } from '../supabase/functions/subscription-api/gateway.ts';
+import { modernCodexModel, validateCodexReasoning } from '../supabase/functions/sub2api/codex_models.ts';
+import { allowsModel } from '../supabase/functions/sub2api/model_policy.ts';
+import { normalizeBody } from '../supabase/functions/sub2api/gateway.ts';
 
 test('modern Codex policy recognizes official spellings without admitting lookalikes', () => {
   for (const id of ['gpt-6.1-sol', 'gpt-6-sol', 'gpt-6-luna']) {
@@ -37,7 +37,7 @@ test('GPT-6.1 rejects explicit disabled reasoning across all request protocols',
 
 test('cloud rejects disabled GPT-6.1 reasoning before provider dispatch and settles its lease', async () => {
   const { createHandler } = await import('./handler.mjs');
-  const { encryptCredentials } = await import('../supabase/functions/subscription-api/credential_store.ts');
+  const { encryptCredentials } = await import('../supabase/functions/sub2api/credential_store.ts');
   const actor = '11111111-1111-4111-8111-111111111111';
   const id = '22222222-2222-4222-8222-222222222222';
   const config = { url: 'https://db.example', serviceKey: 'service', encryptionKey: Buffer.alloc(32, 7).toString('base64'), adminIds: [actor] };
@@ -61,7 +61,7 @@ test('cloud rejects disabled GPT-6.1 reasoning before provider dispatch and sett
 });
 
 test('GPT-6 Responses keeps mode and max while removing incompatible sampling', async () => {
-  const {normalizeModernCodexResponses}=await import('../supabase/functions/subscription-api/codex_models.ts');
+  const {normalizeModernCodexResponses}=await import('../supabase/functions/sub2api/codex_models.ts');
   for(const model of ['gpt-6-sol','gpt-6-luna','gpt-6.1-sol']) {
     const input={model,reasoning:{mode:'pro',effort:'max'},temperature:0.5,top_p:0.9,logprobs:true,top_logprobs:2,include:['message.output_text.logprobs','reasoning.encrypted_content'],prompt_cache_options:{ttl:'30m'}};
     normalizeModernCodexResponses(input);
@@ -76,7 +76,7 @@ test('GPT-6 Responses keeps mode and max while removing incompatible sampling', 
 });
 
 test('Messages bridge preserves distinct max effort and modern model aliases', async () => {
-  const {messagesToResponses}=await import('../supabase/functions/subscription-api/anthropic_protocol.ts');
+  const {messagesToResponses}=await import('../supabase/functions/sub2api/anthropic_protocol.ts');
   for(const model of ['gpt-6.1-sol','gpt-6-sol','gpt-6-luna','gpt-6-astra','gpt-5.6-sol']) {
     const body=messagesToResponses({model,max_tokens:32,messages:[{role:'user',content:'hello'}],output_config:{effort:'max'}});
     assert.equal(body.reasoning.effort,'max',model);
@@ -88,7 +88,7 @@ test('Messages bridge preserves distinct max effort and modern model aliases', a
 });
 
 test('API key Responses applies model compatibility without mutating the request', async () => {
-  const {apiKeyRequest}=await import('../supabase/functions/subscription-api/api_key_provider.ts');
+  const {apiKeyRequest}=await import('../supabase/functions/sub2api/api_key_provider.ts');
   const body={model:'gpt-6.1-sol',input:'hello',reasoning:{mode:'pro',effort:'max'},temperature:0.5,top_logprobs:2,include:['message.output_text.logprobs','reasoning.encrypted_content']};
   const outgoing=apiKeyRequest('openai',{api_key:'secret'},'responses','/v1/responses',body,new Request('https://gateway/v1/responses'),new AbortController().signal);
   const forwarded=JSON.parse(outgoing.init.body);

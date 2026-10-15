@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {createHandler} from './handler.mjs';import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
-import {quotaResetResult,quotaWindowUpdates} from '../supabase/functions/subscription-api/openai_quota_values.ts';
+import {createHandler} from './handler.mjs';import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
+import {quotaResetResult,quotaWindowUpdates} from '../supabase/functions/sub2api/openai_quota_values.ts';
 const user='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222',opId='33333333-3333-4333-8333-333333333333',lease='44444444-4444-4444-8444-444444444444';
 const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[user]};
 const encrypted=await encryptCredentials({access_token:'private-access',refresh_token:'private-refresh',chatgpt_account_id:'private-account',expires_at:2100000000},config.encryptionKey);

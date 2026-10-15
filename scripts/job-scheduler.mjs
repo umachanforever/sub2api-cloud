@@ -1,4 +1,4 @@
-import {jobSigningKey} from '../supabase/functions/subscription-api/job_signing.ts';
+import {jobSigningKey} from '../supabase/functions/sub2api/job_signing.ts';
 export async function configureJobScheduler(env, target=env.SUPABASE_URL, fetchImpl=fetch) {
   if (env.SUB2API_DATA_MODEL === "native") {
     try {

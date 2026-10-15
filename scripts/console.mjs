@@ -5,7 +5,7 @@ import { pipeline } from "node:stream/promises";
 import { serveStatic } from "./static.mjs";
 import { createOAuthCallbackServer } from "./oauth-callback.mjs";
 
-import publicSettings from "../supabase/functions/subscription-api/public_settings.json" with {type: "json"};
+import publicSettings from "../supabase/functions/sub2api/public_settings.json" with {type: "json"};
 export { publicSettings };
 
 export function validateConfig(input) {

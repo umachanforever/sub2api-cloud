@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {proxy} from '../supabase/functions/subscription-api/proxy.ts';
+import {proxy} from '../supabase/functions/sub2api/proxy.ts';
 const fixture=await new Response(Deno.stdin.readable).json();
 assert.match(fixture.container,/^s2a-go-pg-[0-9a-f]+$/);
 const signatures={

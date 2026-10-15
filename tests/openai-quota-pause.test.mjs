@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';import test from 'node:test';
-import {quotaHeaderWindows,quotaPauseSettings} from '../supabase/functions/subscription-api/openai_quota_pause.ts';
-import {accountMetadata} from '../supabase/functions/subscription-api/validation.ts';
-import {encryptCredentials} from '../supabase/functions/subscription-api/credential_store.ts';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
+import {quotaHeaderWindows,quotaPauseSettings} from '../supabase/functions/sub2api/openai_quota_pause.ts';
+import {accountMetadata} from '../supabase/functions/sub2api/validation.ts';
+import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
 import {createHandler} from './handler.mjs';
 const id='11111111-1111-4111-8111-111111111111';
 const config={url:'https://db.example',serviceKey:'private-service',encryptionKey:Buffer.alloc(32,1).toString('base64'),adminIds:[]};

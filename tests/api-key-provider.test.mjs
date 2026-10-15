@@ -5,9 +5,9 @@ import {
   decryptApiKeyCredentials,
   decryptCredentials,
   encryptCredentials,
-} from "../supabase/functions/subscription-api/credential_store.ts";
-import { parseAccountCredentials } from "../supabase/functions/subscription-api/validation.ts";
-import { nativeUsage } from "../supabase/functions/subscription-api/api_key_provider.ts";
+} from "../supabase/functions/sub2api/credential_store.ts";
+import { parseAccountCredentials } from "../supabase/functions/sub2api/validation.ts";
+import { nativeUsage } from "../supabase/functions/sub2api/api_key_provider.ts";
 const config = {
   url: "https://project.supabase.co",
   serviceKey: "service",

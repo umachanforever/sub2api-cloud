@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createHandler} from '../supabase/functions/subscription-api/app.ts';
-import {Database} from '../supabase/functions/subscription-api/db.ts';
-import {recordResponse} from '../supabase/functions/subscription-api/ops_logs.ts';
+import {createHandler} from '../supabase/functions/sub2api/app.ts';
+import {Database} from '../supabase/functions/sub2api/db.ts';
+import {recordResponse} from '../supabase/functions/sub2api/ops_logs.ts';
 import {configureJobScheduler} from '../scripts/job-scheduler.mjs';
 const actor='11111111-1111-4111-8111-111111111111';
 const config={url:'https://db.example',serviceKey:'private-service-key',encryptionKey:'',adminIds:[actor]};

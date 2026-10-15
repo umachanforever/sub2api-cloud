@@ -4,7 +4,7 @@ import {
   importCredentials,
   parseCredentials,
 } from "../scripts/import-credentials.mjs";
-import { decryptCredentials } from "../supabase/functions/subscription-api/credential_store.ts";
+import { decryptCredentials } from "../supabase/functions/sub2api/credential_store.ts";
 
 const credentials = {
   access_token: "access",
@@ -92,7 +92,7 @@ test("imports only encrypted data and refuses to replace existing credentials", 
 
 test("rejects ciphertext tampering and a different encryption key", async () => {
   const { encryptCredentials } = await import(
-    "../supabase/functions/subscription-api/credential_store.ts"
+    "../supabase/functions/sub2api/credential_store.ts"
   );
   const encrypted = await encryptCredentials(credentials, key);
   await assert.rejects(

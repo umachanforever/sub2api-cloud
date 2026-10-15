@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {fetchWithProxy,probeProxy} from '../supabase/functions/subscription-api/proxy_transport.ts';
+import {fetchWithProxy,probeProxy} from '../supabase/functions/sub2api/proxy_transport.ts';
 const proxy={protocol:'socks5h',host:'::1',port:1080,username:'fixture',password:'fixture-password'};
 test('native proxy fetch retains streaming clients and closes once on EOF, cancellation and fetch failure',async()=>{
  let closes=0;const create=options=>{assert.equal(options.proxy.url,'socks5h://[::1]:1080');assert.deepEqual(options.proxy.basicAuth,{username:proxy.username,password:proxy.password});return {close(){closes++;}};};

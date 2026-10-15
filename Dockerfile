@@ -11,7 +11,7 @@ FROM node:24-bookworm-slim
 WORKDIR /app
 COPY package.json LICENSE COPYING NOTICE ./
 COPY scripts/console.mjs scripts/static.mjs scripts/oauth-callback.mjs scripts/console-ws.mjs ./scripts/
-COPY supabase/functions/subscription-api/public_settings.json ./supabase/functions/subscription-api/public_settings.json
+COPY supabase/functions/sub2api/public_settings.json ./supabase/functions/sub2api/public_settings.json
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 ENV CONSOLE_HOST=0.0.0.0 CONSOLE_STATIC_DIR=/app/frontend/dist
 EXPOSE 4173 1455
