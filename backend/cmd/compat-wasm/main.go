@@ -20,11 +20,51 @@ type request struct {
 }
 
 var states = map[string]*apicompat.ChatCompletionsToResponsesStreamState{}
+
+type anthropicState struct {
+	stream   *apicompat.AnthropicEventToResponsesState
+	mapping  apicompat.ResponsesClientToolMapping
+	restorer *apicompat.ResponsesClientToolStreamRestorer
+}
+
+var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "open_anthropic" {
+		if len(states)+len(anthropicStates) >= 32 {
+			return nil, fmt.Errorf("capacity")
+		}
+		var raw map[string]any
+		if err := json.Unmarshal(input.Body, &raw); err != nil {
+			return nil, err
+		}
+		mapping, _, err := apicompat.AdaptResponsesClientTools(raw)
+		if err != nil {
+			return nil, err
+		}
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return nil, err
+		}
+		var body apicompat.ResponsesRequest
+		if err := json.Unmarshal(encoded, &body); err != nil {
+			return nil, err
+		}
+		body.Stream = true
+		converted, err := apicompat.ResponsesToAnthropicRequest(&body)
+		if err != nil {
+			return nil, err
+		}
+		stream := apicompat.NewAnthropicEventToResponsesState()
+		stream.Model = body.Model
+		serial++
+		id := strconv.FormatUint(serial, 10)
+		anthropicStates[id] = &anthropicState{stream, mapping, apicompat.NewResponsesClientToolStreamRestorer(mapping)}
+		return map[string]any{"id": id, "body": converted}, nil
+	}
 	if input.Operation == "open_chat" {
-		if len(states) >= 32 {
+		if len(states)+len(anthropicStates) >= 32 {
 			return nil, fmt.Errorf("capacity")
 		}
 		var body apicompat.ResponsesRequest
@@ -54,10 +94,51 @@ func handle(input request) (any, error) {
 	}
 	if input.Operation == "close" {
 		delete(states, input.ID)
+		delete(anthropicStates, input.ID)
 		return nil, nil
 	}
 	if input.Operation == "stats" {
-		return len(states), nil
+		return len(states) + len(anthropicStates), nil
+	}
+	if state := anthropicStates[input.ID]; state != nil {
+		switch input.Operation {
+		case "chunk_anthropic":
+			var event apicompat.AnthropicStreamEvent
+			if err := json.Unmarshal(input.Body, &event); err != nil {
+				return nil, err
+			}
+			if event.Type == "error" {
+				return nil, fmt.Errorf("upstream error")
+			}
+			if event.Type == "message_stop" && state.stream.StopReason == "" {
+				return nil, fmt.Errorf("incomplete stream")
+			}
+			if event.Type == "content_block_stop" && state.stream.CurrentItemType == "function_call" && state.stream.CurrentArgs != "" && !json.Valid([]byte(state.stream.CurrentArgs)) {
+				return nil, fmt.Errorf("invalid tool arguments")
+			}
+			return restoreAnthropicEvents(apicompat.AnthropicEventToResponsesEvents(&event, state.stream), state), nil
+		case "finish_anthropic":
+			if !state.stream.CreatedSent || state.stream.StopReason == "" {
+				return nil, fmt.Errorf("incomplete stream")
+			}
+			return restoreAnthropicEvents(apicompat.FinalizeAnthropicResponsesStream(state.stream), state), nil
+		case "json_anthropic":
+			var response apicompat.AnthropicResponse
+			if err := json.Unmarshal(input.Body, &response); err != nil {
+				return nil, err
+			}
+			encoded, err := json.Marshal(apicompat.AnthropicToResponsesResponse(&response))
+			if err != nil {
+				return nil, err
+			}
+			restored, _, err := apicompat.RestoreResponsesClientToolPayload(encoded, state.mapping)
+			if err != nil {
+				return nil, err
+			}
+			return json.RawMessage(restored), nil
+		default:
+			return nil, fmt.Errorf("unknown operation")
+		}
 	}
 	state := states[input.ID]
 	if state == nil {
@@ -89,6 +170,14 @@ func handle(input request) (any, error) {
 	default:
 		return nil, fmt.Errorf("unknown operation")
 	}
+}
+
+func restoreAnthropicEvents(events []apicompat.ResponsesStreamEvent, state *anthropicState) []apicompat.ResponsesStreamEvent {
+	var restored []apicompat.ResponsesStreamEvent
+	for _, event := range events {
+		restored = append(restored, state.restorer.Restore(event)...)
+	}
+	return restored
 }
 
 func invoke(_ js.Value, args []js.Value) (result any) {
