@@ -83,6 +83,7 @@ export async function proxy(
   }
   const models = (path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
+  const embeddings = path === "/v1/embeddings" && request.method === "POST";
   const images = ["/v1/images/generations", "/images/generations"].includes(path) && request.method === "POST";
   const chat = path === "/v1/chat/completions" && request.method === "POST";
   const messages = path === "/v1/messages" && request.method === "POST";
@@ -90,7 +91,9 @@ export async function proxy(
     ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent)$/
       .exec(path)
     : null;
-  const protocol: NativeProtocol = images
+  const protocol: NativeProtocol = embeddings
+    ? "embeddings"
+    : images
     ? "images"
     : models
     ? "models"
@@ -110,7 +113,7 @@ export async function proxy(
     ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
       path,
     ) && request.method === "POST";
-  if (!models && !responses && !chat && !messages && !gemini && !images) {
+  if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings) {
     throw new HttpError(404, "not_found");
   }
   let body: Record<string, unknown> | undefined;
@@ -128,7 +131,7 @@ export async function proxy(
           ("include_usage" in raw.stream_options &&
             typeof raw.stream_options.include_usage !== "boolean"))
       ) throw new HttpError(400, "invalid_stream_options");
-      stream = chat || messages || images ? raw.stream === true : raw.stream !== false;
+      stream = embeddings ? false : chat || messages || images ? raw.stream === true : raw.stream !== false;
       includeUsage = chat &&
         (raw.stream_options as { include_usage?: boolean } | undefined)
             ?.include_usage === true;
@@ -143,6 +146,11 @@ export async function proxy(
         (chat || messages) &&
         (!Array.isArray(raw.messages) || !raw.messages.length)
       ) throw new HttpError(400, "invalid_request");
+      if (embeddings) {
+        const tokenList = (value: unknown): boolean => Array.isArray(value) && value.length > 0 && value.every(token => Number.isSafeInteger(token) && token >= 0);
+        const validInput = typeof raw.input === "string" ? raw.input.length > 0 : tokenList(raw.input) || Array.isArray(raw.input) && raw.input.length > 0 && (raw.input.every(value => typeof value === "string" && value.length > 0) || raw.input.every(tokenList));
+        if (!validInput || raw.stream === true || raw.encoding_format !== undefined && !["float", "base64"].includes(raw.encoding_format as string) || raw.dimensions !== undefined && (!Number.isSafeInteger(raw.dimensions) || (raw.dimensions as number) <= 0)) throw new HttpError(400, "invalid_request");
+      }
       if (images && (typeof raw.prompt !== "string" || !raw.prompt.trim() || raw.prompt.length > 65536)) throw new HttpError(400, "invalid_request");
       if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
         throw new HttpError(400, "invalid_request");
@@ -249,6 +257,7 @@ export async function proxy(
       return finishing;
     };
     try {
+      if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (images && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       const apiKey = account.type === "apikey";

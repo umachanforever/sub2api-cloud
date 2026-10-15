@@ -10,6 +10,7 @@ import { json } from "./http.ts";
 
 type Item = Record<string, any>;
 export type NativeProtocol =
+  | "embeddings"
   | "images"
   | "chat"
   | "responses"
@@ -46,7 +47,7 @@ export function apiKeyRequest(
   ) as ApiKeyCredentials;
   if (
     (["openai", "grok"].includes(platform) &&
-      !["chat", "responses", "models", ...(platform === "openai" ? ["images"] : [])].includes(protocol)) ||
+      !["chat", "responses", "models", ...(platform === "openai" ? ["images", "embeddings"] : [])].includes(protocol)) ||
     (platform === "anthropic" && !["messages", "models"].includes(protocol)) ||
     (platform === "gemini" && !["gemini", "models"].includes(protocol)) ||
     (path.startsWith("/v1beta/models") && protocol === "models" &&
@@ -67,6 +68,7 @@ export function apiKeyRequest(
   if (platform === "openai" || platform === "grok") {
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
+    if (protocol === "embeddings") providerPath = "/v1/embeddings";
     if (protocol === "images") providerPath = "/v1/images/generations";
   } else if (platform === "anthropic") {
     headers.set("x-api-key", validated.api_key);
@@ -200,6 +202,7 @@ export function nativeUsage(
     );
     if (input !== null) usage.input = input;
     if (output !== null) usage.output = output;
+    if (protocol === "embeddings") usage.output = 0;
     if (cacheRead !== null) usage.cacheRead = cacheRead;
     if (value.type === "response.failed" || value.error) {
       usage.outcome = "failed";
@@ -376,6 +379,7 @@ export async function nativeResponse(
       value.error || (protocol === "chat" && !Array.isArray(value.choices)) ||
       (protocol === "messages" && value.type !== "message") ||
       (protocol === "responses" && value.object !== "response") ||
+      (protocol === "embeddings" && (!Array.isArray(value.data) || !value.data.length || value.data.some((item: Item) => !item || item.object !== "embedding" || !Number.isSafeInteger(item.index) || item.index < 0 || !(typeof item.embedding === "string" && item.embedding.length > 0 || Array.isArray(item.embedding) && item.embedding.length > 0 && item.embedding.every((number: unknown) => typeof number === "number" && Number.isFinite(number)))))) ||
       (protocol === "images" && (!Array.isArray(value.data) || !value.data.length || value.data.some((item: Item) => !item || !(typeof item.b64_json === "string" && item.b64_json || typeof item.url === "string" && item.url)))) ||
       (protocol === "gemini" && !Array.isArray(value.candidates) &&
         !value.promptFeedback)

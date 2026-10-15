@@ -119,6 +119,8 @@ curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
 
 Sol 系列的 GPT 版本名默认选择 Sol：`gpt-6` → `gpt-6-sol`、`gpt-6.1` → `gpt-6.1-sol`，后续 GPT 版本沿用此规则。明确指定的变体及账户模型映射优先。别名对应的目标模型仍需上游实际支持。
 
+OpenAI API Key 账户支持 `/v1/embeddings`（也支持 `/embeddings`），包括文本或 Token 批量输入、浮点或 base64 向量、模型映射和输入 Token 用量记录。该接口使用文本请求体上限，不支持流式响应。ChatGPT OAuth 账户不提供 embeddings API Key。
+
 Chat Completions 支持内联文件数据及上游文件 ID。Messages 转 OpenAI 桥接支持 base64 PDF、文档 URL、纯文本文档，以及工具返回的文件。文档引用标注需要上游原生支持；通过 OpenAI 桥接启用引用标注会明确报错。
 
 请求体默认上限为 256 MiB，与原版 Sub2API 一致；embeddings、搜索和 systemone 专用文本路由上限为 32 MiB。部署前可通过 `SERVER_MAX_REQUEST_BODY_SIZE`、`GATEWAY_MAX_BODY_SIZE` 和 `GATEWAY_TEXT_MAX_BODY_SIZE` 按字节配置。服务器上限设为 `0` 仅关闭全局限制，网关限制仍然生效。Supabase 运行内存及上游服务限制可能使大型附件的实际可用上限更低。

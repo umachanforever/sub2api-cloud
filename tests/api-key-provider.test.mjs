@@ -18,10 +18,11 @@ async function fixture(
   platform,
   forward,
   credentials = { api_key: "provider-secret" },
+  requestLimits,
 ) {
   const stored = await encryptCredentials(credentials, config.encryptionKey);
   const finishes = [], leases = [];
-  const handler = createHandler(config, async (url, init) => {
+  const handler = createHandler({...config,...(requestLimits?{requestLimits}:{})}, async (url, init) => {
     if (String(url).endsWith("/s2a_acquire")) {
       leases.push(JSON.parse(init.body));
       return Response.json({
@@ -862,4 +863,44 @@ test('image streams without a terminal event retain incomplete usage and never i
  await response.text();
  assert.equal(value.finishes[0].p_outcome,'incomplete');
  assert.equal(value.finishes[0].p_input_tokens,null);assert.equal(value.finishes[0].p_output_tokens,null);
+});
+
+test('embeddings forward text and token batches, preserve vectors, and persist input usage',async()=>{
+ for(const input of ['hello',['hello','world'],[1,2,3],[[1,2],[3,4]]]){
+  const vectors={object:'list',data:[{object:'embedding',index:0,embedding:[0.125,-0.5]}],model:'text-embedding-3-small',usage:{prompt_tokens:7,total_tokens:7}};
+  const f=await fixture('openai',(url,init)=>{
+   assert.equal(url,'https://api.openai.com/v1/embeddings');assert.equal(new Headers(init.headers).get('authorization'),'Bearer provider-secret');
+   const body=JSON.parse(init.body);assert.deepEqual(body.input,input);assert.equal(body.dimensions,2);return Response.json(vectors);
+  });
+  const response=await f.request('/v1/embeddings',{model:'text-embedding-3-small',input,dimensions:2,encoding_format:'float'});
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),vectors);
+  assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_input_tokens,7);assert.equal(f.finishes[0].p_output_tokens,0);
+ }
+ const f=await fixture('openai',()=>Response.json({object:'list',data:[{object:'embedding',index:0,embedding:'AACAPw=='}],usage:{prompt_tokens:1,total_tokens:1}}));
+ assert.equal((await f.request('/embeddings',{model:'text-embedding-3-small',input:'hello',encoding_format:'base64'})).status,200);
+});
+
+test('embeddings reject malformed input before reserving an account',async()=>{
+ const f=await fixture('openai',()=>assert.fail('must not dispatch'));
+ for(const patch of [{input:''},{input:[]},{input:['']},{input:[1,'x']},{input:[[-1]]},{input:[1.5]},{input:{}},{stream:true},{dimensions:0},{dimensions:1.5},{encoding_format:'bad'}]){
+  assert.equal((await f.request('/v1/embeddings',{model:'text-embedding-3-small',input:'hello',...patch})).status,400,JSON.stringify(patch));
+ }
+ assert.equal(f.leases.length,0);
+});
+
+test('embeddings validate provider payloads and settle failed requests',async()=>{
+ for(const data of [[],[{object:'embedding',index:0,embedding:[]}],[{object:'embedding',index:-1,embedding:[1]}],[{object:'embedding',index:0,embedding:['bad']}]]){
+  const f=await fixture('openai',()=>Response.json({data}));
+  assert.equal((await f.request('/v1/embeddings',{model:'text-embedding-3-small',input:'hello'})).status,502);
+  assert.ok(f.finishes.length>0);assert.ok(f.finishes.every(row=>row.p_status===502));
+ }
+ const f=await fixture('anthropic',()=>assert.fail('unsupported provider must not dispatch'));
+ assert.equal((await f.request('/v1/embeddings',{model:'text-embedding-3-small',input:'hello'})).status,501);
+ assert.equal(f.finishes.length,1);
+});
+
+test('embeddings use the text request limit before account acquisition',async()=>{
+ const f=await fixture('openai',()=>assert.fail('oversized input must not dispatch'),undefined,{server:1024,gateway:1024,text:128});
+ const r=await f.request('/v1/embeddings',{model:'text-embedding-3-small',input:'x'.repeat(200)});
+ assert.equal(r.status,413);assert.equal(f.leases.length,0);
 });
