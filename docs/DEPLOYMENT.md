@@ -28,6 +28,12 @@ Keep the terminal open for the local Edge Function service. Use `npm run down --
 
 When switching to cloud mode, local Supabase can remain stopped. Use `npm run down -- --cloud` to stop the local management services without affecting the deployed AI endpoint.
 
+## Hosted execution limits
+
+The gateway uses a 120-second request deadline, including streaming and realtime voice connections. Supabase's [hosted Edge Function limits](https://supabase.com/docs/guides/functions/limits) cap worker lifetime at 150 seconds on Free plans and 400 seconds on paid plans. `EdgeRuntime.waitUntil` keeps background work attached to the worker; it does not extend that lifetime. A paid plan alone does not change the gateway deadline.
+
+Clients should handle realtime connection closure and establish a new session when needed. Reconnecting starts a new upstream session; it does not resume the previous audio session. Database lease renewal cannot extend a hosted worker's lifetime. Workloads requiring one uninterrupted session beyond these limits need an execution environment with a suitable connection lifetime.
+
 ## Provider models and usage
 
 Use the cloud `/v1/models` endpoint to discover the models available to the configured provider account. Account model mappings translate application-facing model names to supported upstream names. Changes made in the original account editor are visible to the cloud gateway through the same database records.
