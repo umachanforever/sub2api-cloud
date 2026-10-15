@@ -1,0 +1,35 @@
+sub2api-supabase / Supabase integration
+
+Upstream: https://github.com/Wei-Shaw/sub2api
+Reference revision: 9c2cca9e627291bc719bada3d57de23b625a4180
+Upstream copyright: Copyright (c) 2026 Wesley Liddick
+Upstream license: GNU Lesser General Public License version 3 or later (LGPL-3.0-or-later).
+See LICENSE and COPYING.
+
+This project implements the upstream account, API key, scheduling, gateway,
+and administration interfaces in TypeScript using Supabase Auth, PostgreSQL,
+and Edge Functions. frontend/ vendors the original Vue console at the pinned
+revision with product branding, API integration, build, and deployment changes.
+The frontend's required legal documents are retained in docs/legal/. The original Go backend is retained in backend/ for local management integration;
+its original source comments and copyright notices are preserved. Supabase hosts
+the cloud gateway and its supporting data and identity services.
+Source and build/deployment instructions are included. This project is maintained
+independently and is not an official Sub2API release.
+
+Local modifications also replace default product branding, logo and visible
+welcome copy, and use the existing compact home page. Supabase names the
+deployment platform; this project is not an official Supabase product.
+Code comments and the primary documentation are translated into English;
+README.zh-CN.md provides the Chinese documentation. Upstream attribution is retained.
+
+The provider model picker metadata is derived from the pinned upstream
+OpenAI, Claude, and Gemini CLI catalogs in backend/internal/pkg/.
+
+The model-rate seed is derived from the pinned upstream resource
+backend/resources/model-pricing/model_prices_and_context_window.json.
+
+The Public Suffix List seed in supabase/migrations/20261015030000_public_suffixes.sql
+is derived from https://publicsuffix.org/list/public_suffix_list.dat at revision
+3929462652695bad04f0a27afb600974014a3c8b. The seed converts domain names to ASCII
+IDNA form and is distributed under Mozilla Public License 2.0; see
+docs/legal/PUBLIC_SUFFIX_LICENSE.txt. Other project licensing remains unchanged.
