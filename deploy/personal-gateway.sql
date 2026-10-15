@@ -70,6 +70,21 @@ ALTER FUNCTION s2a_private.gemini_catalog_sources(bigint) OWNER TO s2a_managemen
 REVOKE ALL ON FUNCTION s2a_private.gemini_catalog_sources(bigint) FROM PUBLIC,anon,authenticated,service_role;
 
 DROP FUNCTION IF EXISTS s2a_private.account_mapping_accepts(text,jsonb,jsonb,text);
+CREATE OR REPLACE FUNCTION s2a_private.anthropic_catalog_models(p_group bigint) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ SELECT coalesce(jsonb_agg(model ORDER BY model COLLATE "C"),'[]'::jsonb) FROM (
+  SELECT DISTINCT m.key AS model FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
+  CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(s2a_private.account_credentials(a.id)->'model_mapping')='object'
+    THEN s2a_private.account_credentials(a.id)->'model_mapping' ELSE '{}'::jsonb END) m
+  WHERE ag.group_id=p_group AND a.platform='anthropic' AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
+   AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=now(),false)
+   AND coalesce(a.overload_until,'-infinity')<=now() AND coalesce(a.rate_limit_reset_at,'-infinity')<=now()
+   AND coalesce(a.temp_unschedulable_until,'-infinity')<=now() AND jsonb_typeof(m.value)='string'
+ ) models;
+$$;
+ALTER FUNCTION s2a_private.anthropic_catalog_models(bigint) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.anthropic_catalog_models(bigint) FROM PUBLIC,anon,authenticated,service_role;
+
 -- Explicit account mappings also define the scheduler's model allowlist.
 CREATE OR REPLACE FUNCTION s2a_private.account_mapping_accepts(platform text,account_type text,extra jsonb,mapping jsonb,model text)
 RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
@@ -178,6 +193,9 @@ BEGIN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
     END IF;
     IF native_gemini_catalog AND g.platform IN ('gemini','composite') THEN gemini_sources:=s2a_private.gemini_catalog_sources(g.id); END IF;
+    IF p_model='__models__' AND g.platform='anthropic' AND coalesce(p_billing_context->>'inbound_endpoint','') ~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$' THEN
+        RETURN jsonb_build_object('anthropic_catalog',s2a_private.anthropic_catalog_models(g.id),'model_allowlist',g.model_allowlist,'anthropic_capabilities',s2a_private.composite_capability_sources(g.id));
+    END IF;
     IF p_model='__models__' AND g.platform='composite' AND NOT native_gemini_catalog THEN
         IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$'
             THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;

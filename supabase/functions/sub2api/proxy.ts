@@ -1,8 +1,9 @@
-import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
+import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {vertexGeminiRequest} from './vertex_gemini.ts';
 import {vertexAnthropicRequest} from './vertex_anthropic.ts';
+import {anthropicModelCatalog,anthropicCodexCatalog} from './anthropic_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -67,6 +68,7 @@ type ProviderAccount = Account & ({type:'service_account'}|{type?:'oauth'|'apike
   platform?: Platform;
 };
 type Reservation =
+  | {anthropic_catalog:string[];anthropic_capabilities?:CompositeCapabilitySource[];model_allowlist?:ModelAllowlist;error?:never}
   | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | {gemini_catalog_only:true;gemini_catalog_sources:GeminiCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources;gemini_catalog_sources?:GeminiCatalogSources; error?: never }
@@ -74,6 +76,13 @@ type Reservation =
     error: string;
     status: number;
   };
+
+async function codexManifestResponse(manifest:unknown,request:Request):Promise<Response>{
+  const serialized=JSON.stringify(manifest),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(serialized));
+  const etag='"'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')+'"';
+  const matched=request.headers.get('if-none-match')?.split(',').some(value=>value.trim()==='*'||value.trim().replace(/^W\//,'')===etag);
+  return new Response(matched?null:serialized,{status:matched?304:200,headers:{etag,'cache-control':'no-store',...(matched?{}:{'content-type':'application/json'})}});
+}
 
 export async function proxy(
   request: Request,
@@ -166,9 +175,9 @@ async function proxyWithIdentity(
     : gemini
     ? "gemini"
     : "responses";
-  const clientVersion = new URL(request.url).searchParams.get("client_version");
+  const clientVersion = new URL(request.url).searchParams.get("client_version") || null;
   if (
-    models && clientVersion !== null &&
+    models && !modelId && clientVersion !== null &&
     (!/^[a-zA-Z0-9._+-]{1,100}$/.test(clientVersion))
   ) throw new HttpError(400, "invalid_client_version");
   const responses =
@@ -304,6 +313,11 @@ async function proxyWithIdentity(
     if (reservation.error) {
       throw new HttpError(reservation.status, reservation.error);
     }
+    if('anthropic_catalog' in reservation){
+      if(!models||nativeGeminiModels)throw new HttpError(503,'invalid_anthropic_catalog');
+      if(!modelId&&(codexModels||!!clientVersion))return codexManifestResponse(anthropicCodexCatalog(reservation.anthropic_catalog,reservation.model_allowlist,reservation.anthropic_capabilities),request);
+      return json(200,anthropicModelCatalog(reservation.anthropic_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));
+    }
     if('gemini_catalog_only' in reservation){
       if(!nativeGeminiModels)throw new HttpError(503,'invalid_gemini_catalog');
       const catalog=antigravityOnlyCatalog(reservation.gemini_catalog_sources,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined);
@@ -314,10 +328,7 @@ async function proxyWithIdentity(
       if(!models||nativeGeminiModels)throw new HttpError(503,'composite_manifest_unavailable');
       if(!modelId&&(codexModels||clientVersion!==null)){
         const manifest=compositeCodexCatalog(reservation.composite_catalog,reservation.model_allowlist);
-        const serialized=JSON.stringify(manifest),digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(serialized));
-        const etag='"'+Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('')+'"';
-        const matched=request.headers.get('if-none-match')?.split(',').some(value=>value.trim()==='*'||value.trim().replace(/^W\//,'')===etag);
-        return new Response(matched?null:serialized,{status:matched?304:200,headers:{etag,'cache-control':'no-store',...(matched?{}:{'content-type':'application/json'})}});
+        return codexManifestResponse(manifest,request);
       }
       return json(200,compositeModelCatalog(reservation.composite_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));
     }

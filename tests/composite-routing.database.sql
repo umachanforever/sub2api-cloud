@@ -94,4 +94,26 @@ BEGIN
  acquired:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/systemone"}');
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM ts::text THEN RAISE EXCEPTION 'System One incorrectly used a Responses-specific Composite route'; END IF;
 END $$;
+DO $$
+DECLARE g bigint; other_group bigint; u bigint; a bigint; b bigint; hidden bigint; foreign_account bigint; h text; catalog jsonb;
+BEGIN
+ INSERT INTO public.users(email,password_hash,concurrency) VALUES('anthropic-catalog-'||gen_random_uuid()||'@example.invalid','!fixture',1) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('Anthropic catalog acceptance','anthropic') RETURNING id INTO g;
+ INSERT INTO public.groups(name,platform) VALUES('Other catalog acceptance','anthropic') RETURNING id INTO other_group;
+ INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Anthropic catalog') RETURNING s2a_key_hash INTO h;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Catalog API Key','anthropic','apikey','{"api_key":"synthetic-secret","model_mapping":{"public-a":"private-model"}}',1) RETURNING id INTO a;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Catalog Vertex','anthropic','service_account','{"model_mapping":{"public-b":"private-model"}}',1) RETURNING id INTO b;
+ INSERT INTO public.accounts(name,platform,type,credentials,schedulable) VALUES('Disabled catalog account','anthropic','apikey','{"api_key":"synthetic-secret","model_mapping":{"hidden":"private-model"}}',false) RETURNING id INTO hidden;
+ INSERT INTO public.accounts(name,platform,type,credentials) VALUES('Other platform account','openai','apikey','{"api_key":"synthetic-secret","model_mapping":{"foreign":"private-model"}}') RETURNING id INTO foreign_account;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g),(hidden,g),(foreign_account,g);
+ IF has_function_privilege('service_role','s2a_private.anthropic_catalog_models(bigint)','EXECUTE') THEN RAISE EXCEPTION 'private Anthropic catalog exposed'; END IF;
+ IF s2a_private.anthropic_catalog_models(other_group) IS DISTINCT FROM '[]'::jsonb THEN RAISE EXCEPTION 'Anthropic catalog crossed groups'; END IF;
+ catalog:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF catalog->'anthropic_catalog' IS DISTINCT FROM '["public-a","public-b"]'::jsonb OR catalog ? 'account' OR catalog ? 'lease_id' THEN RAISE EXCEPTION 'Anthropic catalog failed aggregation or consumed inference slot'; END IF;
+ IF catalog::text LIKE '%synthetic-secret%' OR catalog::text LIKE '%credential%' THEN RAISE EXCEPTION 'Anthropic discovery leaked credentials'; END IF;
+ IF jsonb_array_length(catalog->'anthropic_capabilities')<>2 THEN RAISE EXCEPTION 'Anthropic Codex capability sources missing'; END IF;
+ UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE s2a_key_hash=h;
+ catalog:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
+ IF catalog->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'Anthropic catalog bypassed IP policy'; END IF;
+END $$;
 ROLLBACK;

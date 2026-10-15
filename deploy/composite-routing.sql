@@ -78,7 +78,8 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
  JOIN public.groups g ON g.id=ag.group_id
  CROSS JOIN LATERAL (SELECT s2a_private.account_credentials(a.id) AS value) c
- WHERE ag.group_id=p_group AND g.platform='composite' AND g.deleted_at IS NULL
+ WHERE ag.group_id=p_group AND g.platform IN ('composite','anthropic') AND g.deleted_at IS NULL
+  AND (g.platform='composite' OR a.platform='anthropic')
   AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
   AND a.platform IN ('anthropic','openai','gemini','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go');
 $$;
