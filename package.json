@@ -16,6 +16,7 @@
     "frontend": "pnpm --dir frontend --ignore-workspace dev",
     "deploy": "node --env-file=.env.local scripts/deploy.mjs",
     "verify:cloud": "node scripts/verify-cloud.mjs",
+    "verify:storage": "node --env-file=.env.local scripts/verify-storage.mjs",
     "up": "node --env-file-if-exists=.env.local scripts/up.mjs",
     "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down",
     "management:setup": "node --env-file=.env.local scripts/management.mjs",
