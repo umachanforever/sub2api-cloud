@@ -56,7 +56,7 @@ test("rejects unsupported methods after authentication", async () => {
 
 test("health routes work behind both public Supabase and Edge Runtime path prefixes", async () => {
   for (
-    const prefix of ["", "/subscription-api", "/functions/v1/sub2api"]
+    const prefix of ["", "/sub2api", "/functions/v1/sub2api"]
   ) {
     const response = await handler(
       new Request(`https://example.com${prefix}/health`),
@@ -91,4 +91,12 @@ test("native provider credentials use the same key reservation and reject confli
   }));
   assert.equal(conflict.status, 400);
   assert.equal(seen.length, 3);
+});
+
+
+test('retired function prefixes no longer route to the gateway', async () => {
+  for (const prefix of ['/subscription-api', '/functions/v1/subscription-api']) {
+    const response = await handler(new Request('https://example.com' + prefix + '/health'));
+    assert.equal(response.status, 404);
+  }
 });

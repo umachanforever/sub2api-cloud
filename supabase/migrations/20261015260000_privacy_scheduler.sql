@@ -60,7 +60,7 @@ begin
  else
   execute 'select vault.update_secret($1,$2)' using secret,p_service_key;
  end if;
- insert into public.s2a_privacy_scheduler(singleton,endpoint,secret_id) values(true,p_url||'/functions/v1/subscription-api/internal/jobs/privacy',secret)
+ insert into public.s2a_privacy_scheduler(singleton,endpoint,secret_id) values(true,p_url||'/functions/v1/sub2api/internal/jobs/privacy',secret)
  on conflict(singleton) do update set endpoint=excluded.endpoint,secret_id=excluded.secret_id;
  execute 'select cron.schedule($1,$2,$3)' into job using 's2a-privacy-jobs','* * * * *','select public.s2a_privacy_jobs_dispatch();';
  return jsonb_build_object('enabled',true);

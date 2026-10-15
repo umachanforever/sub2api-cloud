@@ -20,7 +20,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
     const dispatch = async (): Promise<Response> => {
     try {
       let pathname = new URL(request.url).pathname.replace(
-        /^(?:\/functions\/v1)?\/(?:sub2api|subscription-api)(?=\/|$)/,
+        /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
       if (pathname === "/images/generations") pathname = "/v1/images/generations";
