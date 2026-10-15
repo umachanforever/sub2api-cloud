@@ -1,7 +1,8 @@
+import {batchProviderCleanup} from './batch_image_provider_cleanup.ts';
 import {Database,HttpError} from './db.ts';
 import {listBatchArtifacts,deleteArtifacts} from './artifact_storage.ts';
 export type BatchCleanupJob={batch_id:string;cleanup_lease:string;provider:'gemini_api'|'vertex';account_id:number|string;input_ref:string|null;output_ref:string|null};
-export async function cleanupBatchImages(db:Database,cleanupProvider:(job:BatchCleanupJob,signal:AbortSignal)=>Promise<void>):Promise<number>{
+export async function cleanupBatchImages(db:Database,cleanupProvider:(job:BatchCleanupJob,signal:AbortSignal)=>Promise<void>=batchProviderCleanup(db)):Promise<number>{
  const jobs=await db.rpc<BatchCleanupJob[]>('s2a_batch_image_cleanup_claim',{});
  if(!Array.isArray(jobs)||jobs.length>1)throw new HttpError(503,'invalid_batch_cleanup_jobs');
  let finished=0;

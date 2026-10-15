@@ -28,6 +28,11 @@ CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_claim()
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE task s2a_private.batch_image_runtime%ROWTYPE;
 BEGIN
+    WITH abandoned AS (
+        UPDATE s2a_private.batch_image_runtime SET stage='failed',error_code='BATCH_UPLOAD_TIMEOUT',updated_at=clock_timestamp()
+        WHERE NOT ready AND stage='upload' AND updated_at<clock_timestamp()-interval '10 minutes' RETURNING batch_id
+    ) UPDATE public.batch_image_jobs SET status='failed',last_error_code='BATCH_UPLOAD_TIMEOUT',finished_at=clock_timestamp(),updated_at=clock_timestamp()
+        WHERE batch_id IN (SELECT batch_id FROM abandoned);
     SELECT * INTO task FROM s2a_private.batch_image_runtime
         WHERE ready AND stage IN ('upload','create','poll','index') AND due_at<=clock_timestamp()
         AND (lease_until IS NULL OR lease_until<=clock_timestamp())
@@ -170,6 +175,7 @@ BEGIN
     IF NOT FOUND THEN RETURN jsonb_build_object('error','batch_image_not_found','status',404); END IF;
     IF task.key_hash IS DISTINCT FROM p_key_hash OR task.request_hash IS DISTINCT FROM p_hash OR task.user_id<>(identity->>'user_id')::bigint OR task.key_id<>(identity->>'key_id')::bigint OR task.group_id<>(identity->>'group_id')::bigint
         THEN RETURN jsonb_build_object('error','batch_image_conflict','status',409); END IF;
+    IF NOT task.ready AND task.stage<>'upload' THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
     UPDATE s2a_private.batch_image_runtime SET ready=true,updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('id',p_id,'ready',true);
 END $$;
