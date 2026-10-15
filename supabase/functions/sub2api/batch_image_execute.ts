@@ -57,7 +57,14 @@ export async function executeBatchImageJob(db:Database,job:BatchExecutionJob,dep
   const created=await deps.provider.createUploadedBatch(input.model,input.task_name??job.batch_id,checkpoint,signal);
   await deps.saveCreated(created.name,signal);
   await rpc(db,'s2a_batch_image_runtime_created',job,{p_name:created.name});return true;
- }catch{
+ }catch(error){
+  // Malformed immutable provider output cannot become valid on a later poll.
+  if(job.stage==='index'&&error instanceof HttpError&&[
+   'batch_image_index_parse_failed','batch_image_duplicate_custom_id','batch_image_result_line_too_large',
+  ].includes(error.code)){
+   try{await rpc(db,'s2a_batch_image_runtime_fail',job,{p_error:'BATCH_RESULT_INVALID'});return true;}
+   catch{console.warn('batch_image_failure_checkpoint_pending');return false;}
+  }
   // Leave the lease to expire. The next claim determines whether POST creation was dispatched.
   console.warn('batch_image_execution_pending');return false;
  }

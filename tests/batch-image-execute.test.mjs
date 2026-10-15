@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {HttpError} from '../supabase/functions/sub2api/db.ts';
 import {executeBatchImageJob} from '../supabase/functions/sub2api/batch_image_execute.ts';
 const job={batch_id:'imgbatch_abc',lease_id:'11111111-1111-1111-1111-111111111111',stage:'upload',recover_create:false};
 function setup(){
@@ -28,4 +29,19 @@ test('batch cancellation is sent to the pinned provider and followed by authorit
   const {calls,db,deps}=setup();deps.provider.cancelBatch=async()=>{calls.push('cancel');if(rejected)throw Error('already cancelled');};deps.provider.getBatch=async()=>{calls.push('poll');return {name:'batches/one',status:'cancelled',error_code:'GEMINI_BATCH_CANCELLED'};};
   assert.equal(await executeBatchImageJob(db,{...job,stage:'poll',provider_job_name:'batches/one',cancel_requested:true},deps),true);assert.deepEqual(calls,['cancel','poll','s2a_batch_image_runtime_observed']);
  }
+});
+
+test('immutable malformed results terminate while transport failures remain retryable',async()=>{
+ for(const code of ['batch_image_index_parse_failed','batch_image_duplicate_custom_id','batch_image_result_line_too_large','storage_unavailable']){
+  const {calls,db,deps}=setup();deps.index=async()=>{throw new HttpError(502,code);};
+  const terminal=code!=='storage_unavailable';
+  db.rpc=async(name,args)=>{calls.push(name);assert.equal(args.p_error,'BATCH_RESULT_INVALID');return {applied:true};};
+  assert.equal(await executeBatchImageJob(db,{...job,stage:'index'},deps),terminal);
+  assert.deepEqual(calls,terminal?['s2a_batch_image_runtime_fail']:[]);
+ }
+});
+test('failed terminal checkpoint is retried after lease expiry',async()=>{
+ const {db,deps}=setup();deps.index=async()=>{throw new HttpError(502,'batch_image_index_parse_failed');};
+ db.rpc=async()=>{throw Error('database unavailable');};
+ assert.equal(await executeBatchImageJob(db,{...job,stage:'index'},deps),false);
 });
