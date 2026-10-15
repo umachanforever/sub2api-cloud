@@ -1,0 +1,79 @@
+import { Database, HttpError } from './db.ts';
+import { json } from './http.ts';
+import { queryOpenAIQuota, type QuotaAccount } from './openai_quota.ts';
+import { quotaWindowUpdates } from './openai_quota_values.ts';
+import { hashKey } from './validation.ts';
+
+type Snapshot = Record<string, unknown>;
+type UsageAccount = QuotaAccount & { quota_snapshot?: Snapshot };
+const TTL_SECONDS = 60;
+
+function window(snapshot: Snapshot, period: '5h' | '7d', now: number) {
+  const used = snapshot[`codex_${period}_used_percent`];
+  if (typeof used !== 'number' || !Number.isFinite(used) || used < 0) return null;
+  const minutes = snapshot[`codex_${period}_window_minutes`];
+  const reset = snapshot[`codex_${period}_reset_at`];
+  const resetAt = typeof reset === 'string' && Number.isFinite(Date.parse(reset)) ? reset : null;
+  return {
+    used_percent: used,
+    remaining_percent: Math.max(0, 100 - used),
+    window_seconds: typeof minutes === 'number' && Number.isFinite(minutes) ? minutes * 60 : null,
+    reset_at: resetAt,
+    reset_after_seconds: resetAt === null ? null : Math.max(0, Math.ceil(Date.parse(resetAt) / 1000 - now)),
+  };
+}
+
+export async function usageAccess(request: Request, token: string, db: Database): Promise<Response> {
+  if (db.config.dataModel !== 'native') throw new HttpError(501, 'native_data_model_required');
+  const url = new URL(request.url);
+  const id = url.searchParams.get('account_id');
+  if (id !== null && (!/^[1-9][0-9]{0,18}$/.test(id) || BigInt(id) > 9223372036854775807n)) throw new HttpError(400, 'invalid_account_id');
+  const refresh = url.searchParams.get('refresh');
+  if (refresh !== null && !['true', 'false'].includes(refresh)) throw new HttpError(400, 'invalid_refresh');
+  const force = refresh === 'true' || /no-cache|no-store/i.test(request.headers.get('cache-control') ?? '');
+  const clientIp = request.headers.get('cf-connecting-ip')?.trim() || request.headers.get('x-real-ip')?.trim() || request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || null;
+  const result = await db.rpc<{ accounts: UsageAccount[]; error?: string; status?: number }>('s2a_personal_usage_accounts', {
+    p_key_hash: await hashKey(token), p_client_ip: clientIp, p_account_id: id,
+  });
+  if (result.error) throw new HttpError(result.status ?? 403, result.error);
+  // Batch provider reads to bound concurrency for pooled groups.
+  const accounts: Record<string, unknown>[] = [];
+  for (let offset = 0; offset < result.accounts.length; offset += 4) {
+    accounts.push(...await Promise.all(result.accounts.slice(offset, offset + 4).map(async account => {
+      let snapshot = account.quota_snapshot ?? {};
+      let fetched = typeof snapshot.codex_usage_updated_at === 'string' ? Date.parse(snapshot.codex_usage_updated_at) / 1000 : NaN;
+      const now = Math.floor(Date.now() / 1000);
+      let cached = true, error: string | undefined;
+      const expiredWindow = ['5h', '7d'].some(period => {
+        const reset = snapshot[`codex_${period}_reset_at`];
+        return typeof reset === 'string' && Date.parse(reset) / 1000 <= now;
+      });
+      if (force || !Number.isFinite(fetched) || fetched > now + 5 || now - fetched >= TTL_SECONDS || expiredWindow ||
+          !window(snapshot, '5h', now) || !window(snapshot, '7d', now)) {
+        try {
+          const usage = await queryOpenAIQuota(request, account, db, false, false);
+          snapshot = quotaWindowUpdates(usage);
+          fetched = usage.fetched_at;
+          cached = false;
+          try {
+            await db.rpc('s2a_personal_windows_save', { p_account_id: account.id, p_version: account.credential_version, p_fetched_at: fetched, p_windows: snapshot });
+          } catch { console.warn('usage_snapshot_save_failed'); }
+        } catch (cause) {
+          error = cause instanceof HttpError ? cause.code : 'quota_unavailable';
+        }
+      }
+      const sampledAt = Math.floor(Date.now() / 1000);
+      const fiveHour = window(snapshot, '5h', sampledAt), sevenDay = window(snapshot, '7d', sampledAt);
+      const age = Number.isFinite(fetched) ? Math.max(0, sampledAt - fetched) : null;
+      return {
+        account_id: account.id, platform: 'openai',
+        five_hour: fiveHour, seven_day: sevenDay,
+        fetched_at: Number.isFinite(fetched) ? new Date(fetched * 1000).toISOString() : null,
+        age_seconds: age, cached,
+        stale: !!error || age === null || age >= TTL_SECONDS || !fiveHour || !sevenDay,
+        ...(error ? { error } : {}),
+      };
+    })));
+  }
+  return json(200, { object: 'subscription.usage', cache_ttl_seconds: TTL_SECONDS, accounts });
+}

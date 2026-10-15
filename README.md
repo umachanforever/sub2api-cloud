@@ -74,6 +74,20 @@ curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
 
 The gateway supports Responses, Chat Completions, Anthropic Messages, and Gemini API formats, with streaming and ordinary responses according to the selected provider and credential type.
 
+### Subscription usage
+
+`GET /v1/usage` returns the provider-reported five-hour and seven-day subscription windows for OpenAI OAuth accounts in the key's group. Authenticate with `Authorization: Bearer <api-key>`. Each account includes `five_hour` and `seven_day` objects with `used_percent`, `remaining_percent`, `window_seconds`, and `reset_at`. These are shared account allowances, rather than this key's token totals. Unsupported groups return an empty account list; missing window values are `null`.
+
+Snapshots are reused for up to 60 seconds. Add `?refresh=true` to query the provider immediately, or `?account_id=<id>` to select an account. Inspect `fetched_at`, `age_seconds`, `cached`, and `stale`; provider failures return an explicit per-account `error` and mark retained snapshots stale.
+
+```sh
+curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
+```
+
+For agents that only need usage access, set `GPT_SUBSCRIPTION_GATEWAY_KEY` in `.env.local` to an existing inference key, then run `npm run usage:access`. This saves a private `.local/agent-usage.json` with `base_url`, `api_key`, and request URLs. The generated token can read usage but cannot make AI requests or access management APIs. It inherits the linked key's group, expiration, status, and IP restrictions. Revoke it by setting its `revoked_at` in `s2a_private.usage_tokens`; disabling or deleting the linked inference key also blocks it.
+
+The console caches successful authenticated data queries in tab memory for 60 seconds, including dashboard, usage, account details, and settings. Writes and session changes invalidate snapshots. Authentication, OAuth flows, exports, and streams bypass this cache; a request with `Cache-Control: no-cache` forces a fresh read.
+
 ## Project layout
 
 | Directory | Responsibility |

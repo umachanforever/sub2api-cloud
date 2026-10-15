@@ -13,7 +13,7 @@ export function quotaHeaders(credentials:OAuthCredentials) {
  headers.set('sec-fetch-site','none');headers.set('sec-fetch-mode','no-cors');headers.set('sec-fetch-dest','empty');headers.set('priority','u=4, i');
  return headers;
 }
-export async function queryOpenAIQuota(request:Request,account:QuotaAccount,db:Database,includeCandidates=false):Promise<QuotaUsage & {candidates?:CreditCandidate[]}> {
+export async function queryOpenAIQuota(request:Request,account:QuotaAccount,db:Database,includeCandidates=false,includeCredits=true):Promise<QuotaUsage & {candidates?:CreditCandidate[]}> {
  let credentials=await credentialsFor(db,account);
  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(20_000)]);
  const forward=(path:string)=>accountFetch(db,account,`https://chatgpt.com/backend-api/wham/${path}`,{method:'GET',headers:quotaHeaders(credentials),signal,redirect:'error'});
@@ -26,6 +26,7 @@ export async function queryOpenAIQuota(request:Request,account:QuotaAccount,db:D
  let usage:QuotaUsage & {candidates?:CreditCandidate[]};
  try {usage=quotaUsage(await catalogJSON(response,false,512*1024));}
  catch {throw new HttpError(502,'invalid_openai_quota');}
+ if(!includeCredits)return usage;
  try {
   const detailsResponse=await forward('rate-limit-reset-credits');
   const raw=await catalogJSON(detailsResponse,true,512*1024),details=resetCreditDetails(raw);

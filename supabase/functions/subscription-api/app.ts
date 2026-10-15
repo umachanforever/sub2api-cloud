@@ -7,6 +7,7 @@ import { mailJobs } from "./ops_mail.ts";
 import { type SMTPTransport } from "./smtp.ts";
 import { privacyJobs } from "./privacy_jobs.ts";
 import { autoResetJobs } from "./openai_auto_reset.ts";
+import { usageAccess } from "./usage_access.ts";
 
 export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, smtp?: SMTPTransport) {
   const db = new Database(config, fetchImpl);
@@ -45,6 +46,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (new Set(supplied).size > 1) throw new HttpError(400, "conflicting_credentials");
       const token = supplied[0];
       if (!token) throw new HttpError(401, "unauthorized");
+      if (pathname === "/v1/usage" && request.method === "GET") return await usageAccess(request, token, db);
       return await proxy(request, pathname, token, db, errorContext);
     } catch (error) {
       if (error instanceof HttpError) {

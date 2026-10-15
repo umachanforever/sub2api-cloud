@@ -70,6 +70,20 @@ curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
 
 网关提供 Responses、Chat Completions、Anthropic Messages 与 Gemini API 格式，按照供应商和凭据类型支持普通响应及流式响应。
 
+### 订阅用量
+
+`GET /v1/usage` 返回当前 Key 所属分组中 OpenAI OAuth 账号的 5 小时、7 日订阅额度，使用 `Authorization: Bearer <api-key>` 鉴权。每个账号包含 `five_hour` 和 `seven_day`，提供已用比例 `used_percent`、剩余比例 `remaining_percent`、窗口长度 `window_seconds` 和重置时间 `reset_at`。这些是账号共享的订阅额度，不是当前 Key 单独消耗的 Token 总数。不支持的平台分组返回空账号列表；缺失的额度信息为 `null`。
+
+快照最多复用 60 秒；添加 `?refresh=true` 直接查询上游，添加 `?account_id=<id>` 可指定账号。通过 `fetched_at`、`age_seconds`、`cached` 和 `stale` 判断数据新鲜程度；上游失败时返回账号级 `error`，并将保留的快照标为过期。
+
+```sh
+curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
+```
+
+只需查看用量的 Agent 可使用专用只读 Key：在 `.env.local` 中将 `GPT_SUBSCRIPTION_GATEWAY_KEY` 配置为已有调用 Key，再运行 `npm run usage:access`。命令会将 `base_url`、`api_key` 和请求地址写入私有文件 `.local/agent-usage.json`。只读 Key 无法调用 AI 或访问管理接口，并继承关联调用 Key 的分组、有效期、启用状态和 IP 限制。在 `s2a_private.usage_tokens` 设置对应记录的 `revoked_at` 可撤销授权；停用或删除关联调用 Key 也会阻止访问。
+
+控制台的仪表板、用量、账号详情、设置等成功的数据查询统一在当前标签页内存缓存 60 秒。修改数据或切换登录身份会清空缓存；认证、OAuth 流程、导出和流式接口直接请求，携带 `Cache-Control: no-cache` 可强制重新读取。
+
 ## 目录
 
 | 目录 | 内容 |
