@@ -157,6 +157,8 @@ OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5
 
 Grok API Key 和 OAuth 账号也支持 `POST /v1/images/generations` 图片生成及 `/v1/images/edits` 图片编辑。Grok 请求必须指定 Imagine 图片模型，`grok-imagine` 会解析为 `grok-imagine-image-quality`。编辑支持 JSON `image`、`images`、`reference_images` 引用（URL 字符串或图片对象），或 multipart 上传，最多三张源图片及可选蒙版。网关将 `size` 转换为原生分辨率与宽高比参数。
 图片响应支持 `b64_json` 和 `response_format=url` 的 data URL，并保留正确的图片类型。流式编辑使用 `image_edit.*` 事件；上游返回完整 JSON 时，网关会转换为 SSE 完成事件，Token 用量只记录一次。
+异步图片生成与编辑使用 `POST /v1/images/generations/async`、`POST /v1/images/edits/async` 和 `GET /v1/images/tasks/:task_id`，同时支持根路径别名。提交返回 HTTP 202 和 `poll_url`，使用同一个 API Key 查询任务。请求与生成文件保存在 Supabase 私有存储中，结果签名链接有效期为 10 分钟。任务保留 24 小时；分钟级签名调度负责执行排队任务并清理过期文件。调用中断后仅恢复已存结果，不重新生成。每个 Key 最多排队 4 个任务，每个用户最多 16 个。图片推理沿用网关的 120 秒执行超时。配置 `.local/agent-access.json` 后，可运行 `npm run verify:images -- --edit` 验收真实生成、multipart 编辑、鉴权查询与签名下载。
+
 其他 OAuth 图片模型通过 Responses 的 `image_generation` 工具桥接，支持输入图片、蒙版、渐进图片事件和完成用量记录。图片模型与 Responses 驱动模型分别选择。
 
 
