@@ -21,7 +21,8 @@ export async function relayGrokRealtime(request:Request,target:string,headers:He
   upstream.terminate();agent?.destroy();queued.length=0;
   try{await finish(status,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome});}catch{console.warn('realtime_usage_persistence_failed');}finally{resolveDone();}
  };
- const abort=()=>{void end(1001,499,'cancelled');};
+ const abortedStatus=()=>signal.reason instanceof DOMException&&signal.reason.name==='TimeoutError'?504:499;
+ const abort=()=>{const status=abortedStatus();void end(status===504?1011:1001,status,status===504?'failed':'cancelled');};
  signal.addEventListener('abort',abort,{once:true});
  upstream.on('error',()=>{void end(1011,502,'failed');});
  upstream.on('close',code=>{void end(code===1000?1000:1011,code===1000?200:502,code===1000?'completed':'failed');});
@@ -50,5 +51,5 @@ export async function relayGrokRealtime(request:Request,target:string,headers:He
   client.onerror=()=>{void end(1011,499,'cancelled');};
   const runtime=(globalThis as typeof globalThis&{EdgeRuntime?:{waitUntil(promise:Promise<unknown>):void}}).EdgeRuntime;runtime?.waitUntil(done);
   return upgraded.response;
- }catch(error){await end(1011,signal.aborted?499:502,signal.aborted?'cancelled':'failed');throw error instanceof HttpError?error:new HttpError(502,'realtime_upstream_unavailable');}
+ }catch(error){await end(1011,signal.aborted?abortedStatus():502,signal.aborted&&abortedStatus()===499?'cancelled':'failed');throw error instanceof HttpError?error:new HttpError(502,'realtime_upstream_unavailable');}
 }

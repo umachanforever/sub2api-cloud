@@ -51,3 +51,10 @@ test('realtime abort during handshake releases the reservation and removes abort
  await assert.rejects(result,/realtime_connect_cancelled/);await new Promise(resolve=>setTimeout(resolve,20));
  assert.equal(finishes.length,1);assert.equal(finishes[0].usage.outcome,'cancelled');assert.equal(listeners.size,0);assert.equal(upstream.readyState,NodeWebSocket.CLOSED);
 });
+test('realtime deadline records an upstream timeout instead of a client cancellation',async t=>{
+ const server=await fixture(t),client=new Client(),abort=new AbortController(),finishes=[];
+ await relayGrokRealtime(new Request('https://gateway/v1/realtime'),'https://api.x.ai/v1/realtime',new Headers(),null,abort.signal,async(status,usage)=>finishes.push({status,usage}),()=>({response:new Response(null),socket:client}),(_url,options)=>new NodeWebSocket('ws://127.0.0.1:'+server.address().port,options));
+ client.open();abort.abort(new DOMException('The operation timed out','TimeoutError'));
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(finishes.length,1);assert.equal(finishes[0].status,504);assert.equal(finishes[0].usage.outcome,'failed');assert.equal(client.code,1011);
+});
