@@ -88,6 +88,7 @@ Gemini `cachedContent` references are scoped to their owning key and group and s
 
 `GET /v1beta/cachedContents` lists active caches owned by the current key and group, with `pageSize` and `pageToken` pagination. `GET /v1beta/cachedContents/{id}` returns the public cache metadata without exposing provider resource names or account identifiers.
 `DELETE /v1beta/cachedContents/{id}` deletes an owned cache through its bound API-key account and removes its local binding only after the provider confirms absence.
+`PATCH /v1beta/cachedContents/{id}` updates `ttl` or `expireTime` (up to 24 hours), with immutable cache identity and serialized updates/deletions. Interrupted mutations retain ownership until recovery checks the bound provider.
 
 ### Subscription usage
 

@@ -149,6 +149,16 @@ BEGIN
     IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_cache_reservation' THEN RAISE EXCEPTION 'cache deletion accepted missing reservation'; END IF;
     acquired:=public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture","count_only":true}');
     IF acquired ? 'error' THEN RAISE EXCEPTION 'cache delete admission failed: %',acquired; END IF;
+    IF has_function_privilege('anon','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE') THEN RAISE EXCEPTION 'cache mutation public privileges'; END IF;
+    UPDATE public.gemini_cached_contents SET mutation_lease=gen_random_uuid(),mutation_until=now()+interval '1 hour' WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim')->>'error' IS DISTINCT FROM 'cache_mutation_in_progress' THEN RAISE EXCEPTION 'concurrent cache mutation admitted'; END IF;
+    UPDATE public.gemini_cached_contents SET mutation_until=now()-interval '1 second' WHERE public_id='cache-fixture';
+    IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim')->>'recover' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache mutation recovery not requested'; END IF;
+    IF public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'apply',now()+interval '2 hours')->>'updated' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache expiry mutation failed'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id='cache-fixture' AND expire_time>now()+interval '110 minutes' AND upstream_name='cachedContents/provider-private') THEN RAISE EXCEPTION 'cache expiry or immutable binding changed incorrectly'; END IF;
+    PERFORM public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'release');
+    PERFORM public.s2a_personal_cache_mutation(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid,'claim');
     IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',(acquired->>'lease_id')::uuid)->>'deleted' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache deletion failed'; END IF;
     IF public.s2a_personal_cache_read(h)<>'{}'::jsonb THEN RAISE EXCEPTION 'deleted cache listed'; END IF;
     PERFORM public.s2a_personal_finish((acquired->>'lease_id')::uuid,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gemini-upstream');

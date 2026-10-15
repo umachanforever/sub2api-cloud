@@ -9,6 +9,7 @@ for(const status of [200,204,404,429,500])test(`Gemini cache deletion handles pr
   if(String(url).endsWith('/s2a_personal_cache_read'))return Response.json({model:'models/gemini-cache'});
   if(String(url).endsWith('/s2a_personal_cache_resolve'))return Response.json({account_id:'1',upstream_name:'cachedContents/private',upstream_model:'gemini-upstream'});
   if(String(url).endsWith('/s2a_personal_acquire')){const input=JSON.parse(init.body);assert.equal(input.p_billing_context.count_only,true);assert.equal(input.p_billing_context.cached_content,'cachedContents/public');return Response.json({lease_id:'lease',account:{...credentials,id:'1',platform:'gemini',credential_version:1}});}
+  if(String(url).endsWith('/s2a_personal_cache_mutation'))return Response.json({claimed:true});
   if(String(url).endsWith('/s2a_personal_cache_deleted')){deleted++;return Response.json({deleted:true});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
@@ -31,6 +32,7 @@ for(const scenario of ['wrong-account','provider-network','persistence-failure']
   if(String(url).endsWith('/s2a_personal_cache_read'))return Response.json({model:'models/gemini-cache'});
   if(String(url).endsWith('/s2a_personal_cache_resolve'))return Response.json({account_id:'1',upstream_name:'cachedContents/private',upstream_model:'gemini-upstream'});
   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{...credentials,id:scenario==='wrong-account'?'2':'1',platform:'gemini',credential_version:1}});
+  if(String(url).endsWith('/s2a_personal_cache_mutation'))return Response.json({claimed:true});
   if(String(url).endsWith('/s2a_personal_cache_deleted')){writes++;return Response.json({error:'invalid_cache_reservation',status:409});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);

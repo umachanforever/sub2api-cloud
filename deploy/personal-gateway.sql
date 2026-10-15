@@ -374,6 +374,54 @@ END $$;
 ALTER FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_read(text,text,integer,bigint,text) TO service_role;
+-- Persist mutation ownership across interrupted Edge invocations.
+ALTER TABLE public.gemini_cached_contents ADD COLUMN IF NOT EXISTS mutation_lease uuid;
+ALTER TABLE public.gemini_cached_contents ADD COLUMN IF NOT EXISTS mutation_until timestamptz;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_mutation(p_key_hash text,p_name text,p_lease_id uuid,p_action text,p_expire_time timestamptz DEFAULT NULL,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; lease s2a_private.personal_gateway_leases%ROWTYPE; item public.gemini_cached_contents%ROWTYPE; recovering boolean;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'gemini' THEN RETURN jsonb_build_object('error','gemini_cache_requires_gemini_group','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    IF p_name IS NULL OR p_name !~ '^cachedContents/[a-zA-Z0-9_-]{1,64}$' THEN RETURN jsonb_build_object('error','invalid_cached_content','status',400); END IF;
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
+    IF NOT FOUND OR lease.finished_at IS NOT NULL OR lease.expires_at<=clock_timestamp()
+        OR lease.user_id<>(identity->>'user_id')::bigint OR lease.key_id<>(identity->>'key_id')::bigint
+        OR lease.group_id<>(identity->>'group_id')::bigint OR NOT lease.count_only THEN
+        RETURN jsonb_build_object('error','invalid_cache_reservation','status',409);
+    END IF;
+    SELECT * INTO item FROM public.gemini_cached_contents WHERE public_id=substring(p_name FROM 16)
+        AND user_id=lease.user_id AND api_key_id=lease.key_id AND group_id=lease.group_id
+        AND account_id=lease.account_id AND model=lease.model FOR UPDATE;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','cached_content_not_found','status',403); END IF;
+    IF p_action='claim' THEN
+        IF item.deleted_at IS NOT NULL OR item.expire_time<=clock_timestamp() THEN RETURN jsonb_build_object('error','cached_content_not_found','status',403); END IF;
+        IF item.mutation_lease IS NOT NULL AND item.mutation_lease<>p_lease_id AND item.mutation_until>clock_timestamp() THEN
+            RETURN jsonb_build_object('error','cache_mutation_in_progress','status',409);
+        END IF;
+        recovering:=item.mutation_lease IS NOT NULL AND item.mutation_lease<>p_lease_id;
+        UPDATE public.gemini_cached_contents SET mutation_lease=p_lease_id,mutation_until=lease.expires_at+interval '30 seconds' WHERE id=item.id;
+        RETURN jsonb_build_object('claimed',true,'recover',recovering);
+    END IF;
+    IF item.mutation_lease IS DISTINCT FROM p_lease_id THEN RETURN jsonb_build_object('error','cache_mutation_conflict','status',409); END IF;
+    IF p_action='apply' THEN
+        IF item.deleted_at IS NOT NULL OR p_expire_time IS NULL OR NOT isfinite(p_expire_time) OR p_expire_time<=clock_timestamp() OR p_expire_time>clock_timestamp()+interval '24 hours 5 seconds' THEN
+            RETURN jsonb_build_object('error','invalid_cache_expiry','status',400);
+        END IF;
+        UPDATE public.gemini_cached_contents SET expire_time=p_expire_time,updated_at=clock_timestamp() WHERE id=item.id;
+        RETURN jsonb_build_object('updated',true);
+    ELSIF p_action='release' THEN
+        UPDATE public.gemini_cached_contents SET mutation_lease=NULL,mutation_until=NULL WHERE id=item.id;
+        RETURN jsonb_build_object('released',true);
+    END IF;
+    RETURN jsonb_build_object('error','invalid_cache_mutation','status',400);
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text) TO service_role;
 -- Complete deletion only under the active owning account reservation.
 CREATE OR REPLACE FUNCTION public.s2a_personal_cache_deleted(p_key_hash text,p_name text,p_lease_id uuid,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -395,6 +443,7 @@ BEGIN
         AND user_id=lease.user_id AND api_key_id=lease.key_id AND group_id=lease.group_id
         AND account_id=lease.account_id AND model=lease.model FOR UPDATE;
     IF NOT FOUND THEN RETURN jsonb_build_object('error','cached_content_not_found','status',403); END IF;
+    IF item.mutation_lease IS DISTINCT FROM p_lease_id THEN RETURN jsonb_build_object('error','cache_mutation_conflict','status',409); END IF;
     UPDATE public.gemini_cached_contents SET deleted_at=coalesce(deleted_at,clock_timestamp()),updated_at=clock_timestamp() WHERE id=item.id;
     RETURN jsonb_build_object('deleted',true);
 END $$;
