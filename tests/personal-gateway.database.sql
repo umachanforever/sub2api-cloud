@@ -19,6 +19,17 @@ BEGIN
     IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM a::text
         OR acquired->'account'->>'credential_storage' IS DISTINCT FROM 'vault'
         OR acquired->'model_sources'->'mapping'->>'alias' IS DISTINCT FROM 'gpt-5.4' THEN RAISE EXCEPTION 'personal acquisition failed: %',acquired->>'error'; END IF;
+    IF NOT public.s2a_personal_windows_save(a,1,100,'{"codex_5h_used_percent":25}')
+        OR public.s2a_personal_windows_save(a,1,99,'{"codex_5h_used_percent":90}')
+        OR public.s2a_personal_windows_save(a,2,101,'{"codex_5h_used_percent":90}')
+        OR (SELECT extra->>'codex_5h_used_percent' FROM public.accounts WHERE id=a)<>'25'
+        THEN RAISE EXCEPTION 'quota snapshot fencing failed'; END IF;
+    PERFORM public.s2a_personal_ops_error_record(jsonb_build_object('request_id',request,'event_id',request,
+        'key_hash',h,'account_id',a::text,'platform','openai','model','alias','phase','upstream',
+        'type','upstream_error','status_code',502,'code','upstream_request_failed','duration_ms',3));
+    IF NOT EXISTS(SELECT FROM public.ops_error_logs WHERE request_id=request::text AND user_id=u AND api_key_id=k
+        AND account_id=a AND error_message='upstream_request_failed' AND error_body IS NULL)
+        THEN RAISE EXCEPTION 'canonical sanitized ops error missing'; END IF;
     lease:=(acquired->>'lease_id')::uuid;
     IF public.s2a_personal_acquire(h,'alias',request)->>'lease_id' IS DISTINCT FROM lease::text THEN RAISE EXCEPTION 'acquisition replay changed slot'; END IF;
     IF public.s2a_personal_acquire(h,'different',request)->>'error' IS DISTINCT FROM 'request_conflict' THEN RAISE EXCEPTION 'request replay changed model'; END IF;

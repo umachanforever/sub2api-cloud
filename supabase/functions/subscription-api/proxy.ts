@@ -206,7 +206,7 @@ export async function proxy(
         for (let retry = 0; retry < 2; retry++) {
           try {
             const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
-              ...(db.config.dataModel === "native" ? {p_upstream_model:upstreamModel} : {}),
+              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : upstreamModel} : {}),
               p_lease_id: lease_id,
               p_status: status,
               p_outcome: usage.outcome,
@@ -313,7 +313,7 @@ export async function proxy(
       upstreamReceived = true;
       if(!apiKey && platform==='openai'){
         const windows=quotaHeaderWindows(upstream.headers);
-        if(windows)quotaSnapshot=db.rpc('s2a_openai_windows_save',{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn('quota_window_save_failed'));
+        if(windows)quotaSnapshot=db.rpc(db.config.dataModel === 'native' ? 's2a_personal_windows_save' : 's2a_openai_windows_save',{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn('quota_window_save_failed'));
       }
       if (!upstream.ok) {
         const status = upstream.status;

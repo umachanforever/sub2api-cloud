@@ -19,7 +19,7 @@ export function errorClassification(code: string, status: number, provider = fal
 export async function recordOpsError(db: Database, context: ErrorContext, status: number, code: string,
   kind: "request" | "upstream" = "request", eventId = context.requestId) {
   try {
-    await db.rpc("s2a_ops_error_record", { p_event: {
+    await db.rpc(db.config.dataModel === "native" ? "s2a_personal_ops_error_record" : "s2a_ops_error_record", { p_event: {
       ...errorClassification(code, status, kind === "upstream" && code === "upstream_http"),
       event_id: eventId, request_id: context.requestId, kind, status_code: status,
       key_hash: context.keyHash, lease_id: context.leaseId, account_id: context.accountId, model: context.model ?? "",

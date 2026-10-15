@@ -63,3 +63,7 @@ test('scheduler signatures are bound to the privacy scope and expire within nine
  // A job ticket never authenticates normal administration or provider routes.
  assert.equal((await handler(new Request('https://gateway/api/v1/admin/accounts',{headers:{'x-s2a-privacy-job-token':signed(now+60)}}))).status,404);assert.equal(calls,1);
 });
+
+test('canonical gateway does not reactivate retired-table scheduled jobs',async()=>{
+ await configureJobScheduler({SUB2API_DATA_MODEL:'native'},undefined,()=>{throw Error('Retired scheduler called');});
+});

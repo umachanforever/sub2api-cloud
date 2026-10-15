@@ -1,4 +1,5 @@
 export async function configureJobScheduler(env, target=env.SUPABASE_URL, fetchImpl=fetch) {
+  if (env.SUB2API_DATA_MODEL === "native") return;
   try {
     const response=await fetchImpl(`${env.SUPABASE_URL}/rest/v1/rpc/s2a_privacy_scheduler_configure`,{
       method:'POST',headers:{apikey:env.SUPABASE_SERVICE_ROLE_KEY,authorization:`Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,'content-type':'application/json'},
