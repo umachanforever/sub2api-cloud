@@ -214,7 +214,7 @@ export async function proxy(
               ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel} : {}),
               p_lease_id: lease_id,
               p_status: status,
-              p_outcome: usage.outcome,
+              p_outcome: db.config.dataModel === "native" && usage.outcome === "incomplete" ? "interrupted" : usage.outcome,
               p_input_tokens: usage.input,
               p_output_tokens: usage.output,
               p_cache_creation_tokens: usage.cacheCreation,

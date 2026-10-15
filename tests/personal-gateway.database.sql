@@ -1,14 +1,16 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE u bigint:=current_setting('s2a.acceptance.user_id')::bigint;
-    k bigint:=current_setting('s2a.acceptance.key_id')::bigint;
+DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::bigint;
+    k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
     g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid;
 BEGIN
     IF has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text)','EXECUTE')
         OR has_table_privilege('service_role','s2a_private.personal_gateway_leases','SELECT') THEN RAISE EXCEPTION 'personal gateway ACL mismatch'; END IF;
+    IF u IS NULL THEN INSERT INTO public.users(email,password_hash) VALUES('gateway-fixture-'||gen_random_uuid()::text||'@example.invalid','!fixture') RETURNING id INTO u; END IF;
+    IF k IS NULL THEN INSERT INTO public.api_keys(user_id,key,name) VALUES(u,'synthetic-gateway-'||gen_random_uuid()::text,'Gateway fixture') RETURNING id INTO k; END IF;
     INSERT INTO public.groups(name,platform) VALUES('Personal cloud contract','openai') RETURNING id INTO g;
     UPDATE public.api_keys SET group_id=g,ip_whitelist='[]',ip_blacklist='[]' WHERE id=k RETURNING s2a_key_hash INTO h;
     UPDATE public.users SET balance=0,restrict_public_groups=false WHERE id=u;
@@ -43,6 +45,12 @@ BEGIN
     IF public.s2a_personal_finish(lease,200,'completed',100,20,NULL,40,0,1,5,'gpt-5.4')->>'applied' IS DISTINCT FROM 'false' THEN RAISE EXCEPTION 'completion replay not deduplicated'; END IF;
     IF public.s2a_personal_finish(lease,200,'completed',101,20,NULL,40,0,1,5,'gpt-5.4')->>'error' IS DISTINCT FROM 'completion_conflict' THEN RAISE EXCEPTION 'completion replay changed usage'; END IF;
     IF public.s2a_personal_acquire(h,'alias',request)->>'error' IS DISTINCT FROM 'request_finished' THEN RAISE EXCEPTION 'completed request restarted'; END IF;
+    acquired:=public.s2a_personal_acquire(h,'alias',gen_random_uuid());
+    IF acquired ? 'error' THEN RAISE EXCEPTION 'interrupted acquisition failed'; END IF;
+    lease:=(acquired->>'lease_id')::uuid;
+    result:=public.s2a_personal_finish(lease,200,'interrupted',10,2,NULL,NULL,0,1,NULL,'gpt-5.4');
+    IF result->>'applied' IS DISTINCT FROM 'true' OR NOT EXISTS(SELECT FROM s2a_private.personal_gateway_leases WHERE id=lease AND finished_at IS NOT NULL)
+        OR NOT EXISTS(SELECT FROM public.usage_logs WHERE id=(result->>'usage_log_id')::bigint AND output_tokens=2 AND s2a_personal_details->>'outcome'='interrupted') THEN RAISE EXCEPTION 'interrupted usage did not release the lease and retain tokens'; END IF;
     UPDATE public.api_keys SET status='inactive' WHERE id=k;
     IF public.s2a_personal_acquire(h,'alias',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked key accepted'; END IF;
 END $$;
