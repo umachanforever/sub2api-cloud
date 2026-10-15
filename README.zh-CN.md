@@ -138,6 +138,8 @@ Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清�
 `GET /antigravity/models` 返回与原版一致的 Antigravity 内置模型目录，并按 API Key 分组的模型白名单过滤。接口校验密钥和 IP 访问限制，不占用账号，也不请求上游服务。
 
 OpenAI API Key 账号支持 `POST /v1/images/edits` 和 `/images/edits`，可传入 JSON 图片 URL 或 multipart 附件，支持多图与蒙版。模型映射、流式图片事件和上游 Token 用量复用图片生成处理链路，默认图片模型为 `gpt-image-2`。
+OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst` 及其已支持快照的 Codex 原生图片生成与编辑。multipart 图片和蒙版在云端网关内转换为 data URL。
+
 
 Codex 独立网页搜索支持 `POST /v1/alpha/search`、`/alpha/search` 和 `/backend-api/codex/alpha/search`。OpenAI OAuth 与 API Key 账号使用各自原生接口，个人访问令牌通过 Responses 托管网页搜索工具兜底。成功搜索记录一次不扣费的调用，失败搜索不会写入成功用量。
 

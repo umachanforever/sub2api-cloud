@@ -1,3 +1,4 @@
+import {oauthImageRequest} from './oauth_images.ts';
 import {imageForm,validateImageEdit} from './image_input.ts';
 import {alphaSearch,SearchUpstreamError} from './alpha_search.ts';
 import {inputTokenRequest,countInputTokens,countMessageTokens} from './input_tokens.ts';
@@ -300,7 +301,7 @@ export async function proxy(
         return json(200,{...(inputTokens ? {object:"response.input_tokens"} : {}),input_tokens});
       }
       if (embeddings && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
-      if (images && (account.type !== "apikey" || account.platform !== "openai")) throw new HttpError(501, "provider_protocol_unsupported");
+      if (images && (account.platform ?? "openai") !== "openai") throw new HttpError(501, "provider_protocol_unsupported");
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
       let native: ReturnType<typeof apiKeyRequest> | undefined;
@@ -369,6 +370,20 @@ export async function proxy(
           credentials = await credentialsFor(db, account, credentials.access_token);
           providerFailureRecorded = false;
           upstream = await forward();
+        }
+      } else if(images) {
+        let credentials=await credentialsFor(db,account);
+        const identity=await currentCodexIdentity(db,account,credentials);
+        const forward=async()=>{
+          native=await oauthImageRequest(credentials,identity,forwardedPath,forwardedBody!,imageMultipart,signal);
+          return accountFetch(db,account,native.url,native.init);
+        };
+        providerDispatched=true;
+        upstream=await forward();
+        if(upstream.status===401){
+          await upstreamFailure(401);await upstream.body?.cancel();
+          credentials=await credentialsFor(db,account,credentials.access_token);providerFailureRecorded=false;
+          upstream=await forward();
         }
       } else {
         if (platform !== "openai" || gemini || nativeGeminiModels) {

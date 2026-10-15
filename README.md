@@ -137,6 +137,8 @@ Codex clients can discover the native model manifest at `GET /backend-api/codex/
 `GET /antigravity/models` returns the pinned upstream Antigravity catalog with the API key group's model allowlist applied. It validates key and IP access without reserving an account or contacting a provider.
 
 OpenAI API-key accounts support `POST /v1/images/edits` and `/images/edits` with JSON image URLs or multipart uploads, including multiple images and masks. Model mapping, streaming image events, and provider token usage use the same gateway pipeline as image generation. The default image model is `gpt-image-2`.
+OpenAI OAuth subscription accounts support native Codex image generation and editing for `gpt-image-1.5`, `gpt-image-2`, and the `gpt-image-2.5-flare` and `gpt-image-2.5-sunburst` models, including their supported snapshots. Multipart images and masks are converted to data URLs inside the cloud gateway.
+
 
 Codex standalone web search is available at `POST /v1/alpha/search`, `/alpha/search`, and `/backend-api/codex/alpha/search`. OpenAI OAuth and API-key accounts use their native endpoints; personal access tokens use the hosted Responses web-search fallback. Successful searches record one uncharged search call, while failed searches do not create successful usage records.
 

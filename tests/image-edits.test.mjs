@@ -4,10 +4,10 @@ import {createBackendHandler} from './handler.mjs';
 import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
 import {imageForm} from '../supabase/functions/sub2api/image_input.ts';
 const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
-async function fixture(forward){
- const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey),leases=[],finishes=[];
+async function fixture(forward,{type="apikey"}={}){
+ const stored=await encryptCredentials(type==='apikey'?{api_key:'provider-key'}:{access_token:'oauth-private',refresh_token:'refresh-private',expires_at:Date.now()+3600000,chatgpt_account_id:'chatgpt-account'},config.encryptionKey),leases=[],finishes=[];
  const handler=createBackendHandler(config,async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',upstream_model:'gpt-image-2',account:{...stored,id:'1',platform:'openai',type:'apikey',credential_version:1}});}
+  if(String(url).endsWith('/s2a_personal_acquire')){leases.push(JSON.parse(init.body));return Response.json({lease_id:'lease',upstream_model:'gpt-image-2',account:{...stored,id:'1',platform:'openai',type,credential_version:1}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
   return forward(String(url),init);
@@ -54,4 +54,20 @@ test('streaming image edits retain terminal events and token usage',async()=>{
 test('image editing uses the upstream default model when callers omit it',async()=>{
  const value=await fixture((url,init)=>{assert.equal(JSON.parse(init.body).model,'gpt-image-2');return Response.json(output);});
  const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({prompt:'Edit',images:[{image_url:'https://example.com/image.png'}]})}));assert.equal(response.status,200);assert.equal(value.leases[0].p_model,'gpt-image-2');
+});
+test('OAuth images use the Codex native endpoint and forward only validated image fields',async()=>{
+ for(const edit of [false,true]){
+  const value=await fixture((url,init)=>{
+   assert.equal(url,'https://chatgpt.com/backend-api/codex/images/'+(edit?'edits':'generations'));const headers=new Headers(init.headers);assert.equal(headers.get('authorization'),'Bearer oauth-private');assert.equal(headers.get('chatgpt-account-id'),'chatgpt-account');
+   const body=JSON.parse(init.body);assert.equal(body.model,'gpt-image-2');assert.equal(body.prompt,'Draw');assert.equal(body.quality,'low');assert.equal(body.untrusted_field,undefined);if(edit)assert.equal(body.images[0].image_url,'https://example.com/image.png');return Response.json(output);
+  },{type:'oauth'});
+  const response=await value.handler(new Request('https://gateway/v1/images/'+(edit?'edits':'generations'),{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-image-2',prompt:'Draw',quality:'low',images:edit?[{image_url:'https://example.com/image.png'}]:undefined,untrusted_field:'removed'})}));assert.equal(response.status,200);assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_output_tokens,7);
+ }
+});
+test('OAuth multipart images and masks become lossless data URLs with numeric options',async()=>{
+ const value=await fixture((url,init)=>{
+  const body=JSON.parse(init.body);assert.equal(body.images[0].image_url,'data:image/png;base64,AAH/');assert.equal(body.images[1].image_url,'data:image/webp;base64,c2Vjb25k');assert.equal(body.mask.image_url,'data:image/png;base64,bWFzaw==');assert.equal(body.n,2);assert.equal(body.output_compression,0);assert.equal(body.custom_field,undefined);return Response.json(output);
+ },{type:'oauth'});
+ const data=form();data.set('n','2');data.set('output_compression','0');
+ const response=await value.handler(new Request('https://gateway/v1/images/edits',{method:'POST',headers:{authorization:'Bearer sk-client'},body:data}));assert.equal(response.status,200);
 });
