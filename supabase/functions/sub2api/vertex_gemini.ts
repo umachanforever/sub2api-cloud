@@ -1,9 +1,9 @@
 import {HttpError} from './db.ts';
-import {VertexServiceAccountToken} from './vertex_auth.ts';
+import {VertexServiceAccountToken,vertexTokenProvider,type VertexTokenCacheContext} from './vertex_auth.ts';
 import {vertexCatalogLocation} from './vertex_catalog.ts';
 
 // Match the original Express (API key only) and project-scoped Vertex endpoints.
-export async function vertexGeminiRequest(credentials:Record<string,unknown>,path:string,body:Record<string,unknown>,signal:AbortSignal,fetcher:typeof fetch):Promise<{url:string;init:RequestInit;streaming:boolean}> {
+export async function vertexGeminiRequest(credentials:Record<string,unknown>,path:string,body:Record<string,unknown>,signal:AbortSignal,fetcher:typeof fetch,cacheContext?:VertexTokenCacheContext):Promise<{url:string;init:RequestInit;streaming:boolean}> {
   const match=/^\/v1beta\/models\/([^/]+):(generateContent|streamGenerateContent|countTokens)$/.exec(path);
   if(!match)throw new HttpError(400,'invalid_vertex_endpoint');
   let model:string;try{model=decodeURIComponent(match[1]);}catch{throw new HttpError(400,'invalid_vertex_model');}
@@ -17,7 +17,7 @@ export async function vertexGeminiRequest(credentials:Record<string,unknown>,pat
     if(!key||/[\s\u0000-\u001f\u007f]/.test(key))throw new HttpError(400,'invalid_vertex_api_key');
     headers.set('x-goog-api-key',key);
   } else {
-    tokens=new VertexServiceAccountToken(credentials,fetcher);
+    tokens=await vertexTokenProvider(credentials,fetcher,cacheContext);
     project=project||tokens.project;
   }
   let prefix='https://aiplatform.googleapis.com/v1';

@@ -15,6 +15,25 @@ function encoded(bytes:Uint8Array):string{
  let value='';for(const byte of bytes)value+=String.fromCharCode(byte);return btoa(value).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
 }
 const json=(value:unknown)=>encoded(new TextEncoder().encode(JSON.stringify(value)));
+export type VertexTokenCacheContext={scope:object;identity:string};
+const providers=new WeakMap<object,Map<string,VertexServiceAccountToken>>();
+export function invalidateVertexTokenContext(context:VertexTokenCacheContext):void{
+ const cache=providers.get(context.scope),prefix=JSON.stringify(context.identity)+':';
+ if(cache)for(const key of cache.keys())if(key.startsWith(prefix))cache.delete(key);
+}
+// Worker-local reuse avoids repeated exchanges while isolating database and proxy contexts.
+export async function vertexTokenProvider(credentials:Record<string,unknown>,fetcher:typeof fetch,context?:VertexTokenCacheContext):Promise<VertexServiceAccountToken>{
+ if(!context)return new VertexServiceAccountToken(credentials,fetcher);
+ const key=parse(credentials);
+ const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([context.identity,key.project_id,key.client_email,key.private_key_id??'',key.private_key])));
+ const fingerprint=JSON.stringify(context.identity)+':'+encoded(new Uint8Array(digest));
+ let cache=providers.get(context.scope);if(!cache){cache=new Map();providers.set(context.scope,cache);}
+ const existing=cache.get(fingerprint);
+ if(existing){cache.delete(fingerprint);cache.set(fingerprint,existing);return existing;}
+ const provider=new VertexServiceAccountToken(credentials,fetcher);
+ if(cache.size>=32)cache.delete(cache.keys().next().value!);
+ cache.set(fingerprint,provider);return provider;
+}
 // Each instance is bound to one credential snapshot; replace it after credential rotation.
 export class VertexServiceAccountToken{
  readonly project:string;#key:Key;#fetch:typeof fetch;#clock:()=>number;#cached?:{token:string;expires:number};#pending?:Promise<string>;

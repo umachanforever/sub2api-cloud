@@ -1,6 +1,7 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
 import {originalChatBridge,originalAnthropicBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
+import {invalidateVertexTokenContext} from './vertex_auth.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
@@ -469,6 +470,7 @@ async function proxyWithIdentity(
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
       const nativeAnthropicBridge=platform==='anthropic'&&!apiKey&&(chat||protocol==='responses');
+      const vertexCache={scope:db,identity:JSON.stringify([account.id,account.credential_version,account.proxy_id??null])};
       let anthropicBody=forwardedBody;
       if(nativeAnthropicBridge){
         let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
@@ -479,7 +481,7 @@ async function proxyWithIdentity(
         const routed=(reservation as {composite_route?:{upstream_model?:string}}).composite_route?.upstream_model??routingModel;
         const explicit=!!model_sources&&mappedTarget(model_sources.mapping,routed,'anthropic')!==undefined;
         providerDispatched=true;
-        const outgoing=await vertexAnthropicRequest(credentials,anthropicBody!,request,signal,(url,init)=>accountFetch(db,account,url,init),explicit);
+        const outgoing=await vertexAnthropicRequest(credentials,anthropicBody!,request,signal,(url,init)=>accountFetch(db,account,url,init),explicit,vertexCache);
         native=outgoing;dispatchedModel=outgoing.upstreamModel;errorContext.upstreamModel=dispatchedModel;attemptContext.upstreamModel=dispatchedModel;
         upstreamEndpoint=usageEndpoint(outgoing.url);
         upstream=await accountFetch(db,account,outgoing.url,outgoing.init);
@@ -491,7 +493,7 @@ async function proxyWithIdentity(
           upstream=await vertexGeminiCatalog(credentials,forwardedPath,(url,init)=>accountFetch(db,account,url,init),signal);
         } else {
           if(!gemini)throw new HttpError(501,'provider_protocol_unsupported');
-          native=await vertexGeminiRequest(credentials,forwardedPath,forwardedBody!,signal,(url,init)=>accountFetch(db,account,url,init));
+          native=await vertexGeminiRequest(credentials,forwardedPath,forwardedBody!,signal,(url,init)=>accountFetch(db,account,url,init),vertexCache);
           upstreamEndpoint=usageEndpoint(native.url);
           upstream=await accountFetch(db,account,native.url,native.init);
         }
@@ -685,6 +687,7 @@ async function proxyWithIdentity(
         if(windows)quotaSnapshot=db.rpc(db.config.dataModel === 'native' ? 's2a_personal_windows_save' : 's2a_openai_windows_save',{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn('quota_window_save_failed'));
       }
       if (!upstream.ok) {
+        if(upstream.status===401&&account.type==='service_account')invalidateVertexTokenContext(vertexCache);
         chatBridge?.close();
         const status = upstream.status;
         const rejection = await upstreamErrorCode(upstream);

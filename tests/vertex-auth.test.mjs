@@ -1,9 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {VertexServiceAccountToken} from '../supabase/functions/sub2api/vertex_auth.ts';
+import {VertexServiceAccountToken,vertexTokenProvider,invalidateVertexTokenContext} from '../supabase/functions/sub2api/vertex_auth.ts';
 const pair=await crypto.subtle.generateKey({name:'RSASSA-PKCS1-v1_5',modulusLength:2048,publicExponent:new Uint8Array([1,0,1]),hash:'SHA-256'},true,['sign','verify']);
 const exported=Buffer.from(await crypto.subtle.exportKey('pkcs8',pair.privateKey)).toString('base64');
 const key={project_id:'project-1',client_email:'svc@project-1.iam.gserviceaccount.com',private_key:'-----BEGIN PRIVATE KEY-----\n'+exported+'\n-----END PRIVATE KEY-----',private_key_id:'key-1',token_uri:'https://evil.example/token'};
+test('Vertex cross-request cache coalesces exchanges and isolates credentials, proxy identities and database scopes',async()=>{
+ let calls=0;
+ const fetcher=async()=>Response.json({access_token:'token-'+(++calls),expires_in:3600});
+ const context={scope:{},identity:'account:version:proxy'};
+ const providers=await Promise.all(Array.from({length:12},()=>vertexTokenProvider({service_account:key},fetcher,context)));
+ const tokens=await Promise.all(providers.map(provider=>provider.accessToken()));
+ assert.deepEqual(tokens,Array(12).fill('token-1'));assert.equal(calls,1);
+ for(const [credentials,scope] of [
+  [{service_account:key},{...context,identity:'account:version:other-proxy'}],
+  [{service_account:key},{...context,scope:{}}],
+  [{service_account:{...key,private_key_id:'rotated'}},context],
+  [{service_account:{...key,client_email:'other@project.iam.gserviceaccount.com'}},context],
+ ])await (await vertexTokenProvider(credentials,fetcher,scope)).accessToken();
+ assert.equal(calls,5);
+ const original=await vertexTokenProvider({service_account:key},fetcher,context);
+ assert.equal(await original.accessToken(),'token-1');
+ invalidateVertexTokenContext(context);
+ assert.notEqual(await vertexTokenProvider({service_account:key},fetcher,context),original);
+ for(let i=0;i<32;i++)await vertexTokenProvider({service_account:key},fetcher,{...context,identity:'eviction-'+i});
+ assert.notEqual(await vertexTokenProvider({service_account:key},fetcher,context),original);
+});
 test('Vertex signs valid Google assertions, ignores token_uri and deduplicates refreshes',async()=>{
  let now=1800000000000,calls=0;
  const provider=new VertexServiceAccountToken({service_account_json:JSON.stringify(key)},async(url,init)=>{

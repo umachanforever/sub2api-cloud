@@ -1,5 +1,5 @@
 import {HttpError} from './db.ts';
-import {VertexServiceAccountToken} from './vertex_auth.ts';
+import {vertexTokenProvider,type VertexTokenCacheContext} from './vertex_auth.ts';
 import {vertexCatalogLocation} from './vertex_catalog.ts';
 
 // Pinned to the original claude.ModelIDOverrides and Vertex beta allowlist.
@@ -27,11 +27,11 @@ export function vertexAnthropicBody(body:Record<string,unknown>,beta:string,mode
   if(Array.isArray(payload.messages))for(const message of payload.messages)if(message&&typeof message==='object'&&!Array.isArray(message))delete (message as Record<string,unknown>).output_config;
   return {body:payload,beta:[...tokens].join(',')};
 }
-export async function vertexAnthropicRequest(credentials:Record<string,unknown>,body:Record<string,unknown>,request:Request,signal:AbortSignal,fetcher:typeof fetch,explicit=false):Promise<{url:string;init:RequestInit;streaming:boolean;upstreamModel:string}> {
+export async function vertexAnthropicRequest(credentials:Record<string,unknown>,body:Record<string,unknown>,request:Request,signal:AbortSignal,fetcher:typeof fetch,explicit=false,cacheContext?:VertexTokenCacheContext):Promise<{url:string;init:RequestInit;streaming:boolean;upstreamModel:string}> {
   if(typeof body.model!=='string')throw new HttpError(400,'invalid_vertex_model');
   const model=vertexAnthropicModel(body.model,explicit);
   if(!/^[a-zA-Z0-9._:-]+(?:@[0-9]{8})?$/.test(model)||model.length>200||model==='.'||model==='..')throw new HttpError(400,'invalid_vertex_model');
-  const tokens=new VertexServiceAccountToken(credentials,fetcher),project=typeof credentials.project_id==='string'&&credentials.project_id.trim()?credentials.project_id.trim():tokens.project;
+  const tokens=await vertexTokenProvider(credentials,fetcher,cacheContext),project=typeof credentials.project_id==='string'&&credentials.project_id.trim()?credentials.project_id.trim():tokens.project;
   if(!/^[a-zA-Z0-9_-]{1,128}$/.test(project))throw new HttpError(400,'invalid_vertex_project');
   const location=vertexCatalogLocation(credentials,model),host=location==='global'?'aiplatform.googleapis.com':location+'-aiplatform.googleapis.com',streaming=body.stream===true;
   const transformed=vertexAnthropicBody(body,request.headers.get('anthropic-beta')??'',model);
