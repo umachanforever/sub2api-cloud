@@ -27,7 +27,15 @@ jobs:
       - run: pnpm --dir frontend --ignore-workspace typecheck
       - run: pnpm --dir frontend --ignore-workspace exec vitest run src/api/__tests__
       - run: pnpm --dir frontend --ignore-workspace build
-      - run: docker build -t sub2api-cloud:check .
+      - uses: docker/setup-buildx-action@v3
+      - name: Build console image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          tags: sub2api-cloud:check
+          cache-from: type=gha,scope=console
+          cache-to: type=gha,mode=max,scope=console
 
   management:
     runs-on: ubuntu-latest
@@ -71,4 +79,12 @@ jobs:
       - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService|AccountCredentialExpiryFormats)'
       - run: go test ./internal/repository -run 'Test(SupabaseMigrationRole|ApplyMigrations)'
       - run: go test ./cmd/server -run TestManagementMigrationURL
-      - run: docker build -t sub2api-cloud-management:check .
+      - uses: docker/setup-buildx-action@v3
+      - name: Build management image
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          push: false
+          tags: sub2api-cloud-management:check
+          cache-from: type=gha,scope=management
+          cache-to: type=gha,mode=max,scope=management
