@@ -83,3 +83,10 @@ test('Composite Codex route returns original metadata with conditional ETag and 
  assert.equal((await get('/v1/models?client_version=0.150.0')).status,200);
  const detail=await get('/v1/models/public?client_version=0.150.0');assert.equal((await detail.json()).id,'public');
 });
+
+test('Composite Codex metadata follows concrete ownership instead of unrelated provider wildcard maps',()=>{
+ const input={sources:[source('openai',{'claude-owned':'gpt-6.1-sol'}),source('grok',{'gpt-*':'grok-4.6'})],routes:[]};
+ const values=compositeCodexCatalog(input).models;
+ const owned=values.find(model=>model.slug==='claude-owned');assert.ok(owned.supported_reasoning_levels.some(level=>level.effort==='max'));assert.ok(!owned.supported_reasoning_levels.some(level=>level.effort==='none'));
+ const direct=compositeCodexCatalog({sources:[source('openai'),source('grok',{'gpt-*':'grok-4.6'})],routes:[]}).models.find(model=>model.slug==='gpt-6.1-sol');assert.ok(!direct.supported_reasoning_levels.some(level=>level.effort==='none'));assert.ok(direct.model_messages.instructions_template.includes('GPT'));
+});

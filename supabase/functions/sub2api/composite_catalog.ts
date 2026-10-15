@@ -33,13 +33,30 @@ function selectedRoute(input:CompositeCatalogSources,model:string){
  return input.routes.map((route,index)=>({route,index})).filter(({route})=>['any','responses'].includes(route.endpoint)&&(route.match_type==='exact'?route.model===model:model.startsWith(route.model)))
   .sort((a,b)=>Number(b.route.match_type==='exact')-Number(a.route.match_type==='exact')||Number(b.route.endpoint==='responses')-Number(a.route.endpoint==='responses')||b.route.model.length-a.route.model.length||a.index-b.index)[0]?.route;
 }
+function detectedPlatform(model:string):string|undefined{
+ model=model.trim().toLowerCase().replace(/^models\//,'');
+ const slash=model.indexOf('/');
+ if(slash>0){const provider=model.slice(0,slash).trim(),known:Record<string,string>={anthropic:'anthropic',claude:'anthropic',openai:'openai',chatgpt:'openai',google:'gemini','google-ai-studio':'gemini',gemini:'gemini',xai:'grok','x-ai':'grok',grok:'grok',kimi:'kimi',moonshot:'kimi',zhipu:'zhipu',glm:'zhipu',bigmodel:'zhipu',deepseek:'deepseek',minimax:'minimax',typesafe:'typesafe',jev:'typesafe'};if(Object.hasOwn(known,provider))return known[provider];model=model.slice(slash+1).trim().replace(/^models\//,'');}
+ if(/^(anthropic\.claude-|claude-)/.test(model))return 'anthropic';
+ if(/^(gpt-|chatgpt-|codex-|text-embedding-|text-moderation-|omni-moderation-|dall-e-|tts-|whisper-|o[1345]($|-))/.test(model))return 'openai';
+ if(/^(gemini-|learnlm-)/.test(model))return 'gemini';
+ if(model==='grok'||model.startsWith('grok-'))return 'grok';
+ if(['k3','k3-256k'].includes(model)||/^(kimi-|moonshot-)/.test(model))return 'kimi';
+ if(model.startsWith('glm-'))return 'zhipu';
+ if(model.startsWith('deepseek-'))return 'deepseek';
+ if(/^(minimax-|abab[567])/.test(model))return 'minimax';
+ if(model.startsWith('jev-'))return 'typesafe';
+}
 export function compositeCodexCatalog(input:CompositeCatalogSources,allowlist?:ModelAllowlist){
  const catalog=compositeModelCatalog(input,allowlist,undefined,true) as {data:{id:string}[]};
  const models=[];
  for(const {id} of catalog.data){
   if(id.includes('*')||!codexCatalogDescriptor(id))continue;
   const route=selectedRoute(input,id),requested=route?.upstream_model||id;
-  const targets=new Set(input.sources.filter(source=>!route||source.platform===route.platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
+  const owners=new Set(input.sources.filter(source=>typeof source.mapping[requested]==='string'&&Object.hasOwn(source.mapping,requested)&&source.mapping[requested].trim()).map(source=>source.platform));
+  const platform=route?.platform??(owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
+  const targets=new Set(input.sources.filter(source=>source.platform===platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
+  if(!route&&owners.size>1)targets.add('custom-model');
   const target=targets.size===1?[...targets][0]:targets.size>1?'custom-model':requested;
   const descriptor=codexCatalogDescriptor(defaultSolModel(target)??target);
   if(!descriptor)continue;
