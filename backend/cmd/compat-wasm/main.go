@@ -31,6 +31,16 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "gemini_response" {
+		var body map[string]any
+		if err := json.Unmarshal(input.Body, &body); err != nil {
+			return nil, err
+		}
+		message, usage := convertGeminiToClaudeMessage(body, input.ID, input.Body, true)
+		// Restore cached input usage before the original Anthropic converter runs.
+		message["usage"] = usage
+		return message, nil
+	}
 	if input.Operation == "gemini_request" {
 		converted, err := convertClaudeMessagesToGeminiGenerateContent(input.Body)
 		if err != nil {

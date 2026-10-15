@@ -25,6 +25,23 @@ func main() {
 		panic(err)
 	}
 	nodes := map[string]ast.Node{}
+	usageSource, err := os.ReadFile("internal/service/gateway_service.go")
+	if err != nil {
+		panic(err)
+	}
+	usageFile, err := parser.ParseFile(positions, "internal/service/gateway_service.go", usageSource, 0)
+	if err != nil {
+		panic(err)
+	}
+	for _, declaration := range usageFile.Decls {
+		if declaration, ok := declaration.(*ast.GenDecl); ok && declaration.Tok == token.TYPE {
+			for _, spec := range declaration.Specs {
+				if spec.(*ast.TypeSpec).Name.Name == "ClaudeUsage" {
+					nodes["ClaudeUsage"] = declaration
+				}
+			}
+		}
+	}
 	for _, declaration := range file.Decls {
 		switch declaration := declaration.(type) {
 		case *ast.FuncDecl:
@@ -56,7 +73,7 @@ func main() {
 			return true
 		})
 	}
-	for _, name := range []string{"convertClaudeMessagesToGeminiGenerateContent", "ensureGeminiFunctionCallThoughtSignatures", "normalizeGeminiRequestForAIStudio"} {
+	for _, name := range []string{"convertClaudeMessagesToGeminiGenerateContent", "ensureGeminiFunctionCallThoughtSignatures", "normalizeGeminiRequestForAIStudio", "convertGeminiToClaudeMessage", "computeGeminiTextDelta"} {
 		if nodes[name] == nil {
 			panic("missing original Gemini converter: " + name)
 		}

@@ -2,6 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
 
+test('original Gemini response converter preserves tools, inline images and cached/thinking token usage',async()=>{
+ await originalChatBridgeCount();
+ for(const finishReason of ['STOP','MAX_TOKENS']){
+  const body={candidates:[{finishReason,content:{parts:[{text:'answer'},{inlineData:{mimeType:'image/png',data:'AA=='}},{functionCall:{name:'lookup',args:{q:'hello'}}}]}}],usageMetadata:{promptTokenCount:12,cachedContentTokenCount:5,candidatesTokenCount:3,thoughtsTokenCount:2,candidatesTokensDetails:[{modality:'IMAGE',tokenCount:1}]}};
+  const result=JSON.parse(globalThis.__s2aCompatCall(JSON.stringify({operation:'gemini_response',body,id:'gemini-test'})));
+  assert.equal(result.error,undefined);const value=result.value;
+  assert.equal(value.model,'gemini-test');assert.equal(value.content[0].text,'answer');
+  assert.equal(value.content[1].text,'![image](data:image/png;base64,AA==)');
+  assert.equal(value.content[2].type,'tool_use');assert.deepEqual(value.content[2].input,{q:'hello'});
+  assert.equal(value.stop_reason,'tool_use');assert.equal(value.usage.input_tokens,7);assert.equal(value.usage.cache_read_input_tokens,5);assert.equal(value.usage.output_tokens,5);assert.equal(value.usage.image_output_tokens,1);
+  const textOnly=JSON.parse(globalThis.__s2aCompatCall(JSON.stringify({operation:'gemini_response',id:'gemini-test',body:{...body,candidates:[{finishReason,content:{parts:[{text:'partial'}]}}]}}))).value;
+  assert.equal(textOnly.stop_reason,finishReason==='MAX_TOKENS'?'max_tokens':'end_turn');
+ }
+});
+
 test('original Gemini request converter preserves images, tool history, signatures and schema normalization',async()=>{
  await originalChatBridgeCount();
  const body={system:[{type:'text',text:'policy'}],messages:[
