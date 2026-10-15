@@ -1,5 +1,5 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
-import {fallbackGeminiCatalog} from './gemini_catalog.ts';
+import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -66,7 +66,8 @@ type ProviderAccount = Account & {
 };
 type Reservation =
   | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
-  | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources; error?: never }
+  | {gemini_catalog_only:true;gemini_catalog_sources:GeminiCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
+  | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources;gemini_catalog_sources?:GeminiCatalogSources; error?: never }
   | {
     error: string;
     status: number;
@@ -300,6 +301,12 @@ async function proxyWithIdentity(
     });
     if (reservation.error) {
       throw new HttpError(reservation.status, reservation.error);
+    }
+    if('gemini_catalog_only' in reservation){
+      if(!nativeGeminiModels)throw new HttpError(503,'invalid_gemini_catalog');
+      const catalog=antigravityOnlyCatalog(reservation.gemini_catalog_sources,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined);
+      if(!catalog)throw new HttpError(503,'no_available_account');
+      return catalog;
     }
     if('composite_catalog' in reservation){
       if(!models||nativeGeminiModels)throw new HttpError(503,'composite_manifest_unavailable');
@@ -595,7 +602,17 @@ async function proxyWithIdentity(
           upstream = await forward();
         }
       }
-      if (nativeGeminiModels && platform === 'gemini') upstream = await fallbackGeminiCatalog(upstream, forwardedPath);
+      if (nativeGeminiModels && platform === 'gemini') {
+        upstream = await fallbackGeminiCatalog(upstream, forwardedPath);
+        if(!modelId&&upstream.status===200&&'gemini_catalog_sources' in reservation&&reservation.gemini_catalog_sources){
+          const extra=antigravityGeminiModels(reservation.gemini_catalog_sources);
+          if(extra.length){
+            const body=await upstream.text(),merged=mergeGeminiCatalog(body,extra),headers=new Headers(upstream.headers);
+            headers.delete('content-length');headers.delete('content-encoding');headers.delete('etag');
+            upstream=new Response(merged,{status:200,headers});
+          }
+        }
+      }
       upstreamReceived = true;
       if(!apiKey && platform==='openai'){
         const windows=quotaHeaderWindows(upstream.headers);

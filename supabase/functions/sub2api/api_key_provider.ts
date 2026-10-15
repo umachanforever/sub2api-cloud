@@ -148,7 +148,8 @@ function modelCatalog(platform: Platform, path: string, value: Item): Item {
       !Array.isArray(entries) ||
       entries.some((entry: Item) =>
         typeof entry?.name !== "string" ||
-        !/^models\/[a-zA-Z0-9._-]+$/.test(entry.name)
+        !/^models\/[a-zA-Z0-9._-]+$/.test(entry.name) &&
+        (single || !/^models\/[a-zA-Z0-9._-]+\*$/.test(entry.name))
       )
     ) {
       throw new HttpError(502, "invalid_upstream_model_catalog");

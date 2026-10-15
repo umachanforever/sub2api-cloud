@@ -50,6 +50,25 @@ END $$;
 ALTER FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.responses_websocket_mode(text,text,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 
+-- Expose only public mapping names for eligible mixed Antigravity catalogs.
+CREATE OR REPLACE FUNCTION s2a_private.gemini_catalog_sources(p_group bigint) RETURNS jsonb
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
+ WITH eligible AS (
+  SELECT a.id,a.extra FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
+  WHERE ag.group_id=p_group AND a.platform='antigravity' AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
+   AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=now(),false)
+   AND coalesce(a.overload_until,'-infinity')<=now() AND coalesce(a.rate_limit_reset_at,'-infinity')<=now()
+   AND coalesce(a.temp_unschedulable_until,'-infinity')<=now()
+ ) SELECT jsonb_build_object('has_antigravity',EXISTS(SELECT 1 FROM eligible),
+  'sources',coalesce((SELECT jsonb_agg(coalesce((SELECT jsonb_object_agg(m.key,m.value)
+   FROM jsonb_each(CASE WHEN jsonb_typeof(s2a_private.account_credentials(e.id)->'model_mapping')='object'
+    THEN s2a_private.account_credentials(e.id)->'model_mapping' ELSE '{}'::jsonb END) m
+   WHERE jsonb_typeof(m.value)='string'),'{}'::jsonb) ORDER BY e.id)
+   FROM eligible e WHERE e.extra->'mixed_scheduling'='true'::jsonb),'[]'::jsonb));
+$$;
+ALTER FUNCTION s2a_private.gemini_catalog_sources(bigint) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.gemini_catalog_sources(bigint) FROM PUBLIC,anon,authenticated,service_role;
+
 DROP FUNCTION IF EXISTS s2a_private.account_mapping_accepts(text,jsonb,jsonb,text);
 -- Explicit account mappings also define the scheduler's model allowlist.
 CREATE OR REPLACE FUNCTION s2a_private.account_mapping_accepts(platform text,account_type text,extra jsonb,mapping jsonb,model text)
@@ -95,7 +114,7 @@ DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accoun
     group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text; normalized_model text;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
-    native_gemini_catalog boolean;
+    native_gemini_catalog boolean; gemini_sources jsonb;
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -158,6 +177,7 @@ BEGIN
     ELSIF jsonb_array_length(coalesce(k.ip_blacklist, '[]'::jsonb)) > 0 THEN
         RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
     END IF;
+    IF native_gemini_catalog AND g.platform IN ('gemini','composite') THEN gemini_sources:=s2a_private.gemini_catalog_sources(g.id); END IF;
     IF p_model='__models__' AND g.platform='composite' AND NOT native_gemini_catalog THEN
         IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$'
             THEN RETURN jsonb_build_object('error','composite_catalog_unavailable','status',503); END IF;
@@ -253,7 +273,12 @@ BEGIN
             UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
             EXIT;
         END LOOP;
-        IF lease.id IS NULL THEN RETURN jsonb_build_object('error','no_available_account','status',503); END IF;
+        IF lease.id IS NULL THEN
+            IF native_gemini_catalog AND gemini_sources->>'has_antigravity'='true' THEN
+                RETURN jsonb_build_object('gemini_catalog_only',true,'gemini_catalog_sources',gemini_sources,'model_allowlist',g.model_allowlist);
+            END IF;
+            RETURN jsonb_build_object('error','no_available_account','status',503);
+        END IF;
     END IF;
     account:=public.s2a_gateway_account_snapshot(lease.account_id);
     IF account ? 'error' THEN RETURN account || jsonb_build_object('status',503); END IF;
@@ -273,6 +298,7 @@ BEGIN
     END IF;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
         'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
+        || CASE WHEN gemini_sources IS NOT NULL THEN jsonb_build_object('gemini_catalog_sources',gemini_sources) ELSE '{}'::jsonb END
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
 END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;

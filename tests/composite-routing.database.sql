@@ -1,7 +1,7 @@
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; gem_oauth bigint; ts bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
+DECLARE g bigint; u bigint; a bigint; b bigint; gem bigint; gem_oauth bigint; ag_catalog bigint; ts bigint; h text; decision jsonb; acquired jsonb; catalog jsonb;
 BEGIN
  IF has_function_privilege('service_role','s2a_private.composite_resolve(bigint,text,text)','EXECUTE') THEN RAISE EXCEPTION 'private resolver exposed'; END IF;
  INSERT INTO public.users(email,password_hash,concurrency) VALUES('composite-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
@@ -65,6 +65,19 @@ BEGIN
  acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1beta/models/gemini-3.1-pro-preview"}');
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text THEN RAISE EXCEPTION 'Native Composite Gemini detail unavailable'; END IF;
  UPDATE public.accounts SET schedulable=false WHERE id=gem_oauth;
+ INSERT INTO public.accounts(name,platform,type,credentials,extra,concurrency) VALUES('Antigravity catalog','antigravity','oauth','{"access_token":"synthetic-private","model_mapping":{"gemini-extra":"gemini-target"}}','{"mixed_scheduling":true}',10) RETURNING id INTO ag_catalog;
+ INSERT INTO public.account_groups(account_id,group_id) VALUES(ag_catalog,g);
+ catalog:=s2a_private.gemini_catalog_sources(g);
+ IF catalog->'sources' IS DISTINCT FROM '[{"gemini-extra":"gemini-target"}]'::jsonb OR catalog->>'has_antigravity'<>'true' THEN RAISE EXCEPTION 'Mixed Gemini catalog sources unavailable'; END IF;
+ IF catalog::text LIKE '%synthetic%' OR has_function_privilege('service_role','s2a_private.gemini_catalog_sources(bigint)','EXECUTE') THEN RAISE EXCEPTION 'Gemini catalog leaked private data or permissions'; END IF;
+ IF s2a_private.gemini_catalog_sources(-1) IS DISTINCT FROM '{"has_antigravity":false,"sources":[]}'::jsonb THEN RAISE EXCEPTION 'Gemini catalog crossed group boundary'; END IF;
+ UPDATE public.accounts SET schedulable=false WHERE id=gem;
+ acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1beta/models"}');
+ IF acquired->>'gemini_catalog_only' IS DISTINCT FROM 'true' OR acquired ? 'account' OR acquired ? 'lease_id' THEN RAISE EXCEPTION 'AG-only catalog requires a Gemini inference account'; END IF;
+ UPDATE public.accounts SET schedulable=true WHERE id=gem;
+ UPDATE public.accounts SET extra='{}' WHERE id=ag_catalog;
+ IF jsonb_array_length(s2a_private.gemini_catalog_sources(g)->'sources')<>0 THEN RAISE EXCEPTION 'Mixed catalog ignored account opt-in'; END IF;
+ UPDATE public.accounts SET schedulable=false WHERE id=ag_catalog;
  INSERT INTO public.composite_model_routes(group_id,public_model,target_platform,upstream_model,endpoint) VALUES(g,'gemini-public','gemini','gemini-3.1-pro-preview-customtools','responses');
  acquired:=public.s2a_personal_acquire(h,'gemini-public',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
  IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM gem::text OR acquired->>'upstream_model' IS DISTINCT FROM 'upstream-exact' THEN RAISE EXCEPTION 'Composite Gemini normalization lost mapped target'; END IF;

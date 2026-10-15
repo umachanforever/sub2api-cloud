@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mergeGeminiCatalog,geminiCatalogScopeFallback} from '../supabase/functions/sub2api/gemini_catalog.ts';
 import {fallbackGeminiCatalog,GEMINI_FALLBACK_IDS} from '../supabase/functions/sub2api/gemini_catalog.ts';
+import {effectiveAntigravityMapping,antigravityGeminiModels,antigravityOnlyCatalog} from '../supabase/functions/sub2api/gemini_catalog.ts';
 import {readFileSync} from 'node:fs';
 
 test('Gemini fallback IDs stay aligned with the original Go catalog',()=>{
@@ -64,12 +65,40 @@ test('native Gemini catalog preserves upstream metadata and opaque pagination th
  const app=createBackendHandler(config,async(url,init)=>{
   if(String(url).endsWith('/s2a_personal_acquire')){
    assert.equal(JSON.parse(init.body).p_billing_context.inbound_endpoint,'/v1beta/models');
-   return Response.json({lease_id:'lease',model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
+   return Response.json({lease_id:'lease',gemini_catalog_sources:{has_antigravity:true,sources:[{'gemini-future':'target','gemini-extra':'target','gemini-*':'target'}]},model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   }
   if(String(url).includes('/rpc/'))return Response.json({applied:true});
   const target=new URL(url);assert.equal(target.searchParams.get('pageToken'),'opaque-first');assert.equal(target.searchParams.get('pageSize'),'2');
   return Response.json(value);
  });
  const response=await app(new Request('https://gateway/v1beta/models?pageToken=opaque-first&pageSize=2',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);assert.deepEqual(await response.json(),value);
+ assert.equal(response.status,200);const merged=await response.json();
+ assert.equal(merged.nextPageToken,value.nextPageToken);assert.equal(merged.extension,value.extension);
+ assert.deepEqual(merged.models.find(model=>model.name==='models/gemini-future'),value.models[0]);
+ assert.equal(merged.models.filter(model=>model.name==='models/gemini-future').length,1);
+ assert.ok(merged.models.some(model=>model.name==='models/gemini-extra'));
+ assert.ok(merged.models.some(model=>model.name==='models/gemini-*'));
+});
+
+test('Antigravity effective catalogs include original defaults and preserve wildcard overrides',async()=>{
+ const defaults=effectiveAntigravityMapping({});assert.equal(defaults['gemini-3.1-pro-preview'],'gemini-pro-agent');
+ const custom=effectiveAntigravityMapping({'gemini-*':'override','gemini-pro-agent':'custom-agent','gemini-3.1-pro-preview':'gemini-3.1-pro-high'});
+ assert.equal(custom['gemini-3-flash'],undefined);assert.equal(custom['gemini-3.1-pro-preview'],'custom-agent');
+ const explicit=effectiveAntigravityMapping({'gemini-pro-agent':'custom-agent','gemini-3.1-pro':'explicit'});
+ assert.equal(explicit['gemini-3.1-pro'],'explicit');assert.equal(explicit['gemini-3.1-pro-high'],'custom-agent');assert.equal(explicit['gemini-3-flash'],'gemini-3-flash');
+ const sources={has_antigravity:true,sources:[{},{}]};
+ const models=antigravityGeminiModels(sources);assert.ok(models.length>10);assert.equal(new Set(models.map(model=>model.name)).size,models.length);assert.ok(models.every(model=>model.name.startsWith('models/gemini-')));
+ const response=antigravityOnlyCatalog(sources,{enabled:true,models:['gemini-3-flash']});assert.deepEqual((await response.json()).models.map(model=>model.name),['models/gemini-3-flash']);
+ assert.equal(antigravityOnlyCatalog({has_antigravity:true,sources:[]}),undefined);
+ assert.equal((await antigravityOnlyCatalog({has_antigravity:true,sources:[]},undefined,'gemini-future').json()).name,'models/gemini-future');
+});
+
+test('AG-only native catalog returns authenticated public metadata without inference dispatch',async()=>{
+ const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:'',adminIds:[],dataModel:'native'};let calls=0;
+ const app=createBackendHandler(config,async(url)=>{
+  assert.ok(String(url).endsWith('/s2a_personal_acquire'));calls++;
+  return Response.json({gemini_catalog_only:true,gemini_catalog_sources:{has_antigravity:true,sources:[{}]},model_allowlist:{enabled:true,models:['gemini-3-flash']}});
+ });
+ const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
+ assert.equal(response.status,200);assert.equal(calls,1);assert.deepEqual((await response.json()).models.map(model=>model.name),['models/gemini-3-flash']);
 });

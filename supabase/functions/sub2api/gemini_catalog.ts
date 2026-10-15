@@ -1,4 +1,29 @@
 type Model = Record<string, unknown>;
+import mappingRules from './antigravity_mapping.json' with {type:'json'};
+import {filterModelCatalog,type ModelAllowlist} from './model_policy.ts';
+export type GeminiCatalogSources = {has_antigravity:boolean;sources:Record<string,string>[]};
+export function effectiveAntigravityMapping(raw: Record<string,string>): Record<string,string> {
+  if (!Object.keys(raw).length) return {...mappingRules.defaults};
+  const result = {...raw};
+  const covered = (id:string) => Object.keys(result).some(pattern=>pattern===id||pattern.endsWith('*')&&id.startsWith(pattern.slice(0,-1)));
+  for (const [id,target] of Object.entries(mappingRules.supplemental)) if (!covered(id)) result[id]=target;
+  const target=result['gemini-pro-agent']?.trim();
+  if(target) for(const id of ['gemini-3.1-pro','gemini-3.1-pro-high','gemini-3.1-pro-preview']) {
+    if(Object.hasOwn(result,id)) {
+      if(result[id]===id||id==='gemini-3.1-pro-preview'&&result[id]==='gemini-3.1-pro-high')result[id]=target;
+    } else if(!covered(id))result[id]=target;
+  }
+  return result;
+}
+export function antigravityGeminiModels(sources:GeminiCatalogSources):Model[] {
+  const ids=new Set(sources.sources.flatMap(mapping=>Object.keys(effectiveAntigravityMapping(mapping))).filter(id=>id.trim().startsWith('gemini-')));
+  return [...ids].sort().map(geminiFallbackModel);
+}
+export function antigravityOnlyCatalog(sources:GeminiCatalogSources,allowlist?:ModelAllowlist,model?:string):Response|undefined {
+  if(model&&sources.has_antigravity)return Response.json(filterModelCatalog(allowlist,geminiFallbackModel(model),true));
+  const models=antigravityGeminiModels(sources);
+  if(!model&&models.length)return Response.json(filterModelCatalog(allowlist,{models}));
+}
 // Pinned to backend/internal/pkg/gemini/models.go.
 export const GEMINI_FALLBACK_IDS = [
   'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-image', 'gemini-2.5-pro',

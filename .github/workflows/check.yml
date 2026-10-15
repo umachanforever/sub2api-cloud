@@ -61,6 +61,9 @@ jobs:
       - name: Verify original Codex catalog templates
         working-directory: ${{ github.workspace }}
         run: node scripts/generate-codex-catalog.mjs --check
+      - name: Verify original Antigravity mapping rules
+        working-directory: ${{ github.workspace }}
+        run: node scripts/generate-antigravity-mapping.mjs --check
 
       - name: Verify native management and cloud gateway integration
         working-directory: ${{ github.workspace }}
