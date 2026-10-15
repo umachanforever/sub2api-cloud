@@ -1,3 +1,4 @@
+import {grokVideo,videoRoute,VideoTaskError} from './grok_video.ts';
 import {geminiCacheJobs} from './gemini_cache_jobs.ts';
 import {geminiCacheCreate} from './gemini_cache_create.ts';
 import {geminiCacheMutation} from './gemini_cache_mutation.ts';
@@ -29,7 +30,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (/^\/(?:models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
+      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
@@ -68,12 +69,14 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (request.method==='POST' && pathname==='/v1beta/cachedContents') return await geminiCacheCreate(request,token,db);
       if (['DELETE','PATCH'].includes(request.method) && /^\/v1beta\/cachedContents\/[^/]+$/.test(pathname)) return await geminiCacheMutation(request,pathname,token,db);
       if (request.method === 'GET' && /^\/v1beta\/cachedContents(?:\/[^/]+)?$/.test(pathname)) return await geminiCacheRead(request,pathname,token,db);
+      if(videoRoute(pathname,request.method))return await grokVideo(request,pathname,token,db,errorContext);
       return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);
     } catch (error) {
       if (error instanceof HttpError) {
         errorCode = error.code;
         return json(error.status, {
           error: { type: error.code, message: error.message },
+          ...(error instanceof VideoTaskError?{id:error.taskId,request_id:error.taskId}:{}),
           ...(request.headers.get("x-s2a-frontend") === "1"
             ? { code: error.status, message: error.message }
             : {}),
