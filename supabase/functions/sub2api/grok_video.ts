@@ -8,6 +8,7 @@ import {grokOAuthRequest} from './grok_oauth.ts';
 import {accountFetch} from './account_proxy.ts';
 import {mappedTarget} from './model_mapping.ts';
 import {json} from './http.ts';
+import {signedVideoURL,videoRange,videoContentResponse,publicVideoContentURL} from './grok_video_content.ts';
 import type {ErrorContext} from './ops_errors.ts';
 type Item=Record<string,any>;
 export class VideoTaskError extends HttpError {
@@ -18,8 +19,8 @@ const taskId=/^video_[a-f0-9]{40}$/;
 export function videoRoute(path:string,method:string){
  const create=/^\/(?:v1\/)?videos(?:\/(generations|edits|extensions))?$/.exec(path);
  if(method==='POST'&&create)return {operation:create[1]??'generations'};
- const lookup=/^\/(?:v1\/)?videos(?:\/(generations|edits|extensions))?\/([^/]+)$/.exec(path);
- if(method==='GET'&&lookup)return {operation:lookup[1],id:lookup[2]};
+ const lookup=/^\/(?:v1\/)?videos(?:\/(generations|edits|extensions))?\/([^/]+)(\/content)?$/.exec(path);
+ if(method==='GET'&&lookup)return {operation:lookup[1],id:lookup[2],content:!!lookup[3]};
  return undefined;
 }
 export function videoInput(body:Item,operation:string):Item{
@@ -54,12 +55,12 @@ export function providerVideoId(value:Item):string{
  for(const item of [value,value.data,value.video])for(const key of ['request_id','id','task_id'])if(typeof item?.[key]==='string'&&/^[a-zA-Z0-9_-]{1,200}$/.test(item[key]))return item[key];
  throw new HttpError(502,'invalid_video_upstream_response');
 }
-function publicVideo(value:Item,id:string,model:string):Item{
+function publicVideo(value:Item,id:string,model:string,request:Request):Item{
  const out:Item={id,request_id:id,model};
  for(const key of ['status','created_at','duration','resolution','progress','expires_at'])if(['string','number'].includes(typeof value[key]))out[key]=value[key];
  // Provider URLs are visible only after the owning key has resolved the task.
  if(value.video&&typeof value.video==='object'&&!Array.isArray(value.video)){
-  out.video={};for(const key of ['url','duration','resolution','respect_moderation'])if(['string','number','boolean'].includes(typeof value.video[key]))out.video[key]=value.video[key];
+  out.video={};for(const key of ['url','duration','resolution','respect_moderation'])if(['string','number','boolean'].includes(typeof value.video[key]))out.video[key]=key==='url'?publicVideoContentURL(request,id):value.video[key];
  }
  return out;
 }
@@ -71,18 +72,21 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
  const checked=async(name:string,args:Item)=>{const result=await db.rpc<Item>(name,args);if(!result)throw new HttpError(503,'database_unavailable');if(result.error)throw new HttpError(result.status??503,result.error);return result;};
  const policy=await checked('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:ip});
  if(policy.platform!=='grok'){await request.body?.cancel().catch(()=>{});throw new HttpError(400,'grok_video_requires_grok_group');}
+ const range=route.content?videoRange(request):undefined;
  if(route.id&&!taskId.test(route.id))throw new HttpError(400,'invalid_video_task');
  const binding=route.id?await checked('s2a_personal_video_resolve',{p_key_hash:keyHash,p_public_id:route.id,p_client_ip:ip}):undefined;
  if(binding&&route.operation&&binding.operation!==route.operation)throw new HttpError(404,'video_task_not_found');
+ if(binding&&binding.state!=='submitted'&&route.content)throw new HttpError(409,'video_task_not_submitted');
  if(binding&&binding.state!=='submitted')return json(200,{id:route.id,request_id:route.id,model:binding.model,status:binding.state==='rejected'?'failed':'creation_unknown'});
  const input=binding?undefined:videoInput(await readBody(request,requestBodyLimit(path,db.config.requestLimits)),route.operation!);
  const model=binding?.model??input!.model;
  const reservation=await checked('s2a_personal_acquire',{p_key_hash:keyHash,p_model:model,p_request_id:crypto.randomUUID(),p_client_ip:ip,p_billing_context:{policy_model:model,stream:false,...(binding?{video_task:route.id,count_only:true}:{})}});
- const account=reservation.account as Account&{type:string};let status=502,completed=false,dispatched=false,prepared=false;
+ const account=reservation.account as Account&{type:string};let status=502,completed=false,dispatched=false,prepared=false,deferred=false;
  const id=route.id??'video_'+crypto.randomUUID().replaceAll('-','')+crypto.randomUUID().replaceAll('-','').slice(0,8);
  const upstreamModel=binding?.upstream_model??reservation.upstream_model??mappedTarget(reservation.model_sources?.mapping??{},model,'grok')??model;
  const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
  if(context)Object.assign(context,{accountId:account.id,leaseId:reservation.lease_id,model,upstreamModel});
+ const finish=(responseStatus:number,usage:import('./stream.ts').Usage)=>checked('s2a_personal_finish',{p_lease_id:reservation.lease_id,p_status:responseStatus,p_outcome:usage.outcome,p_input_tokens:null,p_output_tokens:null,p_cache_creation_tokens:null,p_cache_read_tokens:null,p_cooldown_seconds:responseStatus===429?30:0,p_credential_version:account?.credential_version??null,p_upstream_model:upstreamModel}).then(()=>{});
  const record=(action:string,upstreamId?:string)=>checked('s2a_personal_video_create',{p_key_hash:keyHash,p_public_id:id,p_lease_id:reservation.lease_id,p_upstream_model:upstreamModel,p_operation:route.operation,p_action:action,p_upstream_id:upstreamId??null,p_client_ip:ip});
  try{
   if(account?.platform!=='grok')throw new HttpError(503,'video_account_unavailable');
@@ -90,8 +94,9 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
   let credentials=account.type==='apikey'?await decryptApiKeyCredentials(account,db.config.encryptionKey):await credentialsFor(db,account);
   const endpoint=binding?'/v1/videos/'+encodeURIComponent(binding.upstream_id):'/v1/videos/'+route.operation;
   const body=input?{...input,model:upstreamModel}:undefined;
-  const forward=()=>{
-   const outgoing=account.type==='apikey'?apiKeyRequest('grok',credentials as any,'videos',endpoint,body,request,signal):grokOAuthRequest(credentials as any,'videos',endpoint,body,request,signal);
+  const forward=(target=endpoint,content=false)=>{
+   const outgoing=account.type==='apikey'?apiKeyRequest('grok',credentials as any,'videos',target,body,request,signal):grokOAuthRequest(credentials as any,'videos',target,body,request,signal);
+   if(content){const headers=new Headers(outgoing.init.headers);headers.set('accept','*/*');if(range)headers.set('range',range);outgoing.init.headers=headers;}
    return accountFetch(db,account,outgoing.url,outgoing.init);
   };
   if(!binding){await record('prepare');prepared=true;}
@@ -109,14 +114,25 @@ export async function grokVideo(request:Request,path:string,token:string,db:Data
    throw new HttpError(status>=400&&status<500?status:502,'video_upstream_rejected');
   }
   const value=await responseJson(response);
+  if(route.content){
+   const signed=signedVideoURL(value.video?.url,binding!.upstream_id);
+   const headers=new Headers({accept:'*/*'});if(range)headers.set('range',range);
+   let download=signed?await accountFetch(db,account,signed,{method:'GET',headers,signal,redirect:'error'}):await forward(endpoint+'/content',true);
+   if(!signed&&download.status===401&&account.type!=='apikey'){
+    await download.body?.cancel();credentials=await credentialsFor(db,account,(credentials as {access_token:string}).access_token);download=await forward(endpoint+'/content',true);
+   }
+   status=download.status;
+   if(!download.ok&&status!==416){await download.body?.cancel();throw new HttpError(status>=400&&status<500?status:502,'video_content_rejected');}
+   const result=videoContentResponse(download,signal,finish);deferred=true;return result;
+  }
   if(!binding)await record('bind',providerVideoId(value));
   completed=true;
-  return json(response.status,publicVideo(value,id,model));
+  return json(response.status,publicVideo(value,id,model,request));
  }catch(error){
   const failure=error instanceof HttpError?error:request.signal.aborted?new HttpError(499,'request_cancelled'):signal.aborted?new HttpError(504,'video_request_timeout'):new HttpError(502,dispatched?'video_upstream_failed':'video_request_failed');
   status=failure.status;
   throw prepared?new VideoTaskError(status,failure.code,id):failure;
  }finally{
-  await checked('s2a_personal_finish',{p_lease_id:reservation.lease_id,p_status:status,p_outcome:completed?'completed':'failed',p_input_tokens:null,p_output_tokens:null,p_cache_creation_tokens:null,p_cache_read_tokens:null,p_cooldown_seconds:status===429?30:0,p_credential_version:account?.credential_version??null,p_upstream_model:upstreamModel});
+  if(!deferred)await finish(status,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:completed?'completed':'failed'});
  }
 }

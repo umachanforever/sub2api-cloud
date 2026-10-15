@@ -34,7 +34,7 @@ async function fixture({type='apikey',platform='grok',forward,resolve,accountId=
   if(refresh&&events.filter(e=>e.name==='fetch').length===1)return new Response('unauthorized',{status:401});
   return forward?forward(url,init):Response.json({request_id:'provider-task',status:'pending'});
  });
- const request=(path,body)=>handler(new Request('https://gateway'+path,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})}));
+ const request=(path,body,headers={},signal)=>handler(new Request('https://gateway'+path,{method:body===undefined?'GET':'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json',...headers},...(signal?{signal}:{}),...(body===undefined?{}:{body:JSON.stringify(body)})}));
  return {request,events,finishes,get stored(){return stored;}};
 }
 
@@ -95,7 +95,7 @@ test('a resolved task cannot dispatch through a different account',async()=>{
 });
 
 test('video input and route validation reject malformed models and traversal',()=>{
- assert.equal(videoRoute('/v1/videos/generations/x/content','GET'),undefined);
+ assert.equal(videoRoute('/v1/videos/generations/x/content','GET').content,true);
  assert.throws(()=>videoInput({model:'grok',prompt:'x',stream:true},'generations'),/invalid_video_model/);
  assert.throws(()=>videoInput({model:'grok',prompt:''},'generations'),/invalid_video_prompt/);
  assert.throws(()=>videoInput({model:'grok',prompt:'x'},'edits'),/video_input_required/);
@@ -109,4 +109,71 @@ test('OAuth video authentication rejection refreshes once without duplicating ta
  assert.equal(value.events.filter(e=>e.name==='prepare').length,1);assert.equal(value.events.filter(e=>e.name==='bind').length,1);
  const calls=value.events.filter(e=>e.name==='fetch');assert.equal(calls.length,2);assert.equal(new Headers(calls[1].init.headers).get('authorization'),'Bearer rotated-private');
  assert.equal(value.finishes.length,1);
+});
+
+const downloadBinding={state:'submitted',model:'grok-imagine-video',upstream_model:'grok-imagine-video',account_id:'1',operation:'generations',upstream_id:'provider-task'};
+const publicId='video_'+'a'.repeat(40);
+test('signed video downloads preserve ranges and never send account authorization to the CDN',async()=>{
+ const value=await fixture({resolve:downloadBinding,forward:(url,init)=>{
+  if(url.endsWith('/v1/videos/provider-task'))return Response.json({status:'done',video:{url:'https://vidgen.x.ai/video.mp4?signature=private'}});
+  assert.equal(url,'https://vidgen.x.ai/video.mp4?signature=private');const headers=new Headers(init.headers);assert.equal(headers.get('authorization'),null);assert.equal(headers.get('x-xai-token-auth'),null);assert.equal(headers.get('range'),'bytes=0-3');assert.equal(init.redirect,'error');
+  return new Response(new Uint8Array([0,1,2,3]),{status:206,headers:{'content-type':'video/mp4','content-range':'bytes 0-3/100','content-length':'4','accept-ranges':'bytes','set-cookie':'never-forward'}});
+ }});
+ const response=await value.request('/v1/videos/'+publicId+'/content',undefined,{range:'bytes=0-3'});
+ assert.equal(response.status,206);assert.equal(value.finishes.length,0);assert.equal(response.headers.get('content-range'),'bytes 0-3/100');assert.equal(response.headers.get('set-cookie'),null);
+ assert.deepEqual([...new Uint8Array(await response.arrayBuffer())],[0,1,2,3]);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'completed');
+});
+
+test('protected video content uses the owning account and supports empty range rejection',async()=>{
+ for(const status of [200,416]){
+  const value=await fixture({type:'oauth',resolve:downloadBinding,forward:(url,init)=>{
+   if(!url.endsWith('/content'))return Response.json({video:{url:'https://relay.example/v1/videos/provider-task/content'}});
+   assert.equal(url,'https://cli-chat-proxy.grok.com/v1/videos/provider-task/content');assert.equal(new Headers(init.headers).get('authorization'),'Bearer oauth-private');
+   return new Response(status===416?null:'video',{status,headers:{'content-type':'video/mp4','content-range':status===416?'bytes */4':'bytes 0-3/4'}});
+  }});
+  const response=await value.request('/videos/generations/'+publicId+'/content');assert.equal(response.status,status);assert.equal(await response.text(),status===416?'':'video');assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_status,status);
+ }
+});
+
+test('status video URLs expose the gateway content route instead of the provider signature',async()=>{
+ const value=await fixture({resolve:downloadBinding,forward:()=>Response.json({status:'done',video:{url:'https://vidgen.x.ai/provider-task.mp4?signature=private'}})});
+ const response=await value.request('/v1/videos/'+publicId);const body=await response.json();assert.equal(body.video.url,'https://gateway/v1/videos/'+publicId+'/content');assert.ok(!JSON.stringify(body).includes('signature'));
+});
+
+test('untrusted signed destinations and redirects fail without forwarding credentials',async()=>{
+ for(const url of ['http://vidgen.x.ai/video','https://evil.example/video','https://vidgen.x.ai.evil.example/video','https://user:secret@vidgen.x.ai/video','https://vidgen.x.ai:8443/video','//vidgen.x.ai/video']){
+  const value=await fixture({resolve:downloadBinding,forward:()=>Response.json({video:{url}})});
+  const response=await value.request('/v1/videos/'+publicId+'/content');assert.equal(response.status,502,url);assert.equal(value.events.filter(e=>e.name==='fetch').length,1);assert.equal(value.finishes.length,1);
+ }
+ const redirect=await fixture({resolve:downloadBinding,forward:url=>url.endsWith('/provider-task')?Response.json({video:{url:'https://vidgen.x.ai/video'}}):new Response(null,{status:302,headers:{location:'https://evil.example'}})});
+ assert.equal((await redirect.request('/v1/videos/'+publicId+'/content')).status,502);assert.equal(redirect.events.filter(e=>e.name==='fetch').length,2);
+});
+
+test('cancelled video downloads cancel upstream and release their account once',async()=>{
+ let cancelled=false;
+ const value=await fixture({resolve:downloadBinding,forward:url=>url.endsWith('/provider-task')?Response.json({video:{url:'https://vidgen.x.ai/video'}}):new Response(new ReadableStream({start(controller){controller.enqueue(new Uint8Array([1]));},cancel(){cancelled=true;}}),{headers:{'content-type':'video/mp4'}})});
+ const response=await value.request('/v1/videos/'+publicId+'/content');const reader=response.body.getReader();await reader.read();await reader.cancel();
+ assert.equal(cancelled,true);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'cancelled');
+});
+
+test('video content validates task state, ownership and range before any download',async()=>{
+ const pending=await fixture({resolve:{...downloadBinding,state:'creating'}});assert.equal((await pending.request('/v1/videos/'+publicId+'/content')).status,409);assert.equal(pending.events.length,0);
+ const invalid=await fixture({resolve:downloadBinding});assert.equal((await invalid.request('/v1/videos/'+publicId+'/content',undefined,{range:'invalid'})).status,400);assert.equal(invalid.events.length,0);
+ const unknown=await fixture();assert.equal((await unknown.request('/v1/videos/'+publicId+'/content')).status,404);assert.equal(unknown.events.length,0);
+});
+
+test('failed content streams sanitize errors and finish the lease as failed',async()=>{
+ let pulls=0;
+ const value=await fixture({resolve:downloadBinding,forward:url=>url.endsWith('/provider-task')?Response.json({video:{url:'https://vidgen.x.ai/video'}}):new Response(new ReadableStream({pull(controller){if(!pulls++)controller.enqueue(new Uint8Array([1]));else controller.error(new Error('provider-private'));}}),{headers:{'content-type':'video/mp4'}})});
+ const response=await value.request('/v1/videos/'+publicId+'/content');await assert.rejects(response.arrayBuffer(),error=>error.message==='video_download_failed');assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'failed');
+});
+
+test('protected content authentication can refresh without changing the bound account',async()=>{
+ let downloads=0;
+ const value=await fixture({type:'oauth',resolve:downloadBinding,forward:(url,init)=>{
+  if(!url.endsWith('/content'))return Response.json({status:'done'});
+  if(!downloads++)return new Response('unauthorized',{status:401});
+  assert.equal(new Headers(init.headers).get('authorization'),'Bearer rotated-private');return new Response('video',{headers:{'content-type':'video/mp4'}});
+ }});
+ const response=await value.request('/v1/videos/'+publicId+'/content');assert.equal(response.status,200);assert.equal(await response.text(),'video');assert.equal(downloads,2);assert.equal(value.finishes.length,1);
 });

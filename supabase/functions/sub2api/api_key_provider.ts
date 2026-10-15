@@ -60,7 +60,7 @@ export function apiKeyRequest(
     protocol === "models" &&
     new URL(request.url).searchParams.has("client_version")
   ) throw new HttpError(501, "codex_manifest_requires_oauth");
-  if(protocol==='videos'&&!/^\/v1\/videos(?:\/(?:generations|edits|extensions|[a-zA-Z0-9_-]{1,200}))?$/.test(path))throw new HttpError(400,'invalid_video_endpoint');
+  if(protocol==='videos'&&!/^\/v1\/videos(?:\/(?:generations|edits|extensions|[a-zA-Z0-9_-]{1,200})(?:\/content)?)?$/.test(path))throw new HttpError(400,'invalid_video_endpoint');
   if(protocol==='voice'){
     if(!/^\/v1\/(?:tts|stt)$/.test(path))throw new HttpError(400,'invalid_voice_endpoint');
     if(validated.base_url==='https://cli-chat-proxy.grok.com')validated.base_url='https://api.x.ai';

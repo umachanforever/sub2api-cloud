@@ -30,7 +30,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
-      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
+      if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|tts|stt|embeddings|images\/(?:generations|edits))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
