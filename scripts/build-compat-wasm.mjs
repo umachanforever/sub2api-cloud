@@ -2,7 +2,7 @@ import {spawnSync} from 'node:child_process';
 import {readFile,writeFile,mkdir,mkdtemp,rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {gzipSync} from 'node:zlib';
+import {gzipSync,gunzipSync} from 'node:zlib';
 
 const root=new URL('../',import.meta.url),backend=new URL('backend/',root),target=new URL('supabase/functions/sub2api/compat/',root),go=process.env.GO_BINARY??'go';
 const scratch=await mkdtemp(join(tmpdir(),'sub2api-compat-'));
@@ -31,7 +31,14 @@ try{
   if(!process.argv.includes('--check'))await mkdir(target,{recursive:true});
   for(const [name,body] of Object.entries(artifacts)){
     const path=new URL(name,target);
-    if(process.argv.includes('--check')){if(!(await readFile(path)).equals(body))throw Error('Original protocol WASM artifact differs: '+name);}
+    if(process.argv.includes('--check')){
+      const committed=await readFile(path);
+      // Node releases can produce different gzip bytes for identical WASM.
+      const matches=name==='compat.wasm.gz'
+        ?gunzipSync(committed).equals(gunzipSync(body))
+        :committed.equals(body);
+      if(!matches)throw Error('Original protocol WASM artifact differs: '+name);
+    }
     else await writeFile(path,body);
   }
   console.log('Original Go protocol converters and runtime verified');
