@@ -180,15 +180,15 @@ export function modelListFromManifest(input: unknown) {
   return { object: "list", data };
 }
 
-export function buildHeaders(credentials: OAuthCredentials): Headers {
+export function buildHeaders(credentials: OAuthCredentials, identity?: import("./codex_identity.ts").CodexIdentity): Headers {
   const headers = new Headers({
     authorization: `Bearer ${credentials.access_token}`,
     accept: "text/event-stream",
     "content-type": "application/json",
     "openai-beta": "responses=experimental",
-    originator: CODEX_ORIGINATOR,
-    version: CODEX_VERSION,
-    "user-agent": CODEX_USER_AGENT,
+    originator: identity?.originator ?? CODEX_ORIGINATOR,
+    version: identity?.version ?? CODEX_VERSION,
+    "user-agent": identity?.userAgent ?? CODEX_USER_AGENT,
   });
   if (credentials.chatgpt_account_id) {
     headers.set("chatgpt-account-id", credentials.chatgpt_account_id);

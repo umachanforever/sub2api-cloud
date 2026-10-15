@@ -129,7 +129,14 @@ BEGIN
     IF NOT FOUND THEN RETURN jsonb_build_object('error', 'account_unavailable'); END IF;
     RETURN jsonb_build_object('id', a.id::text, 'credential_storage', 'vault', 'credentials', a.credentials,
         'credential_version', a.s2a_credential_version, 'platform', a.platform, 'type', a.type,
-        'privacy_mode', a.extra->>'privacy_mode');
+        'privacy_mode', a.extra->>'privacy_mode',
+        'codex_settings', (SELECT jsonb_build_object(
+            'version',max(value) FILTER(WHERE key='openai_codex_client_version'),
+            'synced',max(value) FILTER(WHERE key='openai_codex_client_version_synced'),
+            'synced_at',max(updated_at) FILTER(WHERE key='openai_codex_client_version_synced'),
+            'auto_sync',max(value) FILTER(WHERE key='openai_codex_version_auto_sync_enabled'),
+            'user_agent',max(value) FILTER(WHERE key='openai_codex_user_agent')) FROM public.settings
+            WHERE key IN ('openai_codex_client_version','openai_codex_client_version_synced','openai_codex_version_auto_sync_enabled','openai_codex_user_agent')));
 END $$;
 
 CREATE OR REPLACE FUNCTION public.s2a_gateway_refresh_acquire(p_id bigint, p_version bigint, p_lock_id uuid) RETURNS boolean
@@ -204,4 +211,23 @@ ALTER FUNCTION public.s2a_gateway_refresh_acquire(bigint,bigint,uuid) OWNER TO s
 ALTER FUNCTION public.s2a_gateway_refresh_save(bigint,bigint,uuid,jsonb) OWNER TO s2a_management;
 ALTER FUNCTION public.s2a_gateway_refresh_release(bigint,uuid) OWNER TO s2a_management;
 ALTER FUNCTION public.s2a_gateway_privacy_save(bigint,bigint,text,text) OWNER TO s2a_management;
+CREATE OR REPLACE FUNCTION public.s2a_gateway_codex_version_save(p_version text) RETURNS jsonb
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE current_version text; saved_at timestamptz;
+BEGIN
+    IF p_version !~ '^[0-9]+[.][0-9]+[.][0-9]+$' OR length(p_version)>32 THEN RAISE EXCEPTION 'Invalid Codex version'; END IF;
+    IF EXISTS(SELECT FROM public.settings WHERE key='openai_codex_version_auto_sync_enabled' AND value='false') THEN RETURN '{}'::jsonb; END IF;
+    PERFORM pg_advisory_xact_lock(246810246);
+    SELECT value INTO current_version FROM public.settings WHERE key='openai_codex_client_version_synced';
+    IF current_version ~ '^[0-9]+[.][0-9]+[.][0-9]+$' AND string_to_array(current_version,'.')::bigint[] > string_to_array(p_version,'.')::bigint[] THEN
+        SELECT updated_at INTO saved_at FROM public.settings WHERE key='openai_codex_client_version_synced';
+        RETURN jsonb_build_object('version',current_version,'synced_at',saved_at);
+    END IF;
+    INSERT INTO public.settings(key,value,updated_at) VALUES('openai_codex_client_version_synced',p_version,clock_timestamp())
+    ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at RETURNING updated_at INTO saved_at;
+    RETURN jsonb_build_object('version',p_version,'synced_at',saved_at);
+END $$;
+ALTER FUNCTION public.s2a_gateway_codex_version_save(text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_gateway_codex_version_save(text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_gateway_codex_version_save(text) TO service_role;
 COMMIT;

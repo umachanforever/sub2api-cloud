@@ -1,3 +1,4 @@
+import { currentCodexIdentity } from "./codex_identity.ts";
 import { upstreamErrorCode } from "./upstream_errors.ts";
 import { validateCodexReasoning } from "./codex_models.ts";
 import { grokOAuthRequest } from './grok_oauth.ts';
@@ -15,7 +16,6 @@ import {
   buildHeaders,
   CODEX_MODELS_URL,
   CODEX_RESPONSES_URL,
-  CODEX_VERSION,
   modelListFromManifest,
   normalizeBody,
   type Platform,
@@ -324,13 +324,14 @@ export async function proxy(
           }
         }
         let credentials = await credentialsFor(db, account);
+        const identity = await currentCodexIdentity(db, account, credentials);
         const forward = () => {
-          const headers = buildHeaders(credentials);
+          const headers = buildHeaders(credentials, identity);
           if (models) headers.set("accept", "application/json");
           return accountFetch(db, account,
             models
               ? `${CODEX_MODELS_URL}?client_version=${
-                encodeURIComponent(clientVersion ?? CODEX_VERSION)
+                encodeURIComponent(clientVersion ?? identity.version)
               }`
               : CODEX_RESPONSES_URL,
             {
