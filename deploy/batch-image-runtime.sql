@@ -68,8 +68,45 @@ BEGIN
     UPDATE public.batch_image_jobs SET provider_job_name=p_name,status='submitted',submitted_at=coalesce(submitted_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
     RETURN jsonb_build_object('applied',true);
 END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_observed(p_id text,p_lease uuid,p_state text,p_output text DEFAULT NULL,p_error text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE; next_stage text; native_status text;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_lease_lost','status',409); END IF;
+    IF task.stage<>'poll' THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
+    IF p_state IS NULL OR p_state NOT IN ('queued','running','succeeded','failed','cancelled','expired')
+        OR (p_error IS NOT NULL AND p_error !~ '^[A-Z][A-Z0-9_]{0,99}$')
+        OR (p_output IS NOT NULL AND (length(p_output) NOT BETWEEN 1 AND 1024 OR p_output ~ '[[:cntrl:]]'))
+        THEN RETURN jsonb_build_object('error','invalid_batch_image_observation','status',400); END IF;
+    IF p_state='succeeded' AND p_output IS NULL THEN RETURN jsonb_build_object('error','batch_image_result_missing','status',400); END IF;
+    next_stage:=CASE WHEN p_state='succeeded' THEN 'index' WHEN p_state IN ('failed','cancelled','expired') THEN 'failed' ELSE 'poll' END;
+    native_status:=CASE WHEN p_state='succeeded' THEN 'indexing' WHEN p_state='queued' THEN 'submitted' ELSE p_state END;
+    UPDATE s2a_private.batch_image_runtime SET stage=next_stage,output_ref=coalesce(p_output,output_ref),error_code=p_error,
+        due_at=clock_timestamp()+CASE WHEN next_stage='poll' THEN interval '30 seconds' ELSE interval '0 seconds' END,
+        lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    UPDATE public.batch_image_jobs SET status=native_status,last_error_code=p_error,last_error_message=NULL,
+        started_at=CASE WHEN p_state='running' THEN coalesce(started_at,clock_timestamp()) ELSE started_at END,
+        finished_at=CASE WHEN next_stage='failed' THEN coalesce(finished_at,clock_timestamp()) ELSE finished_at END,
+        updated_at=clock_timestamp() WHERE batch_id=p_id;
+    RETURN jsonb_build_object('applied',true,'stage',next_stage);
+END $$;
+CREATE OR REPLACE FUNCTION public.s2a_batch_image_runtime_fail(p_id text,p_lease uuid,p_error text)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE task s2a_private.batch_image_runtime%ROWTYPE;
+BEGIN
+    SELECT * INTO task FROM s2a_private.batch_image_runtime WHERE batch_id=p_id FOR UPDATE;
+    IF NOT FOUND OR task.lease_id IS DISTINCT FROM p_lease OR task.lease_until IS NULL OR task.lease_until<=clock_timestamp()
+        THEN RETURN jsonb_build_object('error','batch_image_lease_lost','status',409); END IF;
+    IF task.stage IN ('completed','failed') THEN RETURN jsonb_build_object('error','batch_image_stage_conflict','status',409); END IF;
+    IF p_error IS NULL OR p_error !~ '^[A-Z][A-Z0-9_]{0,99}$' THEN RETURN jsonb_build_object('error','invalid_batch_image_error','status',400); END IF;
+    UPDATE s2a_private.batch_image_runtime SET stage='failed',error_code=p_error,lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
+    UPDATE public.batch_image_jobs SET status='failed',last_error_code=p_error,last_error_message=NULL,finished_at=coalesce(finished_at,clock_timestamp()),updated_at=clock_timestamp() WHERE batch_id=p_id;
+    RETURN jsonb_build_object('applied',true);
+END $$;
 DO $$ DECLARE fn regprocedure; BEGIN
-    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created') LOOP
+    FOR fn IN SELECT oid::regprocedure FROM pg_proc WHERE pronamespace='public'::regnamespace AND proname IN ('s2a_batch_image_runtime_claim','s2a_batch_image_runtime_checkpoint','s2a_batch_image_runtime_dispatch','s2a_batch_image_runtime_created','s2a_batch_image_runtime_observed','s2a_batch_image_runtime_fail') LOOP
         EXECUTE format('ALTER FUNCTION %s OWNER TO s2a_management',fn);
         EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC,anon,authenticated',fn);
         EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role',fn);

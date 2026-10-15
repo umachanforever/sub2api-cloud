@@ -24,5 +24,20 @@ BEGIN
     IF public.s2a_batch_image_runtime_created(ident,second_lease,'batches/one')->>'applied'<>'false' THEN RAISE EXCEPTION 'created replay'; END IF;
     IF public.s2a_batch_image_runtime_created(ident,second_lease,'batches/two')->>'error' IS DISTINCT FROM 'batch_image_stage_conflict' THEN RAISE EXCEPTION 'job overwritten'; END IF;
     IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND provider_job_name='batches/one' AND status='submitted') THEN RAISE EXCEPTION 'native job not updated'; END IF;
+    IF public.s2a_batch_image_runtime_observed(ident,second_lease,'succeeded')->>'error' IS DISTINCT FROM 'batch_image_result_missing' THEN RAISE EXCEPTION 'success without result'; END IF;
+    IF public.s2a_batch_image_runtime_observed(ident,second_lease,'running',NULL,'private message')->>'error' IS DISTINCT FROM 'invalid_batch_image_observation' THEN RAISE EXCEPTION 'provider message persisted'; END IF;
+    IF public.s2a_batch_image_runtime_observed(ident,second_lease,'running')->>'stage' IS DISTINCT FROM 'poll' THEN RAISE EXCEPTION 'poll failed'; END IF;
+    IF public.s2a_batch_image_runtime_observed(ident,second_lease,'failed')->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'released poll lease accepted'; END IF;
+    IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'poll ignored backoff'; END IF;
+    UPDATE s2a_private.batch_image_runtime SET due_at=clock_timestamp()-interval '1 second' WHERE batch_id=ident;
+    job:=public.s2a_batch_image_runtime_claim()->0;first_lease:=(job->>'lease_id')::uuid;
+    IF public.s2a_batch_image_runtime_observed(ident,first_lease,'succeeded','files/result')->>'stage' IS DISTINCT FROM 'index' THEN RAISE EXCEPTION 'result not queued for indexing'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='indexing' AND finished_at IS NULL) THEN RAISE EXCEPTION 'unindexed result marked finished'; END IF;
+    job:=public.s2a_batch_image_runtime_claim()->0;second_lease:=(job->>'lease_id')::uuid;
+    IF public.s2a_batch_image_runtime_fail(ident,second_lease,'private message')->>'error' IS DISTINCT FROM 'invalid_batch_image_error' THEN RAISE EXCEPTION 'unbounded failure accepted'; END IF;
+    IF public.s2a_batch_image_runtime_fail(ident,second_lease,'BATCH_RESULT_INVALID')->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'failure transition failed'; END IF;
+    IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'terminal task reclaimed'; END IF;
+    IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='failed' AND last_error_code='BATCH_RESULT_INVALID' AND last_error_message IS NULL AND finished_at IS NOT NULL) THEN RAISE EXCEPTION 'native terminal status mismatch'; END IF;
+
 END $$;
 ROLLBACK;
