@@ -8,3 +8,7 @@ additional_redirect_urls = ["http://127.0.0.1:3000/auth/callback", "http://127.0
 # The function validates its own Bearer key.
 verify_jwt = false
 import_map = "./functions/subscription-api/deno.json"
+
+[functions.sub2api]
+verify_jwt = false
+import_map = "./functions/subscription-api/deno.json"

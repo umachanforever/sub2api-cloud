@@ -2,7 +2,7 @@
 
 ## Services
 
-Supabase hosts PostgreSQL, Auth, and the `subscription-api` Edge Function. Docker Compose hosts the original Go management service, its Redis cache, and the Vue console on the local workstation. The AI endpoint has no dependency on those local services.
+Supabase hosts PostgreSQL, Auth, and the `sub2api` Edge Function. Docker Compose hosts the original Go management service, its Redis cache, and the Vue console on the local workstation. The AI endpoint has no dependency on those local services.
 
 The console is available at `http://127.0.0.1:3000`; the Go management endpoint binds to `127.0.0.1:8080`. Override `CONSOLE_PORT` and `MANAGEMENT_PORT` in `.env.local` if needed.
 

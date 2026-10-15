@@ -28,7 +28,7 @@ test('management outages do not fall back to the retired cloud administration AP
 test('Edge refuses all retired management routes without reading or changing business records',async()=>{
  const handler=createHandler({url:config.supabase_url,serviceKey:'secret',encryptionKey:'unused',adminIds:[]},()=>{throw Error('unexpected database access');});
  for(const method of ['GET','POST','PUT','DELETE']){
-  const r=await handler(new Request('https://edge/functions/v1/subscription-api/api/v1/admin/accounts',{method,headers:{authorization:'Bearer session'}}));
+  const r=await handler(new Request('https://edge/functions/v1/sub2api/api/v1/admin/accounts',{method,headers:{authorization:'Bearer session'}}));
   assert.equal(r.status,404);
  }
 });

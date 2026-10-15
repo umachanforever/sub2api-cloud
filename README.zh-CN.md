@@ -63,7 +63,7 @@ npm run up -- --cloud
 控制台会显示项目的云端网关地址：
 
 ```text
-https://<project-ref>.supabase.co/functions/v1/subscription-api
+https://<project-ref>.supabase.co/functions/v1/sub2api
 ```
 
 Codex 客户端标识会自动跟随官方稳定版。Supabase Cron 每 6 小时检查一次，本地服务关闭后仍会执行；请求处理也会刷新过期版本。界面中的自动同步开关同时控制两条更新路径，手动指定的客户端版本优先生效。实际模型可用性还取决于上游账号。
@@ -71,7 +71,7 @@ Codex 客户端标识会自动跟随官方稳定版。Supabase Cron 每 6 小时
 在原版控制台创建供应商账号，绑定对应平台的分组，再创建 API Key。从 `/v1/models` 选择可用模型；也可使用账号的模型映射，保留现有应用使用的模型名。
 
 ```sh
-export AI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/subscription-api'
+export AI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/sub2api'
 export AI_API_KEY='your-issued-api-key'
 curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
 ```

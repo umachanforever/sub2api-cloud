@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { verifyCloud } from '../scripts/verify-cloud.mjs';
 
-const config = { base_url: 'https://cloud.test/functions/v1/subscription-api/v1', api_key: 'sk-test', model: 'model-test' };
+const config = { base_url: 'https://cloud.test/functions/v1/sub2api/v1', api_key: 'sk-test', model: 'model-test' };
 function fixture({ terminal = true, unauthorized = 401, model = config.model, responseTerminal = true } = {}) {
   return async (url, init) => {
     assert.equal(init.redirect, 'error');

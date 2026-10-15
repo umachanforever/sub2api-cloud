@@ -102,7 +102,7 @@ test('Antigravity prefixed routes preserve native authentication and reject othe
     else assert.ok(['s2a_log_write', 's2a_personal_ops_error_record'].includes(name), name);
     return Response.json(null);
   });
-  const url = 'https://edge.test/functions/v1/subscription-api/antigravity/v1/messages';
+  const url = 'https://edge.test/functions/v1/sub2api/antigravity/v1/messages';
   const missing = await handler(new Request(url, { method: 'POST', body: JSON.stringify(body) }));
   assert.equal(missing.status, 401);
   const response = await handler(new Request(url, { method: 'POST', headers: { 'x-api-key': 'sk-client' }, body: JSON.stringify(body) }));

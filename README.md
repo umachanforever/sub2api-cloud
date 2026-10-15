@@ -67,7 +67,7 @@ Cloud mode needs only the local console, Go management service, and Redis when u
 Use the gateway endpoint displayed in the console:
 
 ```text
-https://<project-ref>.supabase.co/functions/v1/subscription-api
+https://<project-ref>.supabase.co/functions/v1/sub2api
 ```
 
 Codex client identity follows the official stable release automatically. Supabase Cron checks every six hours, even when local services are stopped; request handling also refreshes stale versions. The console automatic synchronization switch controls both paths, and an explicit client version retains precedence. Model availability also depends on the upstream account.
@@ -75,7 +75,7 @@ Codex client identity follows the official stable release automatically. Supabas
 Create a provider account, bind it to a matching provider group, and create an API key in the original console. Choose a model from `/v1/models`; account model mappings can preserve an application's existing model names.
 
 ```sh
-export AI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/subscription-api'
+export AI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/sub2api'
 export AI_API_KEY='your-issued-api-key'
 curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
 ```

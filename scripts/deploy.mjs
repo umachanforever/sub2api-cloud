@@ -55,7 +55,7 @@ export async function deploy(env = process.env, run = (args) => {
     await run(['db', 'push', '--yes']);
     if (env.SUB2API_DATA_MODEL === 'native') await provision(env);
     await run(['secrets', 'set', '--env-file', secretsFile, '--project-ref', config.ref]);
-    await run(['functions', 'deploy', 'subscription-api', '--project-ref', config.ref, '--use-api']);
+    await run(['functions', 'deploy', 'sub2api', '--project-ref', config.ref, '--use-api']);
     await configure(env);
   } finally {
     await rm(directory, { recursive: true, force: true });

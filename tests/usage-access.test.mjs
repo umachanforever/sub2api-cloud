@@ -11,7 +11,7 @@ const snapshot = (fetched = now) => ({ codex_usage_updated_at: new Date(fetched 
 const account = extra => ({ id: '42', platform: 'openai', type: 'oauth', credential_storage: 'vault', credential_version: 4,
   privacy_mode: 'training_off', credentials: { access_token: 'provider-secret', refresh_token: 'refresh-secret', expires_at: Date.now() + 3600_000, chatgpt_account_id: 'private-provider-id' },
   quota_snapshot: snapshot(), ...extra });
-const request = (query = '', headers = {}) => new Request('https://edge/functions/v1/subscription-api/v1/usage' + query, {
+const request = (query = '', headers = {}) => new Request('https://edge/functions/v1/sub2api/v1/usage' + query, {
   headers: { authorization: 'Bearer usage-token', ...headers },
 });
 const handler = fn => createHandler(config, async (url, init) => {

@@ -56,7 +56,7 @@ test("rejects unsupported methods after authentication", async () => {
 
 test("health routes work behind both public Supabase and Edge Runtime path prefixes", async () => {
   for (
-    const prefix of ["", "/subscription-api", "/functions/v1/subscription-api"]
+    const prefix of ["", "/subscription-api", "/functions/v1/sub2api"]
   ) {
     const response = await handler(
       new Request(`https://example.com${prefix}/health`),

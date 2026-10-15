@@ -15,7 +15,7 @@ test('privacy endpoint authenticates the exact service key before any database c
  }
  assert.equal(calls,0);
  const wrongMethod=await handler(new Request('https://gateway/internal/jobs/privacy',{headers:{authorization:'Bearer secret-service'}}));assert.equal(wrongMethod.status,405);assert.equal(calls,0);
- const response=await handler(new Request('https://gateway/functions/v1/subscription-api/internal/jobs/privacy',{method:'POST',headers:{authorization:'Bearer secret-service'}}));assert.equal(response.status,200);assert.deepEqual(await response.json(),{claimed:0,finished:0});assert.equal(calls,1);
+ const response=await handler(new Request('https://gateway/functions/v1/sub2api/internal/jobs/privacy',{method:'POST',headers:{authorization:'Bearer secret-service'}}));assert.equal(response.status,200);assert.deepEqual(await response.json(),{claimed:0,finished:0});assert.equal(calls,1);
 });
 test('a bounded queue batch finishes independent jobs and leaves failed completion leases to expire',async()=>{
  let active=0,peak=0;const finishes=[];

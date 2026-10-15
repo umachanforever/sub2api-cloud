@@ -25,10 +25,10 @@ test('native Supabase TOTP enrollment, AAL enforcement, step-up and removal', {
   const user = await request('/auth/v1/admin/users', { method: 'POST', body: { email, password, email_confirm: true } });
   try {
     const login = () => request('/auth/v1/token?grant_type=password', { key: publicKey, token: publicKey, method: 'POST', body: { email, password } });
-    const edge = (operation, token, body, status = 200) => request(`/functions/v1/subscription-api/api/v1/user/totp/${operation}`, {
+    const edge = (operation, token, body, status = 200) => request(`/functions/v1/sub2api/api/v1/user/totp/${operation}`, {
       token, key: publicKey, method: body === undefined ? 'GET' : 'POST', body, status,
     });
-    const profile = (token, status) => request('/functions/v1/subscription-api/api/v1/auth/me', { token, key: publicKey, status });
+    const profile = (token, status) => request('/functions/v1/sub2api/api/v1/auth/me', { token, key: publicKey, status });
     const initial = await login();
     const setup = await edge('setup', initial.access_token, { password });
     assert.match(setup.qr_code_url, /^otpauth:\/\/totp\//);

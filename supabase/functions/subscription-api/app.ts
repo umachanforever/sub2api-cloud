@@ -20,7 +20,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
     const dispatch = async (): Promise<Response> => {
     try {
       let pathname = new URL(request.url).pathname.replace(
-        /^(?:\/functions\/v1)?\/subscription-api(?=\/|$)/,
+        /^(?:\/functions\/v1)?\/(?:sub2api|subscription-api)(?=\/|$)/,
         "",
       ) || "/";
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);

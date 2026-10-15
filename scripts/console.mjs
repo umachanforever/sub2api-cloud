@@ -104,7 +104,7 @@ export function createConsoleServer({ config, fetchImpl = fetch, staticDir } = {
       let target =
         url.pathname.startsWith("/api/v1/")
           ? `${project.management_url}${url.pathname}${url.search}`
-          : `${project.supabase_url}/functions/v1/subscription-api${url.pathname}${url.search}`;
+          : `${project.supabase_url}/functions/v1/sub2api${url.pathname}${url.search}`;
       const auth = url.pathname.match(
         /^\/api\/v1\/auth\/(login\/2fa|login|register|forgot-password|reset-password|refresh|logout)$/,
       );
