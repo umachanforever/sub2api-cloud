@@ -243,6 +243,16 @@ test('Command Code explicit rules override discovery and failed discovery falls 
   }
 });
 
+for(const stream of [false,true])test(`Messages provider bridge preserves cache creation in client output and settlement (stream=${stream})`,async()=>{
+ const response={object:'response',model:'provider-test',status:'completed',output:[{type:'message',content:[{type:'output_text',text:'answer'}]}],usage:{input_tokens:12,output_tokens:3,cache_creation_input_tokens:4,input_tokens_details:{cached_tokens:2}}};
+ const value=await fixture('opencode_go',()=>sse([{type:'response.completed',response}]),{api_key:'provider-secret',api_protocol:'responses'});
+ const result=await value.request('/v1/messages',{model:'provider-test',stream,max_tokens:20,messages:[{role:'user',content:'hello'}]});
+ assert.equal(result.status,200);
+ const usage=stream?(await result.text()).split('\n').filter(line=>line.startsWith('data:')).map(line=>JSON.parse(line.slice(5))).find(event=>event.type==='message_delta').usage:(await result.json()).usage;
+ assert.deepEqual(usage,{input_tokens:6,output_tokens:3,cache_creation_input_tokens:4,cache_read_input_tokens:2});
+ assert.equal(value.finishes[0].p_input_tokens,12);assert.equal(value.finishes[0].p_cache_creation_tokens,4);assert.equal(value.finishes[0].p_cache_read_tokens,2);
+});
+
 for(const protocol of ['responses','messages'])test(`Gemini ${protocol} compatibility applies original AI Studio search-tool normalization before dispatch`,async()=>{
  const value=await fixture('gemini',(_url,init)=>{
   const sent=JSON.parse(init.body);assert.deepEqual(sent.tools,[{google_search:{}}]);

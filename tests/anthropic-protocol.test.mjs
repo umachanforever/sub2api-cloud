@@ -120,6 +120,18 @@ test("Messages output preserves tool JSON, stop reasons and separate cache usage
     "max_tokens",
   );
 });
+test('Messages JSON and SSE preserve cache creation separately from uncached and cached input',async()=>{
+ for(const total of [12,2]){
+  const response={...complete,usage:{input_tokens:total,output_tokens:3,cache_creation_input_tokens:4,input_tokens_details:{cached_tokens:2}}};
+  const expected={input_tokens:Math.max(0,total-6),output_tokens:3,cache_creation_input_tokens:4,cache_read_input_tokens:2};
+  assert.deepEqual(responseToMessages(response,'id').usage,expected);
+  const text=await new Response(streamMessages(source([{type:'response.created',response},{type:'response.completed',response}]),'id','gpt-test')).text();
+  const values=text.split('\n\n').filter(Boolean).map(frame=>JSON.parse(frame.split('\ndata: ')[1]));
+  assert.deepEqual(values[0].message.usage,expected);
+  assert.deepEqual(values.find(event=>event.type==='message_delta').usage,expected);
+ }
+});
+
 test("Messages SSE emits fragmented Unicode text, tool input, terminal usage and lifecycle", async () => {
   const events = [
     { type: "response.created", response: { model: "gpt-test" } },

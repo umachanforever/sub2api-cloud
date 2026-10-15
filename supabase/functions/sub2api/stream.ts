@@ -78,6 +78,8 @@ export class UsageObserver {
         ) this.usage.output = usage.output_tokens;
         const cached = usage?.input_tokens_details?.cached_tokens;
         if (Number.isSafeInteger(cached) && cached >= 0) this.usage.cacheRead = cached;
+        const created = usage?.cache_creation_input_tokens;
+        if (Number.isSafeInteger(created) && created >= 0) this.usage.cacheCreation = created;
       }
     } catch { /* Non-JSON SSE records do not affect forwarding. */ }
   }

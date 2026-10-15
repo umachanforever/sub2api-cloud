@@ -243,10 +243,11 @@ export function messagesToAPIResponses(body: Item): Item {
 
 function usage(response: Item): Item {
   const cached = response.usage?.input_tokens_details?.cached_tokens ?? 0;
+  const created = response.usage?.cache_creation_input_tokens ?? 0;
   return {
-    input_tokens: Math.max(0, (response.usage?.input_tokens ?? 0) - cached),
+    input_tokens: Math.max(0, (response.usage?.input_tokens ?? 0) - cached - created),
     output_tokens: response.usage?.output_tokens ?? 0,
-    cache_creation_input_tokens: 0,
+    cache_creation_input_tokens: created,
     cache_read_input_tokens: cached,
   };
 }
