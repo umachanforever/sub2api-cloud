@@ -73,6 +73,16 @@ export async function proxy(
   const requestId = errorContext.requestId;
   const keyHash = await hashKey(token);
   errorContext.keyHash = keyHash;
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  const requireGrokPlatform=async(code:string)=>{
+    const policy=await db.rpc<{platform?:string;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
+    if(!policy)throw new HttpError(503,'database_unavailable');
+    if(policy.error)throw new HttpError(policy.status??403,policy.error);
+    if(policy.platform!=='grok')throw new HttpError(400,code);
+  };
+
   const nativeGeminiModels = /^\/v1beta\/models(?:\/[^/]+)?$/.test(path) &&
     request.method === "GET";
   const modelId = /^\/(?:v1|v1beta)\/models\/([^/]+)$/.exec(path)?.[1];
@@ -135,6 +145,10 @@ export async function proxy(
   if (!models && !responses && !chat && !messages && !gemini && !images && !embeddings && !inputTokens && !messageTokens && !search && !grokSearch && !voice) {
     throw new HttpError(404, "not_found");
   }
+  if(voice){
+    try{await requireGrokPlatform('grok_voice_requires_grok_group');}
+    catch(error){await request.body?.cancel().catch(()=>{});throw error;}
+  }
   let body: Record<string, unknown> | undefined;
   let imageMultipart:FormData|undefined;
   let stream = true, includeUsage = false;
@@ -191,14 +205,7 @@ export async function proxy(
     }
   }
   const policyModel = models ? modelId ? decodeURIComponent(modelId) : "" : gemini ? gemini[1] : body!.model as string;
-  const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
-    request.headers.get("x-real-ip")?.trim() ||
-    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
-  if(grokSearch||voice){
-    const policy=await db.rpc<{platform?:string;error?:string;status?:number}>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIp});
-    if(policy.error)throw new HttpError(policy.status??403,policy.error);
-    if(policy.platform!=='grok')throw new HttpError(400,voice?'grok_voice_requires_grok_group':'grok_search_requires_grok_group');
-  }
+  if(grokSearch)await requireGrokPlatform('grok_search_requires_grok_group');
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const excluded: string[] = [];
   // One timeout covers all retries and the stream; the database lease lasts longer.

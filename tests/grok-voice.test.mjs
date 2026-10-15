@@ -45,3 +45,13 @@ test('non-Grok voice requests are rejected before account acquisition',async()=>
  let acquisitions=0;const handler=createBackendHandler(config,async(url)=>{if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'openai'});if(String(url).endsWith('/s2a_personal_acquire'))acquisitions++;return Response.json(null);});
  const response=await handler(new Request('https://gateway/v1/tts',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({text:'hello'})}));assert.equal(response.status,400);assert.equal(acquisitions,0);assert.equal((await response.json()).error.type,'grok_voice_requires_grok_group');
 });
+
+test('voice authentication rejects invalid and wrong-platform keys without reading the upload',async()=>{
+ for(const [policy,status] of [[{error:'invalid_api_key',status:401},401],[{error:'ip_forbidden',status:403},403],[{platform:'openai'},400],[null,503]]){
+  let reads=0,cancelled=false,acquisitions=0;
+  const upload=new ReadableStream({pull(){reads++;throw Error('Rejected upload was read');},cancel(){cancelled=true;}},{highWaterMark:0});
+  const handler=createBackendHandler(config,async(url)=>{if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json(policy);if(String(url).endsWith('/s2a_personal_acquire'))acquisitions++;return Response.json(null);});
+  const response=await handler(new Request('https://gateway/v1/stt',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'multipart/form-data; boundary=original'},body:upload,duplex:'half'}));
+  assert.equal(response.status,status);assert.equal(reads,0);assert.equal(cancelled,true);assert.equal(acquisitions,0);
+ }
+});
