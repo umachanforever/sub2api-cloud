@@ -331,13 +331,14 @@ BEGIN
             (value->>'source_line_number')::integer,(value->>'source_byte_offset')::bigint,(value->>'source_byte_length')::bigint,
             value->>'mime_type',value->>'file_extension',value->>'error_code',clock_timestamp(),0,previews->>(value->>'custom_id') FROM jsonb_array_elements(p_items);
     INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,
-        input_tokens,output_tokens,cache_read_tokens,stream,request_type,billing_mode,s2a_personal_details)
+        input_tokens,output_tokens,cache_read_tokens,stream,request_type,billing_mode,image_count,image_size,image_size_source,s2a_personal_details)
         SELECT task.user_id,task.key_id,task.account_id,task.group_id,
             encode(sha256(convert_to('batch:'||p_id||':'||(value->>'custom_id'),'UTF8')),'hex'),left(native.model,100),left(native.model,100),
             coalesce((value->'usage'->>'input_tokens')::integer,0),coalesce((value->'usage'->>'output_tokens')::integer,0),
-            coalesce((value->'usage'->>'cache_read_tokens')::integer,0),false,1,'token',
+            coalesce((value->'usage'->>'cache_read_tokens')::integer,0),false,1,'token',(value->>'image_count')::integer,
+            CASE WHEN (value->>'image_count')::integer>0 THEN '1K' END,CASE WHEN (value->>'image_count')::integer>0 THEN 'input' END,
             jsonb_build_object('operation','image_batch','batch_id',p_id,'custom_id',value->>'custom_id','usage',value->'usage')
-        FROM jsonb_array_elements(p_items) WHERE value ? 'usage' AND value->'usage'<>'{}'::jsonb;
+        FROM jsonb_array_elements(p_items) WHERE (value ? 'usage' AND value->'usage'<>'{}'::jsonb) OR (value->>'image_count')::integer>0;
     UPDATE public.batch_image_jobs SET status='completed',success_count=successes,fail_count=failures,cancelled_count=0,actual_cost=0,
         finished_at=clock_timestamp(),settled_at=clock_timestamp(),output_expires_at=clock_timestamp()+interval '24 hours',updated_at=clock_timestamp() WHERE batch_id=p_id;
     UPDATE s2a_private.batch_image_runtime SET stage='completed',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;

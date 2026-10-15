@@ -123,11 +123,15 @@ ROLLBACK;
 BEGIN;
 SET LOCAL ROLE s2a_management;
 DO $$
-DECLARE ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');lease uuid:=gen_random_uuid();items jsonb;r jsonb;
+DECLARE ident text:='imgbatch_'||replace(gen_random_uuid()::text,'-','');lease uuid:=gen_random_uuid();items jsonb;r jsonb;u bigint;g bigint;a bigint;k bigint;
 BEGIN
- INSERT INTO public.batch_image_jobs(batch_id,user_id,provider,model,item_count,status) VALUES(ident,1,'gemini_api','gemini-image',2,'indexing');
+ INSERT INTO public.users(email,password_hash,balance) VALUES('batch-index-'||gen_random_uuid()||'@example.invalid','!fixture',0) RETURNING id INTO u;
+ INSERT INTO public.groups(name,platform) VALUES('Batch index fixture','gemini') RETURNING id INTO g;
+ INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'batch-index-key-'||gen_random_uuid(),'Batch fixture',g) RETURNING id INTO k;
+ INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Index batch','gemini','apikey','{}',4) RETURNING id INTO a;
+ INSERT INTO public.batch_image_jobs(batch_id,user_id,provider,model,item_count,status) VALUES(ident,u,'gemini_api','gemini-image',2,'indexing');
  INSERT INTO s2a_private.batch_image_runtime(batch_id,user_id,key_id,group_id,account_id,key_hash,request_hash,stage,input_ref,provider_job_name,lease_id,lease_until)
- VALUES(ident,1,1,1,1,'fixture',repeat('a',64),'index','files/input','batches/result',lease,clock_timestamp()+interval '3 minutes');
+ VALUES(ident,u,k,g,a,'fixture',repeat('a',64),'index','files/input','batches/result',lease,clock_timestamp()+interval '3 minutes');
  INSERT INTO public.batch_image_items(job_id,custom_id,status,image_count) VALUES(ident,'cover','pending',0),(ident,'missing','pending',0);
  items:=jsonb_build_array(jsonb_build_object('custom_id','cover','status','success','image_count',1,'provider_source_object','batches/'||ident||'/item-1.json','mime_type','image/png','file_extension','png'),jsonb_build_object('custom_id','missing','status','failed','image_count',0,'error_code','PROVIDER_RESULT_MISSING'));
  IF public.s2a_batch_image_runtime_indexed(ident,gen_random_uuid(),items)->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'index stale lease'; END IF;
@@ -137,6 +141,7 @@ BEGIN
  IF EXISTS(SELECT 1 FROM public.batch_image_items WHERE job_id=ident AND status<>'pending') THEN RAISE EXCEPTION 'rejected index modified pending items'; END IF;
  IF public.s2a_batch_image_runtime_indexed(ident,lease,items)->>'applied' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'index completion failed'; END IF;
  IF (SELECT count(*) FROM public.batch_image_items WHERE job_id=ident)<>2 THEN RAISE EXCEPTION 'item count mismatch'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE s2a_personal_details->>'batch_id'=ident AND s2a_personal_details->>'custom_id'='cover' AND image_count=1 AND image_size='1K' AND image_size_source='input' AND s2a_personal_details->'usage'='null'::jsonb) THEN RAISE EXCEPTION 'image usage missing without provider token counts'; END IF;
  IF NOT EXISTS(SELECT 1 FROM public.batch_image_jobs WHERE batch_id=ident AND status='completed' AND success_count=1 AND fail_count=1 AND actual_cost=0 AND output_expires_at IS NOT NULL) THEN RAISE EXCEPTION 'native index totals mismatch'; END IF;
  UPDATE s2a_private.batch_image_runtime SET cleanup_requested=true WHERE batch_id=ident;
  r:=public.s2a_batch_image_cleanup_claim()->0;
