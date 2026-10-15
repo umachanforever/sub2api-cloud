@@ -1,13 +1,13 @@
 import {Database,HttpError} from './db.ts';
 import {getArtifact} from './artifact_storage.ts';
-export async function batchImageContent(db:Database,keyHash:string,batchID:string,customID:string,imageIndex=0,clientIP:string|null=null):Promise<Response>{
+export async function batchImageContent(db:Database,keyHash:string,batchID:string,customID:string,imageIndex=0,clientIP:string|null=null,signal:AbortSignal=AbortSignal.timeout(30000)):Promise<Response>{
  if(!/^imgbatch_[a-f0-9]{32}$/.test(batchID)||!Number.isSafeInteger(imageIndex)||imageIndex<0)throw new HttpError(400,'invalid_batch_image_content');
  const resolved=await db.rpc<Record<string,unknown>>('s2a_batch_image_content_resolve',{p_key_hash:keyHash,p_id:batchID,p_custom_id:customID,p_client_ip:clientIP});
  if(!resolved||typeof resolved!=='object'||Array.isArray(resolved))throw new HttpError(503,'invalid_batch_image_content');
  if(typeof resolved.error==='string')throw new HttpError(typeof resolved.status==='number'?resolved.status:503,resolved.error);
  if(resolved.custom_id!==customID||typeof resolved.path!=='string'||!new RegExp('^batches/'+batchID+'/item-([1-9]|[1-9][0-9]|1[0-9]{2}|200)[.]json$').test(resolved.path)||!Number.isSafeInteger(resolved.image_count)||(resolved.image_count as number)<1)throw new HttpError(503,'invalid_batch_image_content');
  if(imageIndex>=(resolved.image_count as number))throw new HttpError(400,'batch_image_index_out_of_range');
- const response=await getArtifact(db,resolved.path,AbortSignal.timeout(30000)),reader=response.body?.getReader();if(!reader)throw new HttpError(502,'invalid_batch_image_artifact');
+ const response=await getArtifact(db,resolved.path,signal),reader=response.body?.getReader();if(!reader)throw new HttpError(502,'invalid_batch_image_artifact');
  let value:any;
  try{
   const chunks:Uint8Array[]=[];let size=0;

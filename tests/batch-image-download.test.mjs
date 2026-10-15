@@ -22,3 +22,7 @@ with zipfile.ZipFile(io.BytesIO(sys.stdin.buffer.read())) as z:
 test('batch ZIP rejects denied, processing and expired tasks before streaming',async()=>{
  for(const snapshot of [{error:'batch_image_forbidden',status:403},{id,status:'running',items:[]},{id,status:'completed',items:[],output_expires_at:'2000-01-01T00:00:00Z'}]){let calls=0;const db=new Database({url:'https://db.invalid',serviceKey:'service'},async()=>{calls++;return Response.json(snapshot);});await assert.rejects(downloadBatchImages(db,'hash',id));assert.equal(calls,1);}
 });
+test('client ZIP item caps reject excess successful items before reading media',async()=>{
+ let calls=0;const db=new Database({url:'https://db.invalid',serviceKey:'service'},async()=>{calls++;return Response.json({id,status:'completed',items:[{custom_id:'a',status:'success',image_count:1},{custom_id:'b',status:'success',image_count:1}]});});
+ await assert.rejects(downloadBatchImages(db,'hash',id,null,{maxItems:1}),/batch_image_zip_too_many_items/);assert.equal(calls,1);
+});
