@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {originalChatBridgeCount,originalGeminiBridge} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+import {originalChatBridgeCount,originalGeminiBridge,originalGeminiRestBody} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+
+test('original AI Studio normalization rewrites search tools without changing Vertex/Code Assist bodies',async()=>{
+ const body={contents:[{parts:[{text:'hello'}]}],tools:[{googleSearch:{}},{functionDeclarations:[{name:'lookup'}]}]};
+ const result=await originalGeminiRestBody(body);
+ assert.deepEqual(result.tools[0],{google_search:{}});assert.deepEqual(result.tools[1],body.tools[1]);
+ assert.deepEqual(body.tools[0],{googleSearch:{}});assert.deepEqual(result.contents,body.contents);
+});
 
 test('Gemini streaming bridge handles cumulative text, split custom tool arguments, usage and truncation',async()=>{
  for(const truncated of [false,true]){

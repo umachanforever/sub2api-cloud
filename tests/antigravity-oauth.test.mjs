@@ -14,7 +14,7 @@ function sse() {
   let offset = 0;
   return new Response(new ReadableStream({ pull(c) { if (offset === bytes.length) c.close(); else c.enqueue(bytes.slice(offset, ++offset)); } }), { headers: { 'content-type': 'text/event-stream', 'set-cookie': 'never-forward-cookie' } });
 }
-async function fixture({ stream = false, expired = false, reject = false, fallback = false, models = false } = {}) {
+async function fixture({ stream = false, expired = false, reject = false, fallback = false, models = false, protocol='native' } = {}) {
   let credentials = { access_token: 'old-provider-token', refresh_token: 'private-refresh', expires_at: Date.now() + (expired ? -1000 : 3600000), project_id: 'private-project', metadata: { preserved: true } };
   let version = 1, refreshes = 0;
   const calls = [], saved = [], finished = [];
@@ -57,8 +57,8 @@ async function fixture({ stream = false, expired = false, reject = false, fallba
       return sse();
     },
   };
-  const path = models ? '/v1/models' : '/v1beta/models/alias:' + (stream ? 'streamGenerateContent' : 'generateContent');
-  const request = new Request('https://gateway.test' + path, { method: models ? 'GET' : 'POST', ...(models ? {} : { body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: 'Hello' }] }], systemInstruction: { parts: [{ text: 'Retain caller instructions' }] } }) }) });
+  const path = protocol!=='native'?'/v1/'+protocol:models ? '/v1/models' : '/v1beta/models/alias:' + (stream ? 'streamGenerateContent' : 'generateContent');
+  const request = new Request('https://gateway.test' + path, { method: models ? 'GET' : 'POST', ...(models ? {} : { body: JSON.stringify(protocol==='native'?{ contents: [{ role: 'user', parts: [{ text: 'Hello' }] }], systemInstruction: { parts: [{ text: 'Retain caller instructions' }] } }:{model:'alias',stream,...(protocol==='responses'?{input:'Hello',instructions:'Retain caller instructions'}:{messages:[{role:'system',content:'Retain caller instructions'},{role:'user',content:'Hello'}]})}) }) });
   const response = await proxy(request, path, 'existing-key', db, { requestId: crypto.randomUUID(), started: Date.now() });
   return { response, text: await response.text(), calls, saved, finished, refreshes };
 }
@@ -101,4 +101,8 @@ test('Antigravity private client configuration is paired and installed by the de
   assert.deepEqual(googleOAuthClients(env), { antigravity: { clientId: 'test-id', clientSecret: 'test-secret' } });
   assert.equal(oauthSecrets(env), 'ANTIGRAVITY_OAUTH_CLIENT_ID=test-id\nANTIGRAVITY_OAUTH_CLIENT_SECRET=test-secret\n');
   assert.throws(() => googleOAuthClients({ ANTIGRAVITY_OAUTH_CLIENT_ID: 'incomplete' }), /together/);
+});
+
+for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`Antigravity ${protocol} bridge stream=${stream} retains alias, envelope and usage`,async()=>{
+ const result=await fixture({protocol,stream});assert.equal(result.response.status,200);assert.match(result.text,/你好/);assert.match(result.text,/世界/);assert.doesNotMatch(result.text,/private-project|private-trace|provider-token/);if(!stream)JSON.parse(result.text);assert.equal(result.finished[0].p_input_tokens,7);assert.equal(result.finished[0].p_output_tokens,5);assert.equal(result.finished[0].p_cache_read_tokens,4);
 });

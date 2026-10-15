@@ -32,6 +32,9 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "gemini_rest" {
+		return json.RawMessage(normalizeGeminiRequestForAIStudio(input.Body)), nil
+	}
 	if input.Operation == "open_gemini" {
 		opened, err := handle(request{Operation: "open_anthropic", Body: input.Body})
 		if err != nil {

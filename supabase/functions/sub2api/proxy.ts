@@ -1,6 +1,6 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
-import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,type OriginalChatBridge} from './original_chat_bridge.ts';
+import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,originalGeminiRestBody,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {invalidateVertexTokenContext} from './vertex_auth.ts';
 import {providerCatalogProtocols} from './provider_catalog_lookup.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
@@ -469,7 +469,7 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      const nativeAnthropicBridge=platform==='anthropic'&&!apiKey&&(chat||protocol==='responses');
+      const nativeAnthropicBridge=(platform==='anthropic'||platform==='antigravity')&&!apiKey&&(chat||protocol==='responses');
       const vertexCache={scope:db,identity:JSON.stringify([account.id,account.credential_version,account.proxy_id??null])};
       const nativeGeminiBridge=platform==='gemini'&&(chat||messages||protocol==='responses');
       const geminiBridgePath='/v1beta/models/'+encodeURIComponent(upstreamModel)+':streamGenerateContent';
@@ -529,6 +529,7 @@ async function proxyWithIdentity(
           let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
           chatBridge=await originalAnthropicBridge(source,keyHash);outgoingBody=chatBridge.body;
         }
+        if(nativeGeminiBridge)outgoingBody=await originalGeminiRestBody(outgoingBody!);
         native = apiKeyRequest(
           platform,
           credentials,
@@ -564,7 +565,7 @@ async function proxyWithIdentity(
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
           if (platform === 'antigravity') {
-            const outgoing = antigravityOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal, protocol === "messages" ? body?.model as string : undefined);
+            const outgoing = antigravityOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, nativeAnthropicBridge?anthropicBody:forwardedBody, request, signal, protocol === 'messages'||nativeAnthropicBridge ? body?.model as string : undefined);
             if (outgoing.upstreamModel) {
               dispatchedModel = outgoing.upstreamModel;
               errorContext.upstreamModel = dispatchedModel;
@@ -574,10 +575,11 @@ async function proxyWithIdentity(
             upstreamEndpoint=usageEndpoint(outgoing.url);
             return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
           }
+          const googleBody=nativeGeminiBridge&&(!(credentials as {project_id?:string}).project_id||(credentials as {oauth_type?:string}).oauth_type==='ai_studio')?await originalGeminiRestBody(geminiBody!):geminiBody;
           const outgoing = platform === "grok"
             ? grokOAuthRequest(credentials, protocol, forwardedPath, imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody, request, signal)
             : platform === "gemini"
-            ? googleOAuthRequest(credentials, nativeGeminiBridge?'gemini':protocol, nativeGeminiBridge?geminiBridgePath:forwardedPath, geminiBody, request, signal)
+            ? googleOAuthRequest(credentials, nativeGeminiBridge?'gemini':protocol, nativeGeminiBridge?geminiBridgePath:forwardedPath, googleBody, request, signal)
             : anthropicOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, anthropicBody, request, signal);
           native = outgoing;
             upstreamEndpoint=usageEndpoint(outgoing.url);

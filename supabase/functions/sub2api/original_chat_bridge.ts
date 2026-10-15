@@ -76,6 +76,7 @@ export type OriginalChatBridge={body:Item;close():void;response(upstream:Respons
 export async function originalChatBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'chat');}
 export async function originalAnthropicBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'anthropic');}
 export async function originalGeminiBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'gemini');}
+export async function originalGeminiRestBody(body:Item):Promise<Item>{return (await converter())('gemini_rest',body);}
 async function originalBridge(body:Item,scope:string,protocol:string):Promise<OriginalChatBridge>{
   if(Array.isArray(body.input))rememberReasoning(scope,{response:{output:body.input}});
   const call=await converter(),opened=call(`open_${protocol}`,body,undefined,rememberedReasoning(scope,body.input));
