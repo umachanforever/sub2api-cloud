@@ -31,6 +31,9 @@ type AntigravityAuthURLResult struct {
 
 // GenerateAuthURL 生成 Google OAuth 授权链接
 func (s *AntigravityOAuthService) GenerateAuthURL(ctx context.Context, proxyID *int64) (*AntigravityAuthURLResult, error) {
+	if antigravity.ClientID == "" {
+		return nil, fmt.Errorf("set ANTIGRAVITY_OAUTH_CLIENT_ID and ANTIGRAVITY_OAUTH_CLIENT_SECRET before authorizing an account")
+	}
 	state, err := antigravity.GenerateState()
 	if err != nil {
 		return nil, fmt.Errorf("生成 state 失败: %w", err)

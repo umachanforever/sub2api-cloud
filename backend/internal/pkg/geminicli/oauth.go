@@ -170,6 +170,9 @@ func EffectiveOAuthConfig(cfg OAuthConfig, oauthType string) (OAuthConfig, error
 	// Fall back to built-in Gemini CLI OAuth client when not configured.
 	// SECURITY: This repo does not embed the built-in client secret; it must be provided via env.
 	if effective.ClientID == "" && effective.ClientSecret == "" {
+		if GeminiCLIOAuthClientID == "" {
+			return OAuthConfig{}, infraerrors.New(http.StatusBadRequest, "GEMINI_OAUTH_CLIENT_NOT_CONFIGURED", "Set GEMINI_CLI_OAUTH_CLIENT_ID and GEMINI_CLI_OAUTH_CLIENT_SECRET or configure a custom OAuth client")
+		}
 		secret := strings.TrimSpace(GeminiCLIOAuthClientSecret)
 		if secret == "" {
 			if v, ok := os.LookupEnv(GeminiCLIOAuthClientSecretEnv); ok {

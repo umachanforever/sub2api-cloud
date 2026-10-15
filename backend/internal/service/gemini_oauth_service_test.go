@@ -15,6 +15,11 @@ import (
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 )
 
+func init() {
+	geminicli.GeminiCLIOAuthClientID = "test-gemini-client"
+	geminicli.GeminiCLIOAuthClientSecret = ""
+}
+
 // =====================
 // 保留原有测试
 // =====================

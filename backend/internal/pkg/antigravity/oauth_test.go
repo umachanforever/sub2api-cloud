@@ -13,6 +13,11 @@ import (
 	"time"
 )
 
+func init() {
+	ClientID = "test-antigravity-client"
+	defaultClientSecret = "test-antigravity-secret"
+}
+
 // ---------------------------------------------------------------------------
 // getClientSecret
 // ---------------------------------------------------------------------------
@@ -680,14 +685,14 @@ func TestConstants_值正确(t *testing.T) {
 	if UserInfoURL != "https://www.googleapis.com/oauth2/v2/userinfo" {
 		t.Errorf("UserInfoURL 不匹配: got %s", UserInfoURL)
 	}
-	if ClientID != "test-antigravity-oauth-client-id" {
+	if ClientID != "test-antigravity-client" {
 		t.Errorf("ClientID 不匹配: got %s", ClientID)
 	}
 	secret, err := getClientSecret()
 	if err != nil {
 		t.Fatalf("getClientSecret 应返回默认值，但报错: %v", err)
 	}
-	if secret != "test-antigravity-oauth-client-secret" {
+	if secret != "test-antigravity-secret" {
 		t.Errorf("默认 client_secret 不匹配: got %s", secret)
 	}
 	if RedirectURI != "http://localhost:8085/callback" {

@@ -8,6 +8,11 @@ import (
 	"time"
 )
 
+func init() {
+	GeminiCLIOAuthClientID = "test-gemini-client"
+	GeminiCLIOAuthClientSecret = ""
+}
+
 // ---------------------------------------------------------------------------
 // SessionStore 测试
 // ---------------------------------------------------------------------------
@@ -408,22 +413,11 @@ func TestBuildAuthorizationURL_WithProjectID(t *testing.T) {
 	}
 }
 
-func TestBuildAuthorizationURL_UsesBuiltinSecretFallback(t *testing.T) {
+func TestBuildAuthorizationURL_RequiresConfiguredSecret(t *testing.T) {
 	t.Setenv(GeminiCLIOAuthClientSecretEnv, "")
-
-	authURL, err := BuildAuthorizationURL(
-		OAuthConfig{},
-		"test-state",
-		"test-challenge",
-		"https://example.com/callback",
-		"",
-		"code_assist",
-	)
-	if err != nil {
-		t.Fatalf("BuildAuthorizationURL() 不应报错: %v", err)
-	}
-	if !strings.Contains(authURL, "client_id="+GeminiCLIOAuthClientID) {
-		t.Errorf("应使用内置 Gemini CLI client_id，实际 URL: %s", authURL)
+	_, err := BuildAuthorizationURL(OAuthConfig{}, "state", "challenge", "https://example.com/callback", "", "code_assist")
+	if err == nil || !strings.Contains(err.Error(), "GEMINI_CLI_OAUTH_CLIENT_SECRET_MISSING") {
+		t.Fatalf("Expected a missing-secret configuration error, got %v", err)
 	}
 }
 
@@ -688,16 +682,9 @@ func TestEffectiveOAuthConfig_WhitespaceTriming(t *testing.T) {
 
 func TestEffectiveOAuthConfig_NoEnvSecret(t *testing.T) {
 	t.Setenv(GeminiCLIOAuthClientSecretEnv, "")
-
-	cfg, err := EffectiveOAuthConfig(OAuthConfig{}, "code_assist")
-	if err != nil {
-		t.Fatalf("不设置环境变量时应回退到内置 secret，实际报错: %v", err)
-	}
-	if strings.TrimSpace(cfg.ClientSecret) == "" {
-		t.Error("ClientSecret 不应为空")
-	}
-	if cfg.ClientID != GeminiCLIOAuthClientID {
-		t.Errorf("ClientID 应回退为内置客户端 ID，实际: %q", cfg.ClientID)
+	_, err := EffectiveOAuthConfig(OAuthConfig{}, "code_assist")
+	if err == nil || !strings.Contains(err.Error(), "GEMINI_CLI_OAUTH_CLIENT_SECRET_MISSING") {
+		t.Fatalf("Expected a missing-secret configuration error, got %v", err)
 	}
 }
 
