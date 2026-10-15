@@ -82,7 +82,8 @@ export async function proxy(
       decoded === ".."
     ) throw new HttpError(400, "invalid_model_id");
   }
-  const models = (path === "/v1/models" || !!modelId || nativeGeminiModels) &&
+  const codexModels = path === "/backend-api/codex/models";
+  const models = (codexModels || path === "/v1/models" || !!modelId || nativeGeminiModels) &&
     request.method === "GET";
   const messageTokens = ["/v1/messages/count_tokens", "/messages/count_tokens"].includes(path) && request.method === "POST";
   const inputTokens = ["/v1/responses/input_tokens", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(path) && request.method === "POST";
@@ -454,7 +455,7 @@ export async function proxy(
         return json(
           200,
           model ??
-            (clientVersion !== null ? { models: manifest.models } : catalog),
+            (clientVersion !== null || codexModels ? { models: manifest.models } : catalog),
         );
       }
       // Codex can omit Content-Type on a successful SSE response.

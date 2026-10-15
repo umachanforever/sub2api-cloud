@@ -84,3 +84,16 @@ test('an allowed OAuth single model absent from the source finishes its lease as
  });
  assert.equal((await handler(request('/v1/models/missing'))).status,404);assert.equal(finished.p_status,404);assert.equal(finished.p_outcome,'failed');
 });
+
+test('Codex direct model discovery returns its manifest without requiring a client_version query',async()=>{
+ const encrypted=await encryptCredentials({access_token:'token',refresh_token:'refresh',expires_at:Date.now()+3600000,chatgpt_account_id:'account'},config.encryptionKey);
+ let finished=0;
+ const handler=app((url,init)=>{
+  if(url.pathname.endsWith('/s2a_acquire'))return Response.json({lease_id:id,account:{id,...encrypted,type:'oauth',platform:'openai',credential_version:1},model_allowlist:{enabled:true,models:['gpt-6.1-sol']}});
+  if(url.pathname.endsWith('/s2a_finish')){finished++;return Response.json(null);}
+  assert.equal(url.pathname,'/backend-api/codex/models');assert.ok(url.searchParams.get('client_version'));
+  return Response.json({models:[{slug:'gpt-6.1-sol',display_name:'Keep',instructions:'preserved'},{slug:'blocked'}]});
+ });
+ const response=await handler(request('/backend-api/codex/models'));assert.equal(response.status,200);
+ const body=await response.json();assert.equal(body.data,undefined);assert.deepEqual(body.models.map(m=>m.slug),['gpt-6.1-sol']);assert.equal(body.models[0].instructions,'preserved');assert.equal(finished,1);
+});
