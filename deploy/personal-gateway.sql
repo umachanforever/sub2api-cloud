@@ -457,6 +457,7 @@ CREATE TABLE IF NOT EXISTS s2a_private.cache_creation_intents (
     group_id bigint NOT NULL,account_id bigint NOT NULL,model text NOT NULL,upstream_model text NOT NULL,
     display_name text NOT NULL,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),completed_at timestamptz
 );
+ALTER TABLE s2a_private.cache_creation_intents ADD COLUMN IF NOT EXISTS abandoned_at timestamptz;
 ALTER TABLE s2a_private.cache_creation_intents OWNER TO s2a_management;
 ALTER TABLE s2a_private.cache_creation_intents ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.cache_creation_intents FROM PUBLIC,anon,authenticated,service_role;
@@ -484,10 +485,16 @@ BEGIN
     IF NOT FOUND OR intent.lease_id<>lease.id OR intent.upstream_model<>p_upstream_model OR intent.display_name<>p_display_name THEN
         RETURN jsonb_build_object('error','cache_creation_conflict','status',409);
     END IF;
+    IF p_action='abandon' THEN
+        IF intent.completed_at IS NOT NULL THEN RETURN jsonb_build_object('error','cache_creation_conflict','status',409); END IF;
+        UPDATE s2a_private.cache_creation_intents SET abandoned_at=coalesce(abandoned_at,clock_timestamp()) WHERE public_id=p_public_id;
+        RETURN jsonb_build_object('abandoned',true);
+    END IF;
+    IF intent.abandoned_at IS NOT NULL THEN RETURN jsonb_build_object('error','cache_creation_conflict','status',409); END IF;
     IF p_action='prepare' THEN RETURN jsonb_build_object('prepared',true); END IF;
     IF p_action<>'complete' OR p_action IS NULL OR p_upstream_name IS NULL OR (length(p_upstream_name)>495 OR p_upstream_name !~ '^cachedContents/[a-zA-Z0-9_-]+$')
         OR p_expire_time IS NULL OR NOT isfinite(p_expire_time) OR p_expire_time<=clock_timestamp() OR p_expire_time>clock_timestamp()+interval '24 hours 5 seconds'
-        OR p_token_count IS NULL OR p_token_count<0 THEN RETURN jsonb_build_object('error','invalid_cache_upstream_response','status',400); END IF;
+        OR p_token_count IS NULL OR p_token_count<=0 THEN RETURN jsonb_build_object('error','invalid_cache_upstream_response','status',400); END IF;
     IF intent.completed_at IS NOT NULL THEN
         IF NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id=p_public_id AND upstream_name=p_upstream_name
             AND expire_time=p_expire_time AND total_token_count=p_token_count) THEN RETURN jsonb_build_object('error','cache_creation_conflict','status',409); END IF;

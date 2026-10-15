@@ -54,7 +54,19 @@ export async function geminiCacheCreate(request:Request,token:string,db:Database
    if(!response.ok){await response.body?.cancel();retry=[401,403,429].includes(status)||status>=500;throw new HttpError(status>=500?502:status,'cached_content_create_failed');}
    let metadata:Item;
    try{metadata=await readBody(new Request('https://cache.invalid',{method:'POST',body:response.body,duplex:'half'} as RequestInit),4*1048576);}catch{throw new HttpError(502,'invalid_cache_upstream_response');}
-   if(typeof metadata.name!=='string'||!/^cachedContents\/[a-zA-Z0-9_-]{1,480}$/.test(metadata.name)||typeof metadata.expireTime!=='string'||!Number.isFinite(Date.parse(metadata.expireTime))||Date.parse(metadata.expireTime)<=Date.now()||Date.parse(metadata.expireTime)>Date.now()+86405000||!Number.isSafeInteger(metadata.usageMetadata?.totalTokenCount)||metadata.usageMetadata.totalTokenCount<0)throw new HttpError(502,'invalid_cache_upstream_response');
+   const validName=typeof metadata.name==='string'&&/^cachedContents\/[a-zA-Z0-9_-]{1,480}$/.test(metadata.name);
+   if(!validName||typeof metadata.expireTime!=='string'||!Number.isFinite(Date.parse(metadata.expireTime))||Date.parse(metadata.expireTime)<=Date.now()||Date.parse(metadata.expireTime)>Date.now()+86405000||!Number.isSafeInteger(metadata.usageMetadata?.totalTokenCount)||metadata.usageMetadata.totalTokenCount<=0){
+    // No binding has been committed: safely remove a named but unusable resource.
+    if(validName){
+     try{
+      const cleanup=apiKeyRequest('gemini',credentials as ApiKeyCredentials,'gemini','/v1beta/'+metadata.name,undefined,request,AbortSignal.timeout(20000));
+      cleanup.init.method='DELETE';
+      const removed=await accountFetch(db,account,cleanup.url,cleanup.init);await removed.body?.cancel();
+      if(removed.ok||removed.status===404)await db.rpc<Item>('s2a_personal_cache_create',{...args,p_action:'abandon'});
+     }catch{console.error('cache_creation_cleanup_pending');}
+    }
+    throw new HttpError(502,'invalid_cache_upstream_response');
+   }
    let saved:Item|undefined;
    for(let persist=0;persist<2;persist++){
     try{saved=await db.rpc<Item>('s2a_personal_cache_create',{...args,p_action:'complete',p_upstream_name:metadata.name,p_expire_time:metadata.expireTime,p_token_count:metadata.usageMetadata.totalTokenCount});if(saved?.error)throw new HttpError(saved.status??503,saved.error);if(saved?.created!==true)throw new HttpError(503,'cache_creation_persistence_failed');break;}
