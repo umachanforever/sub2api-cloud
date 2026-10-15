@@ -6,7 +6,7 @@ const id='imgbatch_'+'a'.repeat(32);
 test('batch routes share hashed key authentication for reads, pagination and mutations',async()=>{
  const seen=[],db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},async(url,init)=>{const args=JSON.parse(init.body);seen.push([String(url).split('/').at(-1),args]);assert.match(args.p_key_hash,/^[a-f0-9]{64}$/);assert.ok(!init.body.includes('client-secret'));return Response.json({id,items:[{custom_id:'ok',status:'success'},{custom_id:'bad',status:'failed'}]});});
  for(const [path,method,rpc] of [['/images/batches','GET','list'],[`/v1/images/batches/${id}`,'GET','read'],[`/v1/images/batches/${id}/cancel`,'POST','cancel'],[`/v1/images/batches/${id}/outputs`,'DELETE','delete'],[`/v1/images/batches/${id}`,'DELETE','delete']]){assert.equal((await batchImageRoute(new Request('https://gateway.invalid'+path,{method}),path,'client-secret',db)).status,200);assert.equal(seen.at(-1)[0],'s2a_batch_image_'+rpc);}
- const path=`/v1/images/batches/${id}/items`,response=await batchImageRoute(new Request('https://gateway.invalid'+path+'?status=failed'),path,'client-secret',db);assert.equal((await response.json()).items[0].custom_id,'bad');
+ const path=`/v1/images/batches/${id}/items`,response=await batchImageRoute(new Request('https://gateway.invalid'+path+'?status=failed'),path,'client-secret',db);assert.equal((await response.json()).data[0].custom_id,'bad');
 });
 test('batch routes reject missing credentials and invalid pagination or methods before mutation',async()=>{
  const db=new Database({url:'https://db.invalid',serviceKey:'service',dataModel:'native'},()=>assert.fail('invalid route reached database'));

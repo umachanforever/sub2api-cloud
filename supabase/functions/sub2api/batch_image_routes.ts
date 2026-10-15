@@ -1,3 +1,4 @@
+import {publicBatchImage,publicBatchImageItem} from './batch_image_public.ts';
 import {trackBatchDownload} from './batch_image_downloaded.ts';
 import {batchImageModels} from './batch_image_models.ts';
 import {Database,HttpError} from './db.ts';
@@ -40,22 +41,26 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
  const path=pathname.replace(/^\/images\//,'/v1/images/'),url=new URL(request.url),base='/v1/images/batches',keyHash=await hashKey(token),clientIP=imageTaskClientIP(request),args={p_key_hash:keyHash,p_client_ip:clientIP};
  if(path===base+'/models'){if(request.method!=='GET')throw new HttpError(405,'method_not_allowed');return json(200,await batchImageModels(db,keyHash,clientIP));}
  if(path===base){
-  if(request.method==='GET')return json(200,await call(db,'s2a_batch_image_list',{...args,p_limit:number(url.searchParams.get('limit'),20,1,100),p_offset:number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),p_filters:listFilters(url)}));
+  if(request.method==='GET'){
+   const result=await call(db,'s2a_batch_image_list',{...args,p_limit:number(url.searchParams.get('limit'),20,1,100),p_offset:number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),p_filters:listFilters(url)});
+   const rows=result.data??result.items;if(!Array.isArray(rows))throw new HttpError(503,'invalid_batch_response');
+   return json(200,{object:'list',data:rows.map(publicBatchImage),has_more:result.has_more===true});
+  }
   if(request.method==='POST'){
    const idempotency=request.headers.get('idempotency-key');
    if(idempotency!==null&&(!idempotency.trim()||new TextEncoder().encode(idempotency).length>255||/[\u0000-\u001f]/.test(idempotency)))throw new HttpError(400,'invalid_idempotency_key');
    const id=idempotency===null?undefined:'imgbatch_'+(await hashKey('batch\0'+keyHash+'\0'+idempotency)).slice(0,32);
    const submitted=await submitBatchImage(db,keyHash,await readBody(request,requestBodyLimit(path,db.config.requestLimits)),{id,clientIP,signal:request.signal});
-   return json(200,await call(db,'s2a_batch_image_read',{...args,p_id:submitted.id}));
+   return json(200,publicBatchImage(await call(db,'s2a_batch_image_read',{...args,p_id:submitted.id})));
   }
   throw new HttpError(405,'method_not_allowed');
  }
  const match=/^\/v1\/images\/batches\/(imgbatch_[a-f0-9]{32})(?:\/(items|download|cancel|outputs)(?:\/([^/]+)\/content)?)?$/.exec(path);
  if(!match)throw new HttpError(404,'not_found');
  const id=match[1],operation=match[2];
- if(!operation&&request.method==='GET')return json(200,await call(db,'s2a_batch_image_read',{...args,p_id:id}));
+ if(!operation&&request.method==='GET')return json(200,publicBatchImage(await call(db,'s2a_batch_image_read',{...args,p_id:id})));
  if(!operation&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:true}));
- if(operation==='cancel'&&!match[3]&&request.method==='POST')return json(200,await call(db,'s2a_batch_image_cancel',{...args,p_id:id}));
+ if(operation==='cancel'&&!match[3]&&request.method==='POST')return json(200,publicBatchImage(await call(db,'s2a_batch_image_cancel',{...args,p_id:id})));
  if(operation==='outputs'&&!match[3]&&request.method==='DELETE')return json(200,await call(db,'s2a_batch_image_delete',{...args,p_id:id,p_hide:false}));
  if(operation==='download'&&!match[3]&&request.method==='GET')return trackBatchDownload(await downloadBatchImages(db,keyHash,id,clientIP,{maxItems:number(url.searchParams.get('max_items'),200,0,1000000),signal:request.signal}),db,keyHash,id,clientIP);
  if(operation==='items'&&request.method==='GET'){
@@ -65,9 +70,9 @@ export async function batchImageRoute(request:Request,pathname:string,token:stri
   }
   const snapshot=await call(db,'s2a_batch_image_read',{...args,p_id:id});
   if(!Array.isArray(snapshot.items))throw new HttpError(503,'invalid_batch_response');
-  const status=url.searchParams.get('status');if(status&&!['pending','success','failed','cancelled'].includes(status))throw new HttpError(400,'invalid_batch_item_status');
-  const items=snapshot.items.filter(item=>!status||item.status===status),offset=number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),limit=number(url.searchParams.get('limit'),20,1,200);
-  return json(200,{items:items.slice(offset,offset+limit),total:items.length,limit,offset});
+  const rawStatus=url.searchParams.get('status'),status=rawStatus==='succeeded'?'success':rawStatus==='all'?null:rawStatus;if(status&&!['pending','success','failed'].includes(status))throw new HttpError(400,'invalid_batch_item_status');
+  const items=snapshot.items.filter(item=>!status||item.status===status),offset=number(url.searchParams.get('cursor')??url.searchParams.get('offset'),0,0,1000000),limit=number(url.searchParams.get('limit'),100,1,500);
+  return json(200,{object:'list',data:items.slice(offset,offset+limit).map(publicBatchImageItem),has_more:offset+limit<items.length});
  }
  throw new HttpError(405,'method_not_allowed');
 }

@@ -314,6 +314,8 @@ BEGIN
     RETURN jsonb_strip_nulls(jsonb_build_object('id',native.batch_id,'batch_id',native.batch_id,'object','image.batch','status',native.status,
         'provider',native.provider,'model',native.model,'task_name',native.task_name,'item_count',native.item_count,'success_count',native.success_count,
         'fail_count',native.fail_count,'cancelled_count',native.cancelled_count,'created_at',native.created_at,'finished_at',native.finished_at,
+        'estimated_cost',native.estimated_cost,'hold_amount',native.hold_amount,'actual_cost',native.actual_cost,
+        'submitted_at',native.submitted_at,'settled_at',native.settled_at,'output_deleted_at',native.output_deleted_at,
         'output_expires_at',native.output_expires_at,'downloaded_at',native.downloaded_at,'output_deletion_pending',task.cleanup_requested AND task.cleaned_at IS NULL,'error_code',native.last_error_code,'items',items));
 END $$;
 DROP FUNCTION IF EXISTS public.s2a_batch_image_list(text,integer,integer,text);
