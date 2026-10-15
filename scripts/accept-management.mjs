@@ -1,3 +1,4 @@
+import {acceptanceAuth} from './acceptance-auth.mjs';
 import { createConsoleServer } from "./console.mjs";
 import assert from "node:assert/strict";
 import { execFileSync, spawn } from "node:child_process";
@@ -13,6 +14,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 const root = process.cwd(),
+  managementBinary = process.env.S2A_MANAGEMENT_BINARY || root + "/backend/server",
   suffix = randomBytes(5).toString("hex"),
   pg = "s2a-go-pg-" + suffix,
   redis = "s2a-go-redis-" + suffix;
@@ -23,19 +25,20 @@ const run = (args, options = {}) =>
     timeout: 30000,
     ...options,
   }).trim();
-const local = JSON.parse(
+const fixtureAuth = process.env.S2A_AUTH_ACCEPTANCE_FIXTURE === '1' ? await acceptanceAuth() : null;
+const local = fixtureAuth?.local ?? JSON.parse(
   execFileSync(
     process.env.SUPABASE_BIN || "supabase",
     ["status", "-o", "json"],
     { cwd: root, stdio: ["ignore", "pipe", "ignore"] },
   ),
 );
-const admin = process.env.S2A_AUTH_ACCEPTANCE_EMAIL
+const admin = fixtureAuth?.admin ?? (process.env.S2A_AUTH_ACCEPTANCE_EMAIL
   ? {
       SUB2API_LOCAL_ADMIN_EMAIL: process.env.S2A_AUTH_ACCEPTANCE_EMAIL,
       SUB2API_LOCAL_ADMIN_PASSWORD: process.env.S2A_AUTH_ACCEPTANCE_PASSWORD,
     }
-  : JSON.parse(readFileSync(root + "/.local/admin.json"));
+  : JSON.parse(readFileSync(root + "/.local/admin.json")));
 assert.ok(
   admin.SUB2API_LOCAL_ADMIN_PASSWORD,
   "An acceptance account password is required",
@@ -169,7 +172,7 @@ try {
   };
   const migrate = (env) =>
     execFileSync(
-      process.env.S2A_MANAGEMENT_BINARY || "/tmp/s2a-management-check",
+      managementBinary,
       ["-migrate"],
       {
         env,
@@ -199,7 +202,7 @@ try {
   }
   migrate(migrationEnvironment);
   app = spawn(
-    process.env.S2A_MANAGEMENT_BINARY || "/tmp/s2a-management-check",
+    managementBinary,
     [],
     {
       cwd: root + "/backend",
@@ -214,6 +217,7 @@ try {
         SERVER_HOST: "127.0.0.1",
         SERVER_PORT: String(port),
         SERVER_MODE: "release",
+        DATABASE_URL: migrationEnvironment.DATABASE_URL,
         DATABASE_HOST: "127.0.0.1",
         DATABASE_PORT: pgPort,
         DATABASE_USER: "s2a_management",
@@ -292,7 +296,7 @@ try {
   );
   assert.equal(
     sql(
-      "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proowner='s2a_management'::regrole AND (has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('authenticated',p.oid,'EXECUTE') OR (p.proname NOT IN ('s2a_gateway_key_lookup','s2a_gateway_account_snapshot','s2a_gateway_refresh_acquire','s2a_gateway_refresh_save','s2a_gateway_refresh_release','s2a_gateway_privacy_save') AND has_function_privilege('service_role',p.oid,'EXECUTE')))",
+      "SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname='public' AND p.proowner='s2a_management'::regrole AND (has_function_privilege('anon',p.oid,'EXECUTE') OR has_function_privilege('authenticated',p.oid,'EXECUTE') OR (p.proname NOT IN ('s2a_gateway_key_lookup','s2a_gateway_account_snapshot','s2a_gateway_refresh_acquire','s2a_gateway_refresh_save','s2a_gateway_refresh_release','s2a_gateway_privacy_save','s2a_gateway_codex_version_save') AND has_function_privilege('service_role',p.oid,'EXECUTE')))",
     ),
     "0",
   );
@@ -705,6 +709,9 @@ try {
   if (process.env.S2A_ACCOUNT_VAULT === "1") {
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/usage-access.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/usage-access.sql", "utf8"));
+    sql(readFileSync(root + "/tests/usage-access.database.sql", "utf8"));
   }
   sql(readFileSync(root + "/deploy/gateway-admission.sql", "utf8"));
   assert.equal(
@@ -1170,7 +1177,7 @@ try {
   });
   assert.equal(r.status, 401);
   console.log(
-    "Go management acceptance passed: isolated migrations, private objects, Supabase identity, management CRUD, public settings, personal cloud acquisition and zero-cost raw usage, native key admission, frozen native pricing snapshots, subscription windows, platform quotas, concurrent request leases, atomic billing and replay protection, cross-user account slots, atomic finish with native usage reporting, disabled native identity/gateway routes.",
+    "Go management acceptance passed: isolated migrations, private objects, Supabase identity, management CRUD, public settings, personal cloud acquisition and zero-cost raw usage, native key admission, enabled-account usage access and isolation, frozen native pricing snapshots, subscription windows, platform quotas, concurrent request leases, atomic billing and replay protection, cross-user account slots, atomic finish with native usage reporting, disabled native identity/gateway routes.",
   );
 } finally {
   if (app && app.exitCode === null) {
@@ -1192,4 +1199,5 @@ try {
       run(["rm", "-f", name]);
     } catch {}
   rmSync(dir, { recursive: true, force: true });
+  await fixtureAuth?.close();
 }

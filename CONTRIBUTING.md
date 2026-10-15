@@ -21,6 +21,20 @@ pnpm --dir frontend --ignore-workspace typecheck
 pnpm --dir frontend --ignore-workspace build
 ```
 
+The native management integration suite uses isolated PostgreSQL and Redis containers and a loopback identity fixture. It requires Go from `backend/go.mod`, Docker, Node.js, and Deno; it does not start local Supabase or use a production account:
+
+```sh
+(cd backend && go build ./cmd/server)
+docker pull public.ecr.aws/supabase/postgres:17.11.0.003
+docker pull redis:8-alpine
+mkdir -p .local
+S2A_AUTH_ACCEPTANCE_FIXTURE=1 S2A_ACCOUNT_VAULT=1 S2A_PERSONAL_HTTP=1 \
+  S2A_POSTGRES_IMAGE=public.ecr.aws/supabase/postgres:17.11.0.003 \
+  node scripts/accept-management.mjs
+```
+
+This suite covers native migrations, Vault credential storage, management CRUD, gateway admission, raw usage persistence, and read-only usage access across enabled accounts. Real Supabase Auth and provider calls are verified separately against the configured project.
+
 For container changes also run `docker build -t sub2api-cloud:test .` and verify the UI and `/api/v1/settings/public` on a temporary loopback port. Clean up the temporary container afterwards.
 
 ## Pull requests

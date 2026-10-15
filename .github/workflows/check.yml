@@ -44,6 +44,20 @@ jobs:
         with:
           node-version: 24
       - run: go build ./cmd/server
+
+      - name: Verify native management and cloud gateway integration
+        working-directory: ${{ github.workspace }}
+        env:
+          S2A_AUTH_ACCEPTANCE_FIXTURE: '1'
+          S2A_ACCOUNT_VAULT: '1'
+          S2A_PERSONAL_HTTP: '1'
+          S2A_POSTGRES_IMAGE: public.ecr.aws/supabase/postgres:17.11.0.003
+          S2A_MANAGEMENT_BINARY: ${{ github.workspace }}/backend/server
+        run: |
+          docker pull "$S2A_POSTGRES_IMAGE"
+          docker pull redis:8-alpine
+          mkdir -p .local
+          node scripts/accept-management.mjs
       - run: go test -tags=unit ./internal/config ./internal/server/middleware
       - run: go test -tags=unit ./internal/pkg/geminicli ./internal/pkg/antigravity
       - run: go test -tags=unit ./internal/service -run 'Test(Supabase|LocalGatewayWorkerOwnership|AuthService_ValidateToken|GeminiOAuthService|AccountCredentialExpiryFormats)'
