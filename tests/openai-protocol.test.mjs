@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   chatToResponses,
+  chatToAPIResponses,
   completedResponse,
   responseToChat,
   streamChat,
@@ -38,6 +39,13 @@ const complete = {
     output_tokens_details: { reasoning_tokens: 1 },
   },
 };
+
+test('public Responses conversion retains generation controls and does not mutate chat input',()=>{
+  const body={model:'provider-model',messages:[{role:'user',content:'hello'}],max_tokens:10,max_completion_tokens:20,temperature:0,top_p:1};
+  const original=structuredClone(body),result=chatToAPIResponses(body);
+  assert.deepEqual(body,original);assert.equal(result.max_output_tokens,20);assert.equal(result.temperature,0);assert.equal(result.top_p,1);assert.equal(result.include,undefined);assert.equal(result.stream,true);assert.equal(result.store,false);
+  for(const control of [{max_tokens:0},{max_completion_tokens:1.5},{temperature:3},{top_p:-1}])assert.throws(()=>chatToAPIResponses({...body,...control,max_completion_tokens:control.max_completion_tokens??(control.max_tokens===undefined?20:undefined)}));
+});
 const events = [
   { type: "response.created", response: { model: "gpt-test" } },
   {

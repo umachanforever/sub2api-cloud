@@ -153,6 +153,53 @@ test('OpenCode retains caller conversation identity and generates only for Go pl
   assert.match(openCodeSession(req({}),{},true),/^[a-f0-9-]{36}$/);
 });
 
+for(const platform of ['kimi','opencode_go','command_code'])for(const protocol of ['chat','messages'])for(const stream of [false,true])test(`${platform} bridges ${protocol} to selected Responses with client stream=${stream}`,async()=>{
+  const options=platform==='opencode_go'||platform==='command_code'&&protocol==='messages'?{}:{api_protocol:'responses'};
+  const output=[{type:'message',id:'upstream-message',role:'assistant',status:'completed',content:[{type:'output_text',text:'converted reply',annotations:[]}]}];
+  const completed={id:'resp-upstream',object:'response',status:'completed',model:'gpt-test',output,usage:{input_tokens:15,output_tokens:4,input_tokens_details:{cached_tokens:6}}};
+  const events=[
+    {type:'response.created',response:{id:'resp-upstream',object:'response',model:'gpt-test',status:'in_progress',output:[]}},
+    {type:'response.output_item.added',output_index:0,item:{...output[0],content:[]}},
+    {type:'response.content_part.added',output_index:0,content_index:0,part:{type:'output_text',text:'',annotations:[]}},
+    {type:'response.output_text.delta',output_index:0,content_index:0,delta:'converted reply'},
+    {type:'response.output_item.done',output_index:0,item:output[0]},
+    {type:'response.completed',response:completed},
+  ];
+  const value=await fixture(platform,(url,init)=>{
+    assert.equal(url,providerEndpoint(platform,options,'responses'));
+    const sent=JSON.parse(init.body);
+    assert.equal(sent.stream,true);assert.equal(sent.store,false);assert.equal(sent.max_output_tokens,20);assert.equal(sent.temperature,0.5);
+    assert.equal(sent.messages,undefined);assert.ok(Array.isArray(sent.input));assert.equal(sent.model,'gpt-test');
+    assert.equal(init.headers.get('authorization'),'Bearer provider-secret');return sse(events);
+  },{api_key:'provider-secret',...options});
+  const body={model:'gpt-test',messages:[{role:'user',content:'hello'}],stream,temperature:0.5,...(protocol==='chat'?{max_completion_tokens:20,stream_options:{include_usage:true}}:{max_tokens:20})};
+  const response=await value.request(protocol==='chat'?'/v1/chat/completions':'/v1/messages',body);
+  assert.equal(response.status,200);
+  if(stream){const text=await response.text();assert.match(text,/converted reply/);assert.match(text,protocol==='chat'?/chat.completion.chunk/:/message_stop/);assert.doesNotMatch(text,/event: response\./);}
+  else{const result=await response.json();assert.equal(protocol==='chat'?result.choices[0].message.content:result.content[0].text,'converted reply');assert.equal(protocol==='chat'?result.usage.prompt_tokens:result.usage.input_tokens,protocol==='chat'?15:9);}
+  assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_input_tokens,15);assert.equal(value.finishes[0].p_output_tokens,4);assert.equal(value.finishes[0].p_cache_read_tokens,6);assert.equal(value.finishes[0].p_outcome,'completed');
+});
+
+test('bridged Responses tool calls retain their call ID and failed completion releases its lease',async()=>{
+  for(const incomplete of [false,true]){
+    const output=[{type:'function_call',id:'fc-provider',call_id:'call-provider',name:'lookup',arguments:'{"q":"test"}',status:'completed'}];
+    const value=await fixture('kimi',()=>sse([{type:incomplete?'response.incomplete':'response.completed',response:{object:'response',model:'kimi-test',status:incomplete?'incomplete':'completed',incomplete_details:incomplete?{reason:'max_output_tokens'}:undefined,output,usage:{input_tokens:5,output_tokens:2}}}]),{api_key:'provider-secret',api_protocol:'responses'});
+    const response=await value.request('/v1/chat/completions',{model:'kimi-test',messages:[{role:'user',content:'lookup'}],tools:[{type:'function',function:{name:'lookup',parameters:{type:'object'}}}]});
+    assert.equal(response.status,200);
+    const result=await response.json();assert.equal(result.choices[0].message.tool_calls[0].id,'call-provider');
+    assert.equal(result.choices[0].finish_reason,incomplete?'length':'tool_calls');
+    assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,incomplete?'incomplete':'completed');
+  }
+});
+
+test('client cancellation of a bridged stream cancels the upstream and releases its lease once',async()=>{
+  let cancelled=false;
+  const value=await fixture('kimi',()=>new Response(new ReadableStream({cancel(){cancelled=true;}}),{headers:{'content-type':'text/event-stream'}}),{api_key:'provider-secret',api_protocol:'responses'});
+  const response=await value.request('/v1/chat/completions',{model:'kimi-test',messages:[{role:'user',content:'hello'}],stream:true});
+  assert.equal(response.status,200);await response.body.cancel();
+  assert.equal(cancelled,true);assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'cancelled');
+});
+
 test("API-key credentials encrypt losslessly, reject tampering and keep OAuth validation distinct", async () => {
   const credentials = parseAccountCredentials(
     { api_key: " secret ", base_url: "https://api.openai.com/v1/" },

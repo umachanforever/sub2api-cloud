@@ -1,4 +1,5 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
+import {multiProtocolProvider,providerProtocol} from './provider_routing.ts';
 import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mergeGeminiCatalog,type GeminiCatalogSources} from './gemini_catalog.ts';
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {vertexGeminiRequest} from './vertex_gemini.ts';
@@ -52,6 +53,7 @@ import { json } from "./http.ts";
 import { trackedStream, UsageObserver, type Usage } from "./stream.ts";
 import {
   chatToResponses,
+  chatToAPIResponses,
   completedResponse,
   responseToChat,
   streamChat,
@@ -489,17 +491,17 @@ async function proxyWithIdentity(
           db.config.encryptionKey,
         );
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
-        const bridgeMessages = platform === "openai" && messages;
+        const bridgeResponses = platform === "openai" && messages || multiProtocolProvider(platform) && (chat || messages) && providerProtocol(platform,credentials,messages?'anthropic':'chat_completions',upstreamModel)==='responses';
         let outgoingBody = platform === "grok" && imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody;
-        if (bridgeMessages) {
-          try { outgoingBody = messagesToAPIResponses(forwardedBody!); }
+        if (bridgeResponses) {
+          try { outgoingBody = chat ? chatToAPIResponses(forwardedBody!) : messagesToAPIResponses(forwardedBody!); }
           catch { throw new HttpError(400, "invalid_request"); }
         }
         native = apiKeyRequest(
           platform,
           credentials,
-          bridgeMessages ? "responses" : protocol,
-          bridgeMessages ? "/v1/responses" : forwardedPath,
+          bridgeResponses ? "responses" : protocol,
+          bridgeResponses ? "/v1/responses" : forwardedPath,
           outgoingBody,
           request,
           signal,
@@ -520,7 +522,7 @@ async function proxyWithIdentity(
         upstreamEndpoint=usageEndpoint(native.url);
         upstream = await accountFetch(db, account, native.url, native.init);
         // Reuse the Responses-to-Messages stream and usage pipeline below.
-        if (bridgeMessages) native = undefined;
+        if (bridgeResponses) native = undefined;
       } else if (platform === "anthropic" || platform === "gemini" || platform === "antigravity" || platform === "grok") {
         let credentials = await credentialsFor(db, account);
         const forward = async () => {

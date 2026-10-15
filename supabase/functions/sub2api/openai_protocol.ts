@@ -249,6 +249,25 @@ export function chatToResponses(body: Item): Item {
   return result;
 }
 
+// Public Responses endpoints retain generation controls removed by Codex OAuth.
+export function chatToAPIResponses(body:Item):Item{
+  const result=chatToResponses(body);
+  result.stream=true;
+  result.store=false;
+  if(!result.reasoning)delete result.include;
+  const maximum=body.max_completion_tokens??body.max_tokens;
+  if(maximum!==undefined){
+    if(!Number.isSafeInteger(maximum)||maximum<1)throw Error('Invalid token limit');
+    result.max_output_tokens=maximum;
+  }
+  for(const [field,max] of [['temperature',2],['top_p',1]] as const){
+    if(body[field]===undefined)continue;
+    if(typeof body[field]!=='number'||!Number.isFinite(body[field])||body[field]<0||body[field]>max)throw Error('Invalid sampling parameter');
+    result[field]=body[field];
+  }
+  return result;
+}
+
 // Network chunks may split SSE frames, JSON and UTF-8 characters.
 export async function* responseEvents(
   reader: ReadableStreamDefaultReader<Uint8Array>,
