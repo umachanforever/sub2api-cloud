@@ -30,15 +30,17 @@ export function deploymentConfig(env) {
   }
   if (env.SUB2API_DATA_MODEL && env.SUB2API_DATA_MODEL !== 'native') throw new Error('SUB2API_DATA_MODEL must be native or unset');
   const project = validateConfig({ supabase_url: env.SUPABASE_URL, publishable_key: env.SUPABASE_PUBLISHABLE_KEY });
-  let role;
-  try { role = JSON.parse(Buffer.from(env.SUPABASE_SERVICE_ROLE_KEY.split('.')[1], 'base64url')).role; } catch { /* Invalid JWT. */ }
-  if (role !== 'service_role') throw new Error('SUPABASE_SERVICE_ROLE_KEY must be a legacy service_role JWT');
+  let claims;
+  try { claims = JSON.parse(Buffer.from(env.SUPABASE_SERVICE_ROLE_KEY.split('.')[1], 'base64url')); } catch { /* Invalid JWT. */ }
+  if (claims?.role !== 'service_role') throw new Error('SUPABASE_SERVICE_ROLE_KEY must be a legacy service_role JWT');
+  const ref = new URL(project.supabase_url).hostname.split('.')[0];
+  if (claims.ref && claims.ref !== ref) throw new Error('SUPABASE_SERVICE_ROLE_KEY belongs to a different project');
   const ids = env.SUB2API_ADMIN_USER_IDS.split(',').map(id => id.trim().toLowerCase());
   if (ids.some(id => !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id))) throw new Error('SUB2API_ADMIN_USER_IDS must contain Auth user UUIDs');
   const key = env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64.trim();
   if (Buffer.from(key, 'base64').length !== 32 || Buffer.from(key, 'base64').toString('base64') !== key) throw new Error('The credential encryption key must be 32 bytes encoded as Base64');
   return {
-    ref: new URL(project.supabase_url).hostname.split('.')[0],
+    ref,
     secrets: batchImageSecrets(env)+requestLimitSecrets(env)+`GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${key}\nSUB2API_ADMIN_USER_IDS=${ids.join(',')}\n`+mailSecrets(env)+oauthSecrets(env)+(env.SUB2API_DATA_MODEL === 'native' ? 'SUB2API_DATA_MODEL=native\n' : ''),
   };
 }

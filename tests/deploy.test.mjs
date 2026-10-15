@@ -53,3 +53,11 @@ test('native deployment provisions management before switching cloud secrets',as
  await deploy(config,async args=>{calls.push(args[0]);},async()=>{calls.push('scheduler');},async value=>{assert.equal(value,config);calls.push('management');});
  assert.deepEqual(calls,['link','db','management','secrets','functions','scheduler']);
 });
+
+test('deployment rejects another project service key before running cloud mutations',async()=>{
+ const key=ref=>`header.${Buffer.from(JSON.stringify({role:'service_role',ref})).toString('base64url')}.signature`;
+ assert.equal(deploymentConfig({...env,SUPABASE_SERVICE_ROLE_KEY:key('project')}).ref,'project');
+ let calls=0;
+ await assert.rejects(deploy({...env,SUPABASE_SERVICE_ROLE_KEY:key('anotherproject')},async()=>{calls++;}),/belongs to a different project/);
+ assert.equal(calls,0);
+});

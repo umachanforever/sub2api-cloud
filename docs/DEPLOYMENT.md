@@ -9,7 +9,7 @@ The console is available at `http://127.0.0.1:3000`; the Go management endpoint 
 ## Cloud setup
 
 1. Create a Supabase project.
-2. Copy `.env.example` to `.env.local` and fill the project URL, public key, service-role JWT, database password, and Management API access token.
+2. Copy `.env.example` to `.env.local` and fill the project URL, public key, database password, and Management API access token. Leave `SUPABASE_SERVICE_ROLE_KEY` blank to retrieve the existing project key automatically; an explicit service-role JWT is an optional override.
 3. Set the administrator email. Supply existing Auth UUIDs through `SUB2API_ADMIN_USER_IDS`, or leave it blank to create the administrator automatically.
 4. Run `npm run up -- --cloud`.
 5. Sign in to the local console, add a provider account, bind its provider group, and create an API key.
