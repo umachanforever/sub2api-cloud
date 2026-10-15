@@ -48,9 +48,10 @@ export async function imageTaskSubmit(request:Request,operation:'generations'|'e
  if(request.method!=='POST')throw new HttpError(405,'method_not_allowed');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
  const keyHash=await hashKey(token),clientIP=imageTaskClientIP(request);
- const policy=await db.rpc<{platform?:string;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIP});
+ const policy=await db.rpc<{platform?:string;allow_image_generation?:boolean;error?:string;status?:number}|null>('s2a_personal_key_policy',{p_key_hash:keyHash,p_client_ip:clientIP});
  if(!policy)throw new HttpError(503,'database_unavailable');
  if(policy.error)throw new HttpError(policy.status??403,policy.error);
+ if(policy.allow_image_generation===false)throw new HttpError(403,'image_generation_forbidden');
  if(!['openai','grok'].includes(policy.platform??''))throw new HttpError(400,'image_platform_unsupported');
  const contentType=request.headers.get('content-type')??'';
  const multipart=/^multipart\/form-data(?:;|$)/i.test(contentType);

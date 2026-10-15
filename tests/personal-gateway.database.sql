@@ -22,6 +22,15 @@ BEGIN
     INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
     result:=public.s2a_personal_key_policy(h);
     IF result ? 'error' OR result->>'platform'<>'openai' OR result ? 'key_id' THEN RAISE EXCEPTION 'read-only key discovery failed or leaked identity'; END IF;
+    IF (result->>'allow_image_generation')::boolean IS DISTINCT FROM false OR (result->>'allow_batch_image_generation')::boolean IS DISTINCT FROM false THEN RAISE EXCEPTION 'group image flags missing from policy'; END IF;
+    IF public.s2a_personal_acquire(h,'gpt-image-2',gen_random_uuid())->>'error' IS DISTINCT FROM 'image_generation_forbidden' THEN RAISE EXCEPTION 'disabled group accepted image model'; END IF;
+    IF public.s2a_personal_acquire(h,'gpt-6',gen_random_uuid(),p_billing_context=>'{"image_generation":true,"grok_image_generation":true}')->>'error' IS DISTINCT FROM 'image_generation_forbidden' THEN RAISE EXCEPTION 'disabled group accepted image tool intent'; END IF;
+    UPDATE public.groups SET platform='grok' WHERE id=g;
+    acquired:=public.s2a_personal_acquire(h,'gpt-6',gen_random_uuid(),p_billing_context=>'{"image_generation":true,"grok_image_generation":false}');
+    IF acquired->>'error'='image_generation_forbidden' THEN RAISE EXCEPTION 'passive Grok namespace became generation intent'; END IF;
+    IF acquired->>'lease_id' IS NOT NULL THEN PERFORM public.s2a_personal_finish((acquired->>'lease_id')::uuid,400,'failed',NULL,NULL,NULL,NULL,0,1); END IF;
+    UPDATE public.groups SET platform='openai' WHERE id=g;
+    IF EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE key_id=k AND model='gpt-image-2') THEN RAISE EXCEPTION 'disabled image request allocated lease'; END IF;
     IF public.s2a_personal_key_policy(repeat('0',64))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'discovery accepted invalid key'; END IF;
     IF public.s2a_personal_key_policy(h,'127.0.0.1/8')->>'error' IS DISTINCT FROM 'invalid_client_ip' THEN RAISE EXCEPTION 'discovery accepted subnet'; END IF;
     IF has_function_privilege('anon','public.s2a_personal_key_billing(text,text)','EXECUTE')

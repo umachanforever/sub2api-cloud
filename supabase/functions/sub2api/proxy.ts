@@ -1,3 +1,4 @@
+import {imageGenerationIntent} from './image_policy.ts';
 import {countGeminiTokens} from './gemini_count_tokens.ts';
 import {validateGeminiCacheJson,geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
 import {voiceUpload,voiceResponse} from './grok_voice.ts';
@@ -252,6 +253,7 @@ async function proxyWithIdentity(
   const cacheBinding=cacheName?await resolveGeminiCache(db,keyHash,cacheName,policyModel,clientIp):undefined;
   if(grokSearch)await requireGrokPlatform('grok_search_requires_grok_group');
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
+  const imageIntent=!models&&!inputTokens&&!messageTokens&&!geminiTokens?{image_generation:imageGenerationIntent(path,policyModel,body),grok_image_generation:imageGenerationIntent(path,policyModel,body,'grok')}:undefined;
   const excluded: string[] = [];
   // One timeout covers all retries and the stream; the database lease lasts longer.
   const signal = AbortSignal.any([
@@ -269,6 +271,7 @@ async function proxyWithIdentity(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(routingModel),
+        ...(imageIntent&&(imageIntent.image_generation||imageIntent.grok_image_generation)?imageIntent:{}),
         ...(imageJob?{image_task:imageJob.id,image_job_lease:imageJob.lease_id}:{}),
         ...(cacheName?{cached_content:cacheName}:{}),
         ...(inputTokens || messageTokens || geminiTokens ? {count_only:true} : {}),
@@ -350,6 +353,7 @@ async function proxyWithIdentity(
       return finishing;
     };
     try {
+      if(db.config.dataModel==='native'&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===false&&!models&&!inputTokens&&!messageTokens&&!geminiTokens&&imageGenerationIntent(path,upstreamModel,body,account.platform))throw new HttpError(403,'image_generation_forbidden');
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');
       if (search) {

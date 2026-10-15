@@ -33,6 +33,7 @@ DECLARE policy jsonb; identity jsonb; task s2a_private.image_tasks%ROWTYPE; patt
 BEGIN
     policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
     IF policy ? 'error' THEN RETURN policy; END IF;
+    IF NOT coalesce((policy->>'allow_image_generation')::boolean,false) THEN RETURN jsonb_build_object('error','image_generation_forbidden','status',403); END IF;
     IF coalesce(policy->>'platform','') NOT IN ('openai','grok') THEN RETURN jsonb_build_object('error','image_platform_unsupported','status',400); END IF;
     IF p_id IS NULL OR p_id !~ '^imgtask_[a-f0-9]{32}$' OR p_model IS NULL OR p_model !~ '^[a-zA-Z0-9._:-]{1,200}$'
         OR p_operation IS NULL OR p_operation NOT IN ('generations','edits') OR p_content_type IS NULL OR length(p_content_type) NOT BETWEEN 1 AND 512
@@ -118,7 +119,7 @@ BEGIN
         THEN RETURN jsonb_build_object('error','image_task_lease_lost','status',409); END IF;
     policy:=public.s2a_personal_key_policy(task.key_hash,task.client_ip);
     identity:=public.s2a_gateway_key_lookup(task.key_hash);
-    IF policy ? 'error' OR identity ? 'error' OR (identity->>'user_id')::bigint IS DISTINCT FROM task.user_id
+    IF policy ? 'error' OR identity ? 'error' OR NOT coalesce((policy->>'allow_image_generation')::boolean,false) OR (identity->>'user_id')::bigint IS DISTINCT FROM task.user_id
         OR (identity->>'key_id')::bigint IS DISTINCT FROM task.key_id OR (identity->>'group_id')::bigint IS DISTINCT FROM task.group_id OR policy->>'platform' IS DISTINCT FROM task.platform THEN
         UPDATE s2a_private.image_tasks SET state='failed',http_status=403,error_code='image_task_key_unavailable',completed_at=clock_timestamp() WHERE id=p_id;
         RETURN jsonb_build_object('error','image_task_key_unavailable','status',403);

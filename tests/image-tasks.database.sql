@@ -8,12 +8,15 @@ BEGIN
         OR has_function_privilege('anon','public.s2a_personal_image_jobs_claim()','EXECUTE') OR has_function_privilege('authenticated','public.s2a_personal_image_job_start(text,uuid)','EXECUTE')
         OR NOT has_function_privilege('service_role','public.s2a_personal_image_task_prepare(text,text,text,text,text,text,bigint,text)','EXECUTE') THEN RAISE EXCEPTION 'image task ACL mismatch'; END IF;
     INSERT INTO public.users(email,password_hash,balance,restrict_public_groups) VALUES('image-tasks-'||gen_random_uuid()||'@example.invalid','!fixture',0,false) RETURNING id INTO u;
-    INSERT INTO public.groups(name,platform) VALUES('Image task fixture','openai') RETURNING id INTO g;
-    INSERT INTO public.groups(name,platform) VALUES('Other image task fixture','openai') RETURNING id INTO other_group;
+    INSERT INTO public.groups(name,platform,allow_image_generation) VALUES('Image task fixture','openai',true) RETURNING id INTO g;
+    INSERT INTO public.groups(name,platform,allow_image_generation) VALUES('Other image task fixture','openai',true) RETURNING id INTO other_group;
     INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'image-task-key-'||gen_random_uuid(),'Image fixture',g) RETURNING id,s2a_key_hash INTO k,h;
     INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'other-image-task-key-'||gen_random_uuid(),'Other image fixture',g) RETURNING id,s2a_key_hash INTO other_key,other_hash;
     INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('Image task account','openai','apikey','{"api_key":"fixture-image-secret"}',4) RETURNING id INTO a;
     INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(a,other_group);
+    UPDATE public.groups SET allow_image_generation=false WHERE id=g;
+    IF public.s2a_personal_image_task_prepare(h,task,'gpt-image-2','generations','application/json',repeat('1',64),100)->>'error' IS DISTINCT FROM 'image_generation_forbidden' THEN RAISE EXCEPTION 'disabled group accepted queued image'; END IF;
+    UPDATE public.groups SET allow_image_generation=true WHERE id=g;
     r:=public.s2a_personal_image_task_prepare(h,task,'gpt-image-2','generations','application/json',repeat('1',64),100);
     IF r->>'status' IS DISTINCT FROM 'processing' OR r->>'object'<>'image.generation.task' OR r ? 'key_hash' OR r ? 'lease_id' OR r ? 'user_id' THEN RAISE EXCEPTION 'invalid public task view: %',r; END IF;
     IF public.s2a_personal_image_task_prepare(h,task,'gpt-image-2','generations','application/json',repeat('1',64),100) IS DISTINCT FROM r THEN RAISE EXCEPTION 'prepare replay changed task'; END IF;
@@ -53,6 +56,13 @@ BEGIN
     IF public.s2a_personal_image_job_finish(task,first_lease,200,NULL,repeat('4',64))->>'error' IS DISTINCT FROM 'image_task_completion_conflict' THEN RAISE EXCEPTION 'completed result changed'; END IF;
     r:=public.s2a_personal_image_task_read(h,task);
     IF r->>'status'<>'completed' OR r->>'result_path'<>'images/'||task||'/result.json' OR r->>'result_hash' IS DISTINCT FROM repeat('3',64) THEN RAISE EXCEPTION 'completed view lost result'; END IF;
+    PERFORM public.s2a_personal_image_task_prepare(h,task2,'gpt-image-2','edits','application/json',repeat('1',64),100);
+    PERFORM public.s2a_personal_image_task_ready(h,task2);
+    job:=public.s2a_personal_image_jobs_claim()->0;
+    UPDATE public.groups SET allow_image_generation=false WHERE id=g;
+    IF public.s2a_personal_image_job_start(task2,(job->>'lease_id')::uuid)->>'error' IS DISTINCT FROM 'image_task_key_unavailable' THEN RAISE EXCEPTION 'queued image ignored revoked group permission'; END IF;
+    UPDATE public.groups SET allow_image_generation=true WHERE id=g;
+    DELETE FROM s2a_private.image_tasks WHERE id=task2;
     PERFORM public.s2a_personal_image_task_prepare(h,task2,'gpt-image-2','edits','application/json',repeat('1',64),100);
     PERFORM public.s2a_personal_image_task_ready(h,task2);
     job:=public.s2a_personal_image_jobs_claim()->0;

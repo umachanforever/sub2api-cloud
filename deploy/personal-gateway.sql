@@ -42,6 +42,9 @@ BEGIN
     IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
     SELECT * INTO k FROM public.api_keys WHERE id=(identity->>'key_id')::bigint;
     SELECT * INTO g FROM public.groups WHERE id=k.group_id;
+    IF NOT coalesce(g.allow_image_generation,false) AND (coalesce((CASE WHEN g.platform='grok' THEN p_billing_context->>'grok_image_generation' ELSE p_billing_context->>'image_generation' END)::boolean,false) OR lower(p_model) ~ '^(gpt-image-|grok-imagine(?:$|-edit$|-image))')
+        AND NOT coalesce((p_billing_context->>'count_only')::boolean,false)
+        THEN RETURN jsonb_build_object('error','image_generation_forbidden','status',403); END IF;
     IF p_client_ip IS NOT NULL THEN
         BEGIN
             -- Reject prefixes: accepting a caller-supplied subnet would widen IP access.
@@ -132,7 +135,7 @@ BEGIN
     IF (account->>'credential_version')::bigint<>lease.credential_version THEN RETURN jsonb_build_object('error','account_credentials_changed','status',409); END IF;
     SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
     RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
-        'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true))
+        'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true))
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') ELSE '{}'::jsonb END;
 END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;
@@ -247,7 +250,7 @@ END $$;
 -- Read-only gateway discovery validates key and network policy without account slots.
 CREATE OR REPLACE FUNCTION public.s2a_personal_key_policy(p_key_hash text,p_client_ip text DEFAULT NULL)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
-DECLARE identity jsonb; address inet; network text; allowed boolean;
+DECLARE identity jsonb; address inet; network text; allowed boolean; image_allowed boolean; batch_allowed boolean;
 BEGIN
     identity:=public.s2a_gateway_key_lookup(p_key_hash);
     IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
@@ -271,7 +274,8 @@ BEGIN
             IF address <<= network::inet THEN RETURN jsonb_build_object('error','ip_forbidden','status',403); END IF;
         END LOOP;
     END IF;
-    RETURN jsonb_build_object('platform',identity->'platform','model_allowlist',identity->'model_allowlist');
+    SELECT allow_image_generation,allow_batch_image_generation INTO image_allowed,batch_allowed FROM public.groups WHERE id=(identity->>'group_id')::bigint;
+    RETURN jsonb_build_object('platform',identity->'platform','model_allowlist',identity->'model_allowlist','allow_image_generation',coalesce(image_allowed,false),'allow_batch_image_generation',coalesce(batch_allowed,false));
 END $$;
 ALTER FUNCTION public.s2a_personal_key_policy(text,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_key_policy(text,text) FROM PUBLIC,anon,authenticated;
