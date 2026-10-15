@@ -1,4 +1,5 @@
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources} from './composite_catalog.ts';
+import {fallbackGeminiCatalog} from './gemini_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -594,6 +595,7 @@ async function proxyWithIdentity(
           upstream = await forward();
         }
       }
+      if (nativeGeminiModels && platform === 'gemini') upstream = await fallbackGeminiCatalog(upstream, forwardedPath);
       upstreamReceived = true;
       if(!apiKey && platform==='openai'){
         const windows=quotaHeaderWindows(upstream.headers);
