@@ -7,11 +7,14 @@ services:
       - "127.0.0.1:${CONSOLE_PORT:-3000}:4173"
       - "127.0.0.1:1455:1455"
     environment:
-      MANAGEMENT_URL: ${MANAGEMENT_URL:-http://host.docker.internal:8080}
+      MANAGEMENT_URL: ${CONSOLE_MANAGEMENT_URL:-http://management:8080}
       SUPABASE_MODE: ${SUPABASE_MODE:-cloud}
       SUPABASE_URL: ${SUPABASE_URL:?Fill .env.local first}
       SUPABASE_PUBLISHABLE_KEY: ${SUPABASE_PUBLISHABLE_KEY:?Fill .env.local first}
       SUPABASE_AUTH_REDIRECT_URL: ${SUPABASE_AUTH_REDIRECT_URL:-http://127.0.0.1:3000/reset-password}
+    depends_on:
+      management:
+        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
     restart: unless-stopped
@@ -21,3 +24,49 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
+  management:
+    build:
+      context: ./backend
+      args:
+        GO_IMAGE: ${GO_IMAGE:-golang:1.27.2-alpine}
+        RUNTIME_IMAGE: ${RUNTIME_IMAGE:-postgres:18-alpine}
+    image: sub2api-supabase-management:latest
+    container_name: sub2api-supabase-management
+    ports:
+      - "127.0.0.1:${MANAGEMENT_PORT:-8080}:8080"
+    env_file:
+      - path: .local/management.env
+        required: false
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+    volumes:
+      - management-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  redis:
+    image: redis:8-alpine
+    container_name: sub2api-supabase-redis
+    user: redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  management-data:

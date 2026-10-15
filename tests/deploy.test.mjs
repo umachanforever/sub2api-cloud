@@ -47,3 +47,9 @@ test('scheduler failure after function deployment still cleans private temporary
  assert.doesNotMatch(config.secrets,/DATABASE_URL|private/);
  assert.throws(()=>deploymentConfig({...env,SUB2API_DATA_MODEL:'invalid'}),/SUB2API_DATA_MODEL/);
  });
+
+test('native deployment provisions management before switching cloud secrets',async()=>{
+ const calls=[];const config={...env,SUB2API_DATA_MODEL:'native'};
+ await deploy(config,async args=>{calls.push(args[0]);},async()=>{calls.push('scheduler');},async value=>{assert.equal(value,config);calls.push('management');});
+ assert.deepEqual(calls,['link','db','management','secrets','functions','scheduler']);
+});

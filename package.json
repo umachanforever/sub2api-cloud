@@ -16,7 +16,8 @@
     "frontend": "pnpm --dir frontend --ignore-workspace dev",
     "deploy": "node --env-file=.env.local scripts/deploy.mjs",
     "up": "node --env-file-if-exists=.env.local scripts/up.mjs",
-    "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down"
+    "down": "node --env-file-if-exists=.env.local scripts/up.mjs --down",
+    "management:setup": "node --env-file=.env.local scripts/management.mjs"
   },
   "dependencies": {
     "nodemailer": "10.1.1"

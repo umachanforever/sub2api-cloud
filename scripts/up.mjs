@@ -1,3 +1,4 @@
+import {provisionManagement} from './management.mjs';
 import {configureJobScheduler} from './job-scheduler.mjs';
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
@@ -63,7 +64,7 @@ export async function administrator(env, fetchImpl = fetch) {
 }
 async function up() {
   const args = process.argv.slice(2), mode = deploymentMode(process.env, args);
-  let env = { ...process.env, SUPABASE_MODE: mode };
+  let env = { ...process.env, SUPABASE_MODE: mode, SUB2API_DATA_MODEL: process.env.SUB2API_DATA_MODEL || 'native' };
   if (args.includes('--down')) {
     await run('docker', ['compose', '-p', 'sub2api-supabase', 'down'], { ...env, SUPABASE_URL: env.SUPABASE_URL || 'http://host.docker.internal:54321', SUPABASE_PUBLISHABLE_KEY: env.SUPABASE_PUBLISHABLE_KEY || 'sb_publishable_local_shutdown_placeholder' });
     if (mode === 'local') await run('supabase', ['stop'], env);
@@ -93,10 +94,11 @@ async function up() {
     if (mode === 'cloud') await appendFile(new URL('../.env.local', import.meta.url), `\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\n`, { mode: 0o600 });
   }
   if (mode === 'cloud') { await chmod(new URL('../.env.local', import.meta.url), 0o600); await deploy(env); }
+  if (mode === 'local') await provisionManagement(env);
   await run('docker', ['compose', '-p', 'sub2api-supabase', 'up', '-d', ...(mode === 'cloud' ? ['--build'] : [])], { ...env, SUPABASE_URL: env.containerURL ?? env.SUPABASE_URL });
   if (mode === 'local') {
     const file = new URL('../.local/functions.env', import.meta.url);
-    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\n`+mailSecrets(env), { mode: 0o600 });
+    await writeFile(file, `GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64=${env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64}\nSUB2API_ADMIN_USER_IDS=${env.SUB2API_ADMIN_USER_IDS}\nSUB2API_DATA_MODEL=native\n`+mailSecrets(env), { mode: 0o600 });
     console.log('Local Supabase mode. Keep this terminal running; stop with npm run down -- --local. Administrator credentials: .local/admin.json');
     // Docker Desktop can share the project while macOS's system temp directory is unavailable.
     const temp = fileURLToPath(new URL('../.local/tmp/', import.meta.url));

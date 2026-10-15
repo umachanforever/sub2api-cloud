@@ -1,3 +1,4 @@
+import {provisionManagement} from './management.mjs';
 import {configureJobScheduler} from './job-scheduler.mjs';
 import { spawnSync } from 'node:child_process';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
@@ -36,7 +37,7 @@ export function deploymentConfig(env) {
 export async function deploy(env = process.env, run = (args) => {
   const result = spawnSync('supabase', args, { cwd: root, env, stdio: 'inherit', shell: false });
   if (result.error || result.status !== 0) throw new Error(`Supabase ${args[0]} failed; deployment stopped`);
-}, configure = configureJobScheduler) {
+}, configure = configureJobScheduler, provision = provisionManagement) {
   const config = deploymentConfig(env);
   const directory = await mkdtemp(join(tmpdir(), 'sub2api-deploy-'));
   try {
@@ -44,6 +45,7 @@ export async function deploy(env = process.env, run = (args) => {
     await writeFile(secretsFile, config.secrets, { mode: 0o600 });
     await run(['link', '--project-ref', config.ref]);
     await run(['db', 'push', '--yes']);
+    if (env.SUB2API_DATA_MODEL === 'native') await provision(env);
     await run(['secrets', 'set', '--env-file', secretsFile, '--project-ref', config.ref]);
     await run(['functions', 'deploy', 'subscription-api', '--project-ref', config.ref, '--use-api']);
     await configure(env);
