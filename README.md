@@ -184,6 +184,8 @@ Codex standalone web search is available at `POST /v1/alpha/search`, `/alpha/sea
 
 AI request bodies default to 256 MiB at both the cloud gateway and the local console proxy, matching upstream Sub2API. Text-specific routes (embeddings, search, and systemone) use 32 MiB. Configure `SERVER_MAX_REQUEST_BODY_SIZE`, `GATEWAY_MAX_BODY_SIZE`, and `GATEWAY_TEXT_MAX_BODY_SIZE` in bytes before deployment. Setting the server limit to `0` disables only the server-wide cap; gateway limits still apply. Supabase runtime memory and provider limits may reduce the practical maximum for large attachments.
 
+Transient cloud request leases retain a 30-day replay window. Hourly maintenance removes up to 1,000 older expired leases per run while preserving usage history and leases referenced by cache creation or video tasks.
+
 ## License
 
 Based on [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api). Licensed under LGPL-3.0-or-later. Upstream licenses and attribution are retained in [LICENSE](LICENSE), [COPYING](COPYING), and [NOTICE](NOTICE).

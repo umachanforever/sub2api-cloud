@@ -777,4 +777,23 @@ REVOKE ALL ON FUNCTION public.s2a_personal_video_resolve(text,text,text) FROM PU
 GRANT EXECUTE ON FUNCTION public.s2a_personal_video_create(text,text,uuid,text,text,text,text,text) TO service_role;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_video_resolve(text,text,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
+-- Keep a 30-day replay window while bounding transient request storage.
+CREATE INDEX IF NOT EXISTS personal_gateway_retention ON s2a_private.personal_gateway_leases(created_at);
+CREATE OR REPLACE FUNCTION s2a_private.prune_personal_gateway_leases() RETURNS integer
+LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE removed integer; cutoff timestamptz:=clock_timestamp()-interval '30 days';
+BEGIN
+ WITH expired AS (
+  SELECT l.id FROM s2a_private.personal_gateway_leases l
+  WHERE l.created_at<cutoff AND l.expires_at<cutoff AND coalesce(l.finished_at,l.created_at)<cutoff
+   AND NOT EXISTS(SELECT 1 FROM s2a_private.cache_creation_intents c WHERE c.lease_id=l.id)
+   AND NOT EXISTS(SELECT 1 FROM s2a_private.video_tasks v WHERE v.lease_id=l.id)
+  ORDER BY l.created_at LIMIT 1000 FOR UPDATE OF l SKIP LOCKED
+ ) DELETE FROM s2a_private.personal_gateway_leases l USING expired e WHERE l.id=e.id;
+ GET DIAGNOSTICS removed=ROW_COUNT;
+ RETURN removed;
+END $$;
+ALTER FUNCTION s2a_private.prune_personal_gateway_leases() OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.prune_personal_gateway_leases() FROM PUBLIC,anon,authenticated,service_role;
+
 COMMIT;

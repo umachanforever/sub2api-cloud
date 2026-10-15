@@ -432,3 +432,31 @@ BEGIN
  IF public.s2a_personal_acquire(h,'unmapped-model',gen_random_uuid())->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'scheduler ignored explicit account allowlists'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE old_id uuid; recent_id uuid; active_id uuid; referenced_id uuid; n integer;
+BEGIN
+ IF has_function_privilege('anon','s2a_private.prune_personal_gateway_leases()','EXECUTE')
+  OR has_function_privilege('authenticated','s2a_private.prune_personal_gateway_leases()','EXECUTE')
+  OR has_function_privilege('service_role','s2a_private.prune_personal_gateway_leases()','EXECUTE') THEN RAISE EXCEPTION 'lease maintenance exposed to API roles'; END IF;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,created_at,expires_at)
+ VALUES(gen_random_uuid(),1,1,1,1,1,'fixture',false,'fixture',now()-interval '31 days',now()-interval '31 days') RETURNING id INTO old_id;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,created_at,expires_at)
+ VALUES(gen_random_uuid(),1,1,1,1,1,'fixture',false,'fixture',now()-interval '1 day',now()-interval '1 day') RETURNING id INTO recent_id;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,created_at,expires_at)
+ VALUES(gen_random_uuid(),1,1,1,1,1,'fixture',false,'fixture',now()-interval '31 days',now()+interval '1 day') RETURNING id INTO active_id;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,created_at,expires_at)
+ VALUES(gen_random_uuid(),1,1,1,1,1,'fixture',false,'fixture',now()-interval '31 days',now()-interval '31 days') RETURNING id INTO referenced_id;
+ INSERT INTO s2a_private.video_tasks(public_id,lease_id,user_id,key_id,group_id,account_id,model,upstream_model,operation)
+ VALUES('video_retention_fixture',referenced_id,1,1,1,1,'fixture','fixture','generations');
+ n:=s2a_private.prune_personal_gateway_leases();
+ IF n<>1 OR NOT EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE id=referenced_id) OR EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE id=old_id)
+  OR (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE id IN (recent_id,active_id))<>2 THEN RAISE EXCEPTION 'lease retention removed recent or active requests'; END IF;
+ IF s2a_private.prune_personal_gateway_leases()<>0 THEN RAISE EXCEPTION 'lease maintenance not idempotent'; END IF;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,created_at,expires_at)
+ SELECT gen_random_uuid(),1,1,1,1,1,'fixture',false,'fixture',now()-interval '31 days',now()-interval '31 days' FROM generate_series(1,1001);
+ IF s2a_private.prune_personal_gateway_leases()<>1000 OR s2a_private.prune_personal_gateway_leases()<>1 THEN RAISE EXCEPTION 'lease cleanup exceeded batch limit or lost remaining work'; END IF;
+END $$;
+ROLLBACK;
