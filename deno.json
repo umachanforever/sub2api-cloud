@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "lib": [
+      "deno.ns",
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ]
+  },
+  "tasks": {
+    "dev": "deno run --allow-env --allow-net --env-file=.env.local supabase/functions/subscription-api/index.ts",
+    "check": "deno check supabase/functions/subscription-api/index.ts supabase/functions/subscription-api/validation.ts"
+  },
+  "imports": {
+    "nodemailer": "npm:nodemailer@10.1.1"
+  }
+}

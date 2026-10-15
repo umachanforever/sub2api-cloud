@@ -1,0 +1,446 @@
+import { accountFetch } from "./account_proxy.ts";
+import { recordOpsError, type ErrorContext } from "./ops_errors.ts";
+import { mappedCatalog, mappedTarget, type ModelSources } from "./model_mapping.ts";
+import { quotaHeaderWindows } from "./openai_quota_pause.ts";
+import { filterModelCatalog, modelCandidates, type ModelAllowlist } from "./model_policy.ts";
+import { type Account, credentialsFor } from "./accounts.ts";
+import { Database, HttpError } from "./db.ts";
+import {
+  buildHeaders,
+  CODEX_MODELS_URL,
+  CODEX_RESPONSES_URL,
+  CODEX_VERSION,
+  modelListFromManifest,
+  normalizeBody,
+  type Platform,
+} from "./gateway.ts";
+import {
+  apiKeyRequest,
+  type NativeProtocol,
+  nativeResponse,
+} from "./api_key_provider.ts";
+import { decryptApiKeyCredentials } from "./credential_store.ts";
+import { hashKey, readBody } from "./validation.ts";
+import { json } from "./http.ts";
+import { trackedStream, UsageObserver, type Usage } from "./stream.ts";
+import {
+  chatToResponses,
+  completedResponse,
+  responseToChat,
+  streamChat,
+} from "./openai_protocol.ts";
+
+import {
+  messagesToResponses,
+  responseToMessages,
+  streamMessages,
+} from "./anthropic_protocol.ts";
+
+type ProviderAccount = Account & {
+  platform?: Platform;
+  type?: "oauth" | "apikey";
+};
+type Reservation =
+  | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources; error?: never }
+  | {
+    error: string;
+    status: number;
+  };
+
+export async function proxy(
+  request: Request,
+  path: string,
+  token: string,
+  db: Database,
+  errorContext: ErrorContext,
+): Promise<Response> {
+  const requestId = errorContext.requestId;
+  const keyHash = await hashKey(token);
+  errorContext.keyHash = keyHash;
+  const nativeGeminiModels = /^\/v1beta\/models(?:\/[^/]+)?$/.test(path) &&
+    request.method === "GET";
+  const modelId = /^\/(?:v1|v1beta)\/models\/([^/]+)$/.exec(path)?.[1];
+  if (modelId) {
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(modelId);
+    } catch {
+      throw new HttpError(400, "invalid_model_id");
+    }
+    if (
+      !/^[a-zA-Z0-9._:-]{1,200}$/.test(decoded) || decoded === "." ||
+      decoded === ".."
+    ) throw new HttpError(400, "invalid_model_id");
+  }
+  const models = (path === "/v1/models" || !!modelId || nativeGeminiModels) &&
+    request.method === "GET";
+  const chat = path === "/v1/chat/completions" && request.method === "POST";
+  const messages = path === "/v1/messages" && request.method === "POST";
+  const gemini = request.method === "POST"
+    ? /^\/v1beta\/models\/([a-zA-Z0-9._-]{1,200}):(generateContent|streamGenerateContent)$/
+      .exec(path)
+    : null;
+  const protocol: NativeProtocol = models
+    ? "models"
+    : chat
+    ? "chat"
+    : messages
+    ? "messages"
+    : gemini
+    ? "gemini"
+    : "responses";
+  const clientVersion = new URL(request.url).searchParams.get("client_version");
+  if (
+    models && clientVersion !== null &&
+    (!/^[a-zA-Z0-9._+-]{1,100}$/.test(clientVersion))
+  ) throw new HttpError(400, "invalid_client_version");
+  const responses =
+    ["/v1/responses", "/responses", "/backend-api/codex/responses"].includes(
+      path,
+    ) && request.method === "POST";
+  if (!models && !responses && !chat && !messages && !gemini) {
+    throw new HttpError(404, "not_found");
+  }
+  let body: Record<string, unknown> | undefined;
+  let stream = true, includeUsage = false;
+  if (!models) {
+    try {
+      const raw = await readBody(request);
+      if (raw.stream !== undefined && typeof raw.stream !== "boolean") {
+        throw new HttpError(400, "invalid_stream");
+      }
+      if (
+        chat && raw.stream_options !== undefined &&
+        (!raw.stream_options || typeof raw.stream_options !== "object" ||
+          Array.isArray(raw.stream_options) ||
+          ("include_usage" in raw.stream_options &&
+            typeof raw.stream_options.include_usage !== "boolean"))
+      ) throw new HttpError(400, "invalid_stream_options");
+      stream = chat || messages ? raw.stream === true : raw.stream !== false;
+      includeUsage = chat &&
+        (raw.stream_options as { include_usage?: boolean } | undefined)
+            ?.include_usage === true;
+      const requestedModel = gemini ? gemini[1] : raw.model;
+      if (
+        typeof requestedModel !== "string" || !requestedModel.trim() ||
+        requestedModel.length > 200 || /[\x00-\x1f\x7f]/.test(requestedModel) || requestedModel === "__models__"
+      ) throw new HttpError(400, "invalid_request");
+      errorContext.model = requestedModel;
+      errorContext.stream = typeof raw.stream === "boolean" ? raw.stream : gemini ? gemini[2] === "streamGenerateContent" : undefined;
+      if (
+        (chat || messages) &&
+        (!Array.isArray(raw.messages) || !raw.messages.length)
+      ) throw new HttpError(400, "invalid_request");
+      if (gemini && (!Array.isArray(raw.contents) || !raw.contents.length)) {
+        throw new HttpError(400, "invalid_request");
+      }
+      body = raw;
+    } catch (error) {
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(400, "invalid_request");
+    }
+  }
+  const policyModel = models ? modelId ? decodeURIComponent(modelId) : "" : gemini ? gemini[1] : body!.model as string;
+  const clientIp = request.headers.get("cf-connecting-ip")?.trim() ||
+    request.headers.get("x-real-ip")?.trim() ||
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || null;
+  Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
+  const excluded: string[] = [];
+  // One timeout covers all retries and the stream; the database lease lasts longer.
+  const signal = AbortSignal.any([
+    request.signal,
+    AbortSignal.timeout(120_000),
+  ]);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let reservation: Reservation;
+    reservation = await db.rpc<Reservation>(db.config.dataModel === "native" ? "s2a_personal_acquire" : "s2a_acquire", {
+      p_key_hash: keyHash,
+      p_model: models ? "__models__" : gemini ? gemini[1] : body!.model,
+      p_request_id: requestId,
+      p_excluded: excluded,
+      p_count_request: attempt === 0,
+      p_client_ip: clientIp,
+      p_billing_context: {
+        policy_model:policyModel,model_candidates:modelCandidates(policyModel),
+        service_tier: typeof body?.service_tier === "string" ? body.service_tier : null,
+        stream: models ? false : stream,
+        native_stream: gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true,
+      },
+    });
+    if (reservation.error) {
+      throw new HttpError(reservation.status, reservation.error);
+    }
+    const { account, lease_id, model_allowlist, upstream_model, model_sources } = reservation as {
+      account: ProviderAccount;
+      lease_id: string;
+      model_allowlist?:ModelAllowlist;
+      upstream_model?:string;
+      model_sources?:ModelSources;
+    };
+    const upstreamModel=upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,policyModel,account.platform??"openai") : undefined) ?? policyModel;
+    const forwardedBody=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
+    const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
+    const forwardedPath=aliasCatalog?path.replace(/\/models\/[^/]+$/,"/models"):gemini?`/v1beta/models/${encodeURIComponent(upstreamModel.replace(/^models\//,""))}:${gemini[2]}`:path;
+    Object.assign(errorContext, { accountId: account.id, leaseId: lease_id, platform: account.platform ?? "openai", upstreamModel, stream: account.type === "apikey" ? models ? false : gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true : stream });
+    const attemptContext = { ...errorContext };
+    let responseAccepted = false, providerDispatched = false, upstreamReceived = false, providerFailureRecorded = false;
+    const upstreamFailure = async (status: number, code = "upstream_http") => {
+      providerFailureRecorded = true;
+      await recordOpsError(db, attemptContext, status, code, "upstream", crypto.randomUUID());
+    };
+    const recordIncomplete = async (status: number, usage: Usage) => {
+      if (responseAccepted && usage.outcome !== "completed") {
+        const clientCanceled = request.signal.aborted || usage.outcome === "cancelled" && !signal.aborted;
+        const code = clientCanceled ? "context_canceled" : signal.aborted ? "upstream_timeout" : "stream_incomplete";
+        if (!clientCanceled && !providerFailureRecorded) await upstreamFailure(status, code);
+        await recordOpsError(db, attemptContext, status, code);
+      }
+    };
+    let usageWriteFailed = false;
+    let finishing: Promise<void> | undefined;
+    let quotaSnapshot:Promise<unknown>|undefined;
+    const finish = (status: number, usage: Usage, cooldown = 0): Promise<void> => {
+      if (finishing) return finishing;
+      finishing = (async () => {
+        await quotaSnapshot;
+        for (let retry = 0; retry < 2; retry++) {
+          try {
+            const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
+              ...(db.config.dataModel === "native" ? {p_upstream_model:upstreamModel} : {}),
+              p_lease_id: lease_id,
+              p_status: status,
+              p_outcome: usage.outcome,
+              p_input_tokens: usage.input,
+              p_output_tokens: usage.output,
+              p_cache_creation_tokens: usage.cacheCreation,
+              p_cache_read_tokens: usage.cacheRead,
+              p_cooldown_seconds: cooldown,
+              p_credential_version: account.credential_version,
+              ...(usage.firstTokenMs === undefined ? {} : { p_first_token_ms: usage.firstTokenMs }),
+            });
+            if (saved?.error) throw new HttpError(saved.status ?? 503,saved.error);
+            await recordIncomplete(status, usage);
+            return;
+          } catch {
+            if (retry === 0) await new Promise((resolve) => setTimeout(resolve, 250));
+          }
+        }
+        console.error("usage_persistence_failed", requestId);
+        if (db.config.dataModel === "native") {
+          usageWriteFailed = true;
+          throw new HttpError(503,"usage_persistence_failed");
+        }
+      })();
+      return finishing;
+    };
+    try {
+      const apiKey = account.type === "apikey";
+      const platform = account.platform ?? "openai";
+      let native: ReturnType<typeof apiKeyRequest> | undefined;
+      let upstream: Response;
+      if (apiKey) {
+        const credentials = await decryptApiKeyCredentials(
+          account,
+          db.config.encryptionKey,
+        );
+        if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
+        native = apiKeyRequest(
+          platform,
+          credentials,
+          protocol,
+          forwardedPath,
+          forwardedBody,
+          request,
+          signal,
+        );
+        providerDispatched = true;
+        upstream = await accountFetch(db, account, native.url, native.init);
+      } else {
+        if (platform !== "openai" || gemini || nativeGeminiModels) {
+          throw new HttpError(501, "provider_protocol_unsupported");
+        }
+        let normalized: Record<string, unknown> | undefined;
+        if (body) {
+          try {
+            normalized = normalizeBody(
+              chat
+                ? chatToResponses(forwardedBody!)
+                : messages
+                ? messagesToResponses(forwardedBody!)
+                : forwardedBody,
+            );
+          } catch (error) {
+            throw new HttpError(
+              400,
+              error instanceof Error && error.message.startsWith("Unsupported")
+                ? "unsupported_request_feature"
+                : "invalid_request",
+            );
+          }
+        }
+        let credentials = await credentialsFor(db, account);
+        const forward = () => {
+          const headers = buildHeaders(credentials);
+          if (models) headers.set("accept", "application/json");
+          return accountFetch(db, account,
+            models
+              ? `${CODEX_MODELS_URL}?client_version=${
+                encodeURIComponent(clientVersion ?? CODEX_VERSION)
+              }`
+              : CODEX_RESPONSES_URL,
+            {
+              method: models ? "GET" : "POST",
+              headers,
+              signal,
+              ...(normalized ? { body: JSON.stringify(normalized) } : {}),
+            },
+          );
+        };
+        providerDispatched = true;
+        upstream = await forward();
+        if (upstream.status === 401) {
+          await upstreamFailure(401);
+          await upstream.body?.cancel();
+          credentials = await credentialsFor(
+            db,
+            account,
+            credentials.access_token,
+          );
+          providerFailureRecorded = false;
+          upstream = await forward();
+        }
+      }
+      upstreamReceived = true;
+      if(!apiKey && platform==='openai'){
+        const windows=quotaHeaderWindows(upstream.headers);
+        if(windows)quotaSnapshot=db.rpc('s2a_openai_windows_save',{p_account_id:account.id,p_version:account.credential_version,p_fetched_at:Math.floor(Date.now()/1000),p_windows:windows}).catch(()=>console.warn('quota_window_save_failed'));
+      }
+      if (!upstream.ok) {
+        const status = upstream.status;
+        await upstreamFailure(status);
+        await upstream.body?.cancel();
+        await finish(
+          status,
+          { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "failed" },
+          status === 429
+            ? 60
+            : status >= 500 || status === 401 || status === 403
+            ? 15
+            : 0,
+        );
+        if ([401, 403, 429].includes(status) || status >= 500) {
+          excluded.push(account.id);
+          continue;
+        }
+        // Provider errors can contain account details; return a stable error only.
+        throw new HttpError(
+          status >= 400 && status < 500 ? status : 502,
+          "upstream_rejected_request",
+        );
+      }
+      responseAccepted = apiKey ? native!.streaming : stream;
+      if (apiKey) {
+        return await nativeResponse(
+          upstream,
+          platform,
+          protocol,
+          native!.streaming,
+          signal,
+          requestId,
+          finish,
+          forwardedPath,
+          model_allowlist,
+          model_sources,
+          aliasCatalog?decodeURIComponent(modelId!):undefined,
+          errorContext.started,
+        );
+      }
+      if (models) {
+        const rawManifest = await upstream.json();
+        const manifest = filterModelCatalog(model_allowlist,mappedCatalog(rawManifest,model_sources,"openai"));
+        const catalog = filterModelCatalog(model_allowlist,mappedCatalog(modelListFromManifest(rawManifest),model_sources,"openai"));
+        const model = modelId
+          ? catalog.data.find((entry: {id:string}) =>
+            entry.id === decodeURIComponent(modelId)
+          )
+          : undefined;
+        if (modelId && !model) throw new HttpError(404, "model_not_found");
+        await finish(200, { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "completed" });
+        // Codex clients need the full model metadata, including model instructions.
+        return json(
+          200,
+          model ??
+            (clientVersion !== null ? { models: manifest.models } : catalog),
+        );
+      }
+      // Codex can omit Content-Type on a successful SSE response.
+      const contentType = upstream.headers.get("content-type");
+      if (
+        !upstream.body ||
+        (contentType && !contentType.includes("text/event-stream"))
+      ) {
+        await upstream.body?.cancel();
+        throw new HttpError(502, "invalid_upstream_stream");
+      }
+      const tracked = trackedStream(
+        upstream.body,
+        signal,
+        (usage) => finish(upstream.status, usage),
+        new UsageObserver(errorContext.started),
+      );
+      if (!stream) {
+        const completed = await completedResponse(tracked);
+        return json(
+          200,
+          chat
+            ? responseToChat(completed, `chatcmpl-${requestId}`)
+            : messages
+            ? responseToMessages(completed, `msg_${requestId}`)
+            : completed,
+        );
+      }
+      // Forward only protocol headers; provider cookies and request metadata stay private.
+      return new Response(
+        chat
+          ? streamChat(
+            tracked,
+            `chatcmpl-${requestId}`,
+            body!.model as string,
+            includeUsage,
+          )
+          : messages
+          ? streamMessages(tracked, `msg_${requestId}`, body!.model as string)
+          : tracked,
+        {
+          status: upstream.status,
+          headers: {
+            "content-type": "text/event-stream; charset=utf-8",
+            "cache-control": "no-store",
+            "x-request-id": requestId,
+            "x-content-type-options": "nosniff",
+          },
+        },
+      );
+    } catch (error) {
+      if (providerDispatched && !usageWriteFailed && !providerFailureRecorded && !request.signal.aborted) {
+        await upstreamFailure(signal.aborted ? 504 : error instanceof HttpError ? error.status : 502, signal.aborted ? "upstream_timeout" : upstreamReceived ? "invalid_upstream_response" : "upstream_unavailable");
+      }
+      await finish(
+        signal.aborted ? 499 : error instanceof HttpError ? error.status : 502,
+        {
+          input: null,
+          output: null,
+          cacheCreation: null,
+          cacheRead: null,
+          outcome: signal.aborted ? "cancelled" : "failed",
+        },
+      );
+      if (error instanceof HttpError) throw error;
+      throw new HttpError(
+        signal.aborted ? 504 : 502,
+        signal.aborted ? "upstream_timeout" : "upstream_unavailable",
+      );
+    }
+  }
+  throw new HttpError(503, "no_available_account");
+}

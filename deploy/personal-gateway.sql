@@ -1,0 +1,164 @@
+-- Install after native business migrations and account-vault.sql.
+BEGIN;
+CREATE TABLE IF NOT EXISTS s2a_private.personal_gateway_leases (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(), request_id uuid NOT NULL,
+    user_id bigint NOT NULL, key_id bigint NOT NULL, group_id bigint NOT NULL,
+    account_id bigint NOT NULL, credential_version bigint NOT NULL,
+    model text NOT NULL, stream boolean NOT NULL, fingerprint text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    expires_at timestamptz NOT NULL, finished_at timestamptz,
+    completion_hash text, completion jsonb
+);
+ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
+ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
+CREATE INDEX IF NOT EXISTS personal_gateway_account_slots ON s2a_private.personal_gateway_leases(account_id,expires_at) WHERE finished_at IS NULL;
+CREATE INDEX IF NOT EXISTS personal_gateway_request ON s2a_private.personal_gateway_leases(request_id);
+ALTER FUNCTION public.invalidate_group_usage_rollup_state() SET search_path=pg_catalog,public,pg_temp;
+ALTER FUNCTION public.invalidate_group_usage_rollup_state_after_insert() SET search_path=pg_catalog,public,pg_temp;
+ALTER TABLE public.usage_logs ALTER COLUMN model TYPE varchar(200);
+ALTER TABLE public.usage_logs ALTER COLUMN requested_model TYPE varchar(200);
+ALTER TABLE public.usage_logs ALTER COLUMN upstream_model TYPE varchar(200);
+ALTER TABLE public.usage_logs ADD COLUMN IF NOT EXISTS s2a_personal_details jsonb;
+
+CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
+    p_key_hash text,p_model text,p_request_id uuid,p_excluded bigint[] DEFAULT '{}',
+    p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accounts;
+    lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
+    allowed boolean; fingerprint text; now_at timestamptz; account jsonb;
+BEGIN
+    IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
+        OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
+        OR jsonb_typeof(p_billing_context)<>'object' THEN RETURN jsonb_build_object('error','invalid_request','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
+    PERFORM 1 FROM public.users WHERE id=(identity->>'user_id')::bigint FOR UPDATE;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
+    SELECT * INTO k FROM public.api_keys WHERE id=(identity->>'key_id')::bigint;
+    SELECT * INTO g FROM public.groups WHERE id=k.group_id;
+    IF p_client_ip IS NOT NULL THEN
+        BEGIN
+            -- Reject prefixes: accepting a caller-supplied subnet would widen IP access.
+            IF strpos(p_client_ip, '/') > 0 THEN RAISE invalid_text_representation; END IF;
+            address := p_client_ip::inet;
+        EXCEPTION WHEN invalid_text_representation THEN
+            RETURN jsonb_build_object('error', 'invalid_client_ip', 'status', 400);
+        END;
+    END IF;
+    IF jsonb_array_length(coalesce(k.ip_whitelist, '[]'::jsonb)) > 0 THEN
+        allowed := false;
+        IF address IS NOT NULL THEN
+            FOR network IN SELECT jsonb_array_elements_text(k.ip_whitelist) LOOP
+                IF address <<= network::inet THEN allowed := true; END IF;
+            END LOOP;
+        END IF;
+        IF NOT allowed THEN RETURN jsonb_build_object('error', 'ip_forbidden', 'status', 403); END IF;
+    END IF;
+    IF address IS NOT NULL THEN
+        FOR network IN SELECT jsonb_array_elements_text(coalesce(k.ip_blacklist, '[]'::jsonb)) LOOP
+            IF address <<= network::inet THEN RETURN jsonb_build_object('error', 'ip_forbidden', 'status', 403); END IF;
+        END LOOP;
+    ELSIF jsonb_array_length(coalesce(k.ip_blacklist, '[]'::jsonb)) > 0 THEN
+        RETURN jsonb_build_object('error', 'client_ip_required', 'status', 403);
+    END IF;
+    IF p_model <> '__models__' AND coalesce((g.model_allowlist->>'enabled')::boolean, false) THEN
+        allowed := false;
+        FOR pattern IN SELECT jsonb_array_elements_text(coalesce(g.model_allowlist->'models', '[]'::jsonb)) LOOP
+            IF lower(p_model) = lower(pattern) OR (right(pattern, 1) = '*' AND starts_with(lower(p_model), lower(left(pattern, -1)))) THEN allowed := true; END IF;
+        END LOOP;
+        IF NOT allowed THEN RETURN jsonb_build_object('error', 'model_not_allowed', 'status', 403); END IF;
+    END IF;
+    fingerprint:=encode(sha256(convert_to(jsonb_build_array(p_key_hash,p_model,p_client_ip,p_billing_context)::text,'UTF8')),'hex');
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE request_id=p_request_id ORDER BY created_at DESC LIMIT 1;
+    IF FOUND THEN
+        IF lease.fingerprint<>fingerprint THEN RETURN jsonb_build_object('error','request_conflict','status',409); END IF;
+        IF lease.finished_at IS NOT NULL AND NOT (lease.account_id=ANY(coalesce(p_excluded,'{}')) AND lease.completion->>'outcome'='failed') THEN
+            RETURN jsonb_build_object('error','request_finished','status',409);
+        END IF;
+        IF lease.finished_at IS NULL AND lease.expires_at<=clock_timestamp() THEN RETURN jsonb_build_object('error','request_expired','status',409); END IF;
+    END IF;
+    IF lease.id IS NULL OR lease.finished_at IS NOT NULL THEN
+        lease:=NULL;
+        FOR a IN SELECT accounts.* FROM s2a_private.accounts accounts
+            JOIN public.account_groups ag ON ag.account_id=accounts.id AND ag.group_id=g.id
+            WHERE accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
+                AND accounts.platform=g.platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
+                AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
+                AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp()
+                AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
+                AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp()
+                AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
+                AND (NOT g.require_privacy_set OR (accounts.platform<>'openai' OR accounts.extra->>'privacy_mode'='training_off'))
+            ORDER BY accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
+            FOR UPDATE OF accounts LOOP
+            now_at:=clock_timestamp();
+            IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
+            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at)
+                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds') RETURNING * INTO lease;
+            UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
+            EXIT;
+        END LOOP;
+        IF lease.id IS NULL THEN RETURN jsonb_build_object('error','no_available_account','status',503); END IF;
+    END IF;
+    account:=public.s2a_gateway_account_snapshot(lease.account_id);
+    IF account ? 'error' THEN RETURN account || jsonb_build_object('status',503); END IF;
+    IF (account->>'credential_version')::bigint<>lease.credential_version THEN RETURN jsonb_build_object('error','account_credentials_changed','status',409); END IF;
+    SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
+    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text),
+        'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',coalesce(account->'credentials'->'model_mapping','{}'),'include_upstream',true));
+END $$;
+ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) TO service_role;
+CREATE OR REPLACE FUNCTION public.s2a_personal_finish(
+    p_lease_id uuid,p_status integer,p_outcome text,p_input_tokens integer,p_output_tokens integer,
+    p_cache_creation_tokens integer,p_cache_read_tokens integer,p_cooldown_seconds integer,
+    p_credential_version bigint,p_first_token_ms integer DEFAULT NULL,p_upstream_model text DEFAULT NULL
+) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE lease s2a_private.personal_gateway_leases; payload jsonb; digest text; usage_id bigint; now_at timestamptz;
+BEGIN
+    IF p_lease_id IS NULL OR p_status IS NULL OR p_status NOT BETWEEN 100 AND 599
+        OR p_outcome IS NULL OR p_outcome NOT IN ('completed','failed','cancelled','interrupted')
+        OR coalesce(p_input_tokens,0)<0 OR coalesce(p_output_tokens,0)<0
+        OR coalesce(p_cache_creation_tokens,0)<0 OR coalesce(p_cache_read_tokens,0)<0
+        OR coalesce(p_first_token_ms,0)<0 OR p_cooldown_seconds IS NULL OR p_cooldown_seconds NOT BETWEEN 0 AND 3600
+        OR (p_upstream_model IS NOT NULL AND (length(p_upstream_model) NOT BETWEEN 1 AND 200 OR p_upstream_model ~ '[[:cntrl:]]')) THEN
+        RETURN jsonb_build_object('error','invalid_usage','status',400);
+    END IF;
+    payload:=jsonb_build_object('status',p_status,'outcome',p_outcome,'input',p_input_tokens,'output',p_output_tokens,
+        'cacheCreation',p_cache_creation_tokens,'cacheRead',p_cache_read_tokens,'firstTokenMs',p_first_token_ms,
+        'cooldown',p_cooldown_seconds,'credentialVersion',p_credential_version,'upstreamModel',p_upstream_model);
+    digest:=encode(sha256(convert_to(payload::text,'UTF8')),'hex');
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','lease_not_found','status',404); END IF;
+    IF lease.finished_at IS NOT NULL THEN
+        IF lease.completion_hash<>digest THEN RETURN jsonb_build_object('error','completion_conflict','status',409); END IF;
+        RETURN jsonb_build_object('applied',false);
+    END IF;
+    now_at:=clock_timestamp();
+    IF lease.model<>'__models__' AND (p_outcome='completed' OR coalesce(p_input_tokens,0)+coalesce(p_output_tokens,0)::bigint+coalesce(p_cache_creation_tokens,0)::bigint+coalesce(p_cache_read_tokens,0)::bigint>0) THEN
+        INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,upstream_model,
+            input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,stream,request_type,duration_ms,first_token_ms,
+            billing_mode,s2a_personal_details)
+        VALUES(lease.user_id,lease.key_id,lease.account_id,lease.group_id,lease.request_id::text,lease.model,lease.model,
+            coalesce(p_upstream_model,lease.model),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),
+            coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.stream THEN 2 ELSE 1 END,
+            least(2147483647,greatest(0,floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer,p_first_token_ms,
+            'token',payload) RETURNING id INTO usage_id;
+    END IF;
+    IF p_cooldown_seconds>0 THEN
+        UPDATE s2a_private.accounts SET temp_unschedulable_until=greatest(temp_unschedulable_until,now_at+make_interval(secs=>p_cooldown_seconds)),
+            temp_unschedulable_reason='cloud_upstream_'||p_status::text
+            WHERE id=lease.account_id AND s2a_credential_version=p_credential_version;
+    END IF;
+    UPDATE s2a_private.personal_gateway_leases SET finished_at=now_at,completion_hash=digest,completion=payload
+        WHERE id=p_lease_id;
+    RETURN jsonb_build_object('applied',true,'usage_log_id',usage_id::text);
+END $$;
+ALTER FUNCTION public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_finish(uuid,integer,text,integer,integer,integer,integer,integer,bigint,integer,text) TO service_role;
+COMMIT;
