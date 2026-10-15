@@ -1,3 +1,4 @@
+import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {provisionManagement} from './management.mjs';
 import {googleOAuthClients,googleOAuthVariables} from '../supabase/functions/subscription-api/google_oauth_config.ts';
 import {configureJobScheduler} from './job-scheduler.mjs';
@@ -44,6 +45,7 @@ export async function deploy(env = process.env, run = (args) => {
   const result = spawnSync('supabase', args, { cwd: root, env, stdio: 'inherit', shell: false });
   if (result.error || result.status !== 0) throw new Error(`Supabase ${args[0]} failed; deployment stopped`);
 }, configure = configureJobScheduler, provision = provisionManagement) {
+  env = await resolveProjectCredentials(env);
   const config = deploymentConfig(env);
   const directory = await mkdtemp(join(tmpdir(), 'sub2api-deploy-'));
   try {

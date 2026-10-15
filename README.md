@@ -21,17 +21,19 @@ npm run up -- --cloud
 
 Open http://127.0.0.1:3000. The command provisions the isolated management database role, applies the original Go schema and cloud gateway functions, connects the administrator's Supabase identity, deploys the Edge Function, and starts the local management services.
 
-Required cloud settings:
+Cloud settings:
 
 | Variable | Purpose |
 | --- | --- |
 | `SUPABASE_URL` | Supabase project URL |
 | `SUPABASE_PUBLISHABLE_KEY` | Public publishable or anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-side service-role JWT |
+| `SUPABASE_SERVICE_ROLE_KEY` | Optional override; retrieved automatically with the access token when blank |
 | `SUPABASE_DB_PASSWORD` | Project database password used by the CLI |
 | `SUPABASE_ACCESS_TOKEN` | Management API token used during provisioning |
 | `SUB2API_LOCAL_ADMIN_EMAIL` | Administrator email |
 | `SUB2API_ADMIN_USER_IDS` | Existing administrator Auth UUIDs, or leave blank for automatic creation |
+
+Supabase generates the service-role key and injects it into hosted Edge Functions. Local provisioning retrieves the existing key using the Management API when the override is blank; it does not generate or rotate a key.
 
 Keep `SUB2API_DATA_MODEL=native`. Missing administrator passwords and credential encryption keys are generated and saved in `.env.local`. Private database credentials and local service keys are stored under `.local/`. These files are excluded from Git and never sent to the browser.
 

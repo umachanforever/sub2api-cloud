@@ -1,3 +1,4 @@
+import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {provisionManagement} from './management.mjs';
 import {configureJobScheduler} from './job-scheduler.mjs';
 import { spawn } from 'node:child_process';
@@ -81,7 +82,7 @@ async function up() {
     try { const stored = JSON.parse(await readFile(new URL('../.local/admin.json', import.meta.url), 'utf8')); if (typeof stored.SUB2API_LOCAL_ADMIN_PASSWORD !== 'string' || !stored.SUB2API_LOCAL_ADMIN_PASSWORD || typeof stored.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64 !== 'string' || Buffer.from(stored.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64, 'base64').length !== 32) throw Error('Invalid .local/admin.json; restore the original encryption key instead of regenerating it'); env.SUB2API_LOCAL_ADMIN_EMAIL = stored.SUB2API_LOCAL_ADMIN_EMAIL; env.SUB2API_LOCAL_ADMIN_PASSWORD = stored.SUB2API_LOCAL_ADMIN_PASSWORD; env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64 = stored.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64; } catch (error) { if (error.code !== 'ENOENT') throw error; }
   } else {
     validateConfig({ supabase_url: env.SUPABASE_URL, publishable_key: env.SUPABASE_PUBLISHABLE_KEY });
-    if (!env.SUPABASE_SERVICE_ROLE_KEY) throw Error('Fill SUPABASE_SERVICE_ROLE_KEY in .env.local');
+    env = await resolveProjectCredentials(env);
   }
   const additions = {};
   if (!env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64 || env.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64.startsWith('REPLACE_')) additions.GPT_SUBSCRIPTION_CREDENTIALS_KEY_B64 = randomBytes(32).toString('base64');

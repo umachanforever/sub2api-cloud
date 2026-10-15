@@ -1,3 +1,4 @@
+import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {randomBytes} from 'node:crypto';
 import {spawn} from 'node:child_process';
 import {mkdir,readFile,writeFile,chmod} from 'node:fs/promises';
@@ -20,6 +21,7 @@ async function command(args,env,input,visible=false){
 }
 
 export async function provisionManagement(env=process.env){
+ env=await resolveProjectCredentials(env);
  const local=env.SUPABASE_MODE==='local';
  if(!env.SUPABASE_URL||!env.SUPABASE_SERVICE_ROLE_KEY||!env.SUPABASE_PUBLISHABLE_KEY||!env.SUB2API_ADMIN_USER_IDS)throw Error('Configure the Supabase project and administrator before provisioning management');
  if(!local&&!env.SUPABASE_ACCESS_TOKEN)throw Error('Set SUPABASE_ACCESS_TOKEN in .env.local to provision the management database');

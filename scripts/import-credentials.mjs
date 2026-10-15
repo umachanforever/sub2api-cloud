@@ -1,3 +1,4 @@
+import { resolveProjectCredentials } from "./project-credentials.mjs";
 import {modelMapping} from "../supabase/functions/subscription-api/model_mapping.ts";
 import { disableOpenAITraining } from "../supabase/functions/subscription-api/openai_privacy.ts";
 import { readFile } from "node:fs/promises";
@@ -17,6 +18,7 @@ export async function importCredentials(
   env = process.env,
   fetchImpl = fetch,
 ) {
+  env = await resolveProjectCredentials(env, fetchImpl);
   const url = new URL(env.SUPABASE_URL);
   if (url.protocol !== "https:") throw new Error("SUPABASE_URL must use HTTPS");
   const serviceKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();

@@ -25,11 +25,13 @@ npm run up -- --cloud
 | --- | --- |
 | `SUPABASE_URL` | Supabase 项目地址 |
 | `SUPABASE_PUBLISHABLE_KEY` | 公开 publishable 或 anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | 服务端 service-role JWT |
+| `SUPABASE_SERVICE_ROLE_KEY` | 可留空；通过 access token 自动读取已有的服务端密钥 |
 | `SUPABASE_DB_PASSWORD` | CLI 使用的项目数据库密码 |
 | `SUPABASE_ACCESS_TOKEN` | 初始化数据库权限所需的 Management API 令牌 |
 | `SUB2API_LOCAL_ADMIN_EMAIL` | 管理员邮箱 |
 | `SUB2API_ADMIN_USER_IDS` | 已有管理员 Auth UUID；留空可自动创建 |
+
+Supabase 会生成 service-role key，并自动注入云端 Edge Function。本地部署时如留空，会通过 Management API 读取项目已有密钥，无需手动复制，也不会重新生成或轮换密钥。
 
 保留 `SUB2API_DATA_MODEL=native`。管理员密码和凭据加密密钥如未填写，会自动生成并保存到 `.env.local`；本地管理服务的数据库密码与服务密钥保存在 `.local/`。这些文件不进入 Git，也不会发送到浏览器。
 
