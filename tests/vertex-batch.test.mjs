@@ -30,3 +30,23 @@ test('Vertex batch states retain safe codes and require a result reference for s
  assert.equal(vertexBatchStatus({name,state:'JOB_STATE_SUCCEEDED',outputConfig:{gcsDestination:{outputUriPrefix:'gs://bucket/results/'}}}).output_ref,'gs://bucket/results/');
  for(const value of [{name,state:[]},{name,outputConfig:[]},{name,error:[]},{name,outputConfig:{gcsDestination:{outputUriPrefix:'https://evil.example/'}}}])assert.throws(()=>vertexBatchStatus(value));
 });
+
+test('Vertex transport pins native jobs to project and region and keeps credentials out of URLs',async()=>{
+ const {VertexBatchClient}=await import('../supabase/functions/sub2api/vertex_batch.ts');const seen=[];
+ const client=new VertexBatchClient('project-1','global',async()=>'private-token',async(url,init)=>{
+  seen.push(String(url));assert.equal(new Headers(init.headers).get('authorization'),'Bearer private-token');assert.equal(init.redirect,'error');assert.ok(!String(url).includes('private-token'));
+  if(String(url).endsWith(':cancel'))return new Response(null,{status:204});
+  if(init.method==='POST'){const body=JSON.parse(init.body);assert.equal(body.instanceConfig.keyField,'key');return Response.json({name,state:'JOB_STATE_PENDING'});}
+  return Response.json({name,state:'JOB_STATE_RUNNING'});
+ });
+ const signal=AbortSignal.timeout(5000);assert.equal((await client.createBatch('gemini-image','gs://bucket/input','gs://bucket/output/','images',signal)).status,'queued');assert.equal((await client.getBatch(name,signal)).status,'running');await client.cancelBatch(name,signal);
+ assert.equal(seen.length,3);assert.equal(JSON.stringify(client),'{}');
+ await assert.rejects(client.getBatch(name.replace('project-1','other'),signal),/vertex_batch_account_mismatch/);assert.equal(seen.length,3);
+});
+test('Vertex transport does not retry uncertain creations or leak provider failures',async()=>{
+ const {VertexBatchClient,VertexBatchRequestError}=await import('../supabase/functions/sub2api/vertex_batch.ts');
+ for(const kind of ['network','500','403','malformed','mismatch']){
+  let calls=0;const client=new VertexBatchClient('project-1','global',async()=>'private-token',async()=>{calls++;if(kind==='network')throw Error('private');if(kind==='500'||kind==='403')return new Response('private',{status:Number(kind)});if(kind==='malformed')return new Response('bad');return Response.json({name:name.replace('project-1','other'),state:'JOB_STATE_PENDING'});});
+  await assert.rejects(client.createBatch('gemini-image','gs://bucket/input','gs://bucket/output/','images',AbortSignal.timeout(5000)),error=>error instanceof VertexBatchRequestError&&error.uncertain===(kind!=='403')&&!error.message.includes('private'));assert.equal(calls,1);
+ }
+});

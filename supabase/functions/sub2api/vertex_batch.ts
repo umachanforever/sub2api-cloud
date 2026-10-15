@@ -68,3 +68,54 @@ export function vertexBatchStatus(value:unknown,fallbackOutput?:string):GeminiBa
  if(!errorCode&&['failed','cancelled','expired'].includes(status))errorCode='VERTEX_BATCH_'+status.toUpperCase();
  return {name,raw_state:raw,status,done,...(output?{output_ref:output}:{}),...(errorCode?{error_code:errorCode}:{}),requeue_after_seconds:done?0:30};
 }
+
+export class VertexBatchRequestError extends HttpError{
+ readonly uncertain:boolean;readonly upstreamStatus:number|null;
+ constructor(code:string,uncertain=false,upstreamStatus:number|null=null){super(502,code);this.uncertain=uncertain;this.upstreamStatus=upstreamStatus;}
+}
+// The durable consumer supplies its account-bound token and proxy-aware fetcher.
+export class VertexBatchClient{
+ #fetch:typeof fetch;#token:()=>Promise<string>;#project:string;#location:string;
+ constructor(project:string,location:string,token:()=>Promise<string>,fetcher:typeof fetch=fetch){
+  vertexBatchEndpoint(project,location);this.#project=project;this.#location=location;this.#token=token;this.#fetch=fetcher;
+ }
+ #resourceURL(name:string):string{
+  vertexBatchResource(name);
+  const prefix=`projects/${this.#project}/locations/${this.#location}/batchPredictionJobs/`;
+  if(!name.startsWith(prefix))throw new HttpError(502,'vertex_batch_account_mismatch');
+  return vertexBatchEndpoint(this.#project,this.#location)+'/'+name.slice(prefix.length);
+ }
+ async #request(url:string,method:string,signal:AbortSignal,body?:ObjectValue):Promise<unknown>{
+  const token=await this.#token();
+  if(typeof token!=='string'||!token||/[\r\n]/.test(token))throw new HttpError(503,'vertex_token_unavailable');
+  let response:Response;
+  try{response=await this.#fetch(url,{method,signal,redirect:'error',headers:{authorization:'Bearer '+token,...(body?{'content-type':'application/json'}:{})},...(body?{body:JSON.stringify(body)}:{})});}
+  catch{throw new VertexBatchRequestError('VERTEX_TRANSPORT_FAILED',method==='POST');}
+  if(!response.ok){
+   await response.body?.cancel().catch(()=>{});
+   const codes:Record<number,string>={401:'VERTEX_AUTH_FAILED',403:'VERTEX_PERMISSION_DENIED',404:'VERTEX_BATCH_NOT_FOUND',429:'VERTEX_RATE_LIMITED'};
+   throw new VertexBatchRequestError(codes[response.status]??'VERTEX_INVALID_RESPONSE',method==='POST'&&(response.status===408||response.status>=500||response.status<400),response.status);
+  }
+  const reader=response.body?.getReader();
+  if(!reader){if(!body)return {};throw new VertexBatchRequestError('VERTEX_INVALID_RESPONSE',method==='POST');}
+  const chunks:Uint8Array[]=[];let size=0;
+  try{
+   for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>1024*1024)throw Error('limit');chunks.push(chunk.value);}
+   if(!size&&!body)return {};
+   const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
+   return object(JSON.parse(new TextDecoder().decode(bytes)));
+  }catch{throw new VertexBatchRequestError('VERTEX_INVALID_RESPONSE',method==='POST');}
+  finally{await reader.cancel().catch(()=>{});reader.releaseLock();}
+ }
+ async createBatch(model:string,input:string,output:string,displayName:string,signal:AbortSignal):Promise<GeminiBatchStatus>{
+  const request=vertexBatchCreateRequest(model,input,output,displayName);
+  const result=await this.#request(vertexBatchEndpoint(this.#project,this.#location),'POST',signal,request);
+  try{const status=vertexBatchStatus(result,output);this.#resourceURL(status.name);return status;}
+  catch{throw new VertexBatchRequestError('VERTEX_INVALID_RESPONSE',true);}
+ }
+ async getBatch(name:string,signal:AbortSignal,fallbackOutput?:string):Promise<GeminiBatchStatus>{
+  const result=vertexBatchStatus(await this.#request(this.#resourceURL(name),'GET',signal),fallbackOutput);
+  if(result.name!==name)throw new VertexBatchRequestError('VERTEX_INVALID_RESPONSE');return result;
+ }
+ async cancelBatch(name:string,signal:AbortSignal):Promise<void>{await this.#request(this.#resourceURL(name)+':cancel','POST',signal);}
+}
