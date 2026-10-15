@@ -19,6 +19,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: deno task check
+      - run: deno task test:compat
       - run: npm run test:database
       - uses: pnpm/action-setup@v4
         with:
