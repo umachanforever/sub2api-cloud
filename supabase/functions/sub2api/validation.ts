@@ -1,5 +1,6 @@
 import { DEFAULT_REQUEST_LIMITS } from './request_limits.ts';
 import { grokOrigin } from './grok_config.ts';
+import {multiProtocolProvider,parseProviderOptions} from './provider_routing.ts';
 import { quotaDisplaySnapshot, quotaWindowMetadata } from "./openai_quota_values.ts";
 import { autoResetThreshold } from "./openai_auto_reset_values.ts";
 import { pauseThreshold } from "./openai_quota_pause.ts";
@@ -207,7 +208,7 @@ export function parseAccountCredentials(
   platform: unknown = "openai",
   type: unknown = "oauth",
 ): AccountCredentials {
-  if (!["openai", "anthropic", "gemini", "grok", "typesafe"].includes(platform as string)) {
+  if (!["openai", "anthropic", "gemini", "grok", "typesafe"].includes(platform as string)&&!multiProtocolProvider(platform)) {
     throw new HttpError(501, "unsupported_platform");
   }
   if (type === "oauth" && platform === "openai") {
@@ -224,6 +225,7 @@ export function parseAccountCredentials(
   ) throw new HttpError(400, "missing_api_key");
   for (const [name, value] of Object.entries(input)) {
     if (["api_key", "base_url"].includes(name)) continue;
+    if(multiProtocolProvider(platform)&&['account_mode','api_protocol','api_base_urls','protocol_rules'].includes(name))continue;
     if (
       name === "tier_id" && platform === "gemini" &&
       ["aistudio_free", "aistudio_paid"].includes(value as string)
@@ -239,6 +241,7 @@ export function parseAccountCredentials(
   const credentials: { api_key: string; base_url?: string } = {
     api_key: input.api_key.trim(),
   };
+  if(multiProtocolProvider(platform))return {...credentials,...parseProviderOptions(platform,input)};
   if (platform === "grok") {
     credentials.base_url = grokOrigin(input.base_url);
     return credentials;

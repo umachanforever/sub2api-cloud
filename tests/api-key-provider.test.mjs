@@ -8,6 +8,7 @@ import {
 } from "../supabase/functions/sub2api/credential_store.ts";
 import { parseAccountCredentials } from "../supabase/functions/sub2api/validation.ts";
 import { nativeUsage } from "../supabase/functions/sub2api/api_key_provider.ts";
+import {providerProtocol,providerEndpoint,openCodeSession} from '../supabase/functions/sub2api/provider_routing.ts';
 const config = {
   url: "https://project.supabase.co",
   serviceKey: "service",
@@ -80,6 +81,77 @@ function sse(events) {
     },
   );
 }
+
+for(const [platform,url] of [
+  ['kimi','https://api.moonshot.cn/v1/chat/completions'],
+  ['zhipu','https://open.bigmodel.cn/api/paas/v4/chat/completions'],
+  ['deepseek','https://api.deepseek.com/v1/chat/completions'],
+  ['minimax','https://api.minimaxi.com/v1/chat/completions'],
+  ['opencode_go','https://opencode.ai/zen/go/v1/chat/completions'],
+  ['command_code','https://api.commandcode.ai/provider/v1/chat/completions'],
+  ['cline','https://api.cline.bot/api/v1/chat/completions'],
+])test(`${platform} cloud chat forwards to the original provider endpoint and records tokens`,async()=>{
+  const result={object:'chat.completion',choices:[{message:{role:'assistant',content:'hello'},finish_reason:'stop'}],usage:{prompt_tokens:12,completion_tokens:3,prompt_tokens_details:{cached_tokens:5}}};
+  const value=await fixture(platform,(target,init)=>{
+    assert.equal(target,url);assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
+    assert.equal(init.headers.get('x-goog-api-key'),null);assert.equal(init.redirect,'error');
+    return Response.json(result);
+  });
+  const response=await value.request('/v1/chat/completions',{model:'deepseek-test',messages:[{role:'user',content:'hello'}]});
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),result);
+  assert.equal(value.finishes[0].p_input_tokens,12);assert.equal(value.finishes[0].p_output_tokens,3);assert.equal(value.finishes[0].p_cache_read_tokens,5);
+});
+
+for(const platform of ['kimi','deepseek','minimax','opencode_go','command_code'])test(`${platform} adaptive Responses preserves streaming and usage`,async()=>{
+  const result={type:'response.completed',response:{object:'response',status:'completed',output:[],usage:{input_tokens:9,output_tokens:4}}};
+  const expected=providerEndpoint(platform,{api_protocol:'adaptive'},'responses');
+  const value=await fixture(platform,(target,init)=>{
+    assert.equal(target,expected);assert.equal(init.headers.get('authorization'),'Bearer provider-secret');
+    return sse([result,'[DONE]']);
+  },{api_key:'provider-secret',api_protocol:'adaptive'});
+  const response=await value.request('/v1/responses',{model:'gpt-test',input:'hello',stream:true});
+  assert.equal(response.status,200);assert.match(await response.text(),/response.completed/);
+  assert.equal(value.finishes[0].p_input_tokens,9);assert.equal(value.finishes[0].p_output_tokens,4);
+});
+
+for(const platform of ['kimi','zhipu','deepseek','minimax','opencode_go','command_code'])test(`${platform} adaptive Messages uses Anthropic authentication and cached usage`,async()=>{
+  const result={type:'message',role:'assistant',content:[{type:'text',text:'hello'}],stop_reason:'end_turn',usage:{input_tokens:3,output_tokens:2,cache_read_input_tokens:4,cache_creation_input_tokens:1}};
+  const value=await fixture(platform,(target,init)=>{
+    assert.equal(target,providerEndpoint(platform,{api_protocol:'adaptive'},'anthropic'));
+    assert.equal(init.headers.get('x-api-key'),'provider-secret');assert.equal(init.headers.get('authorization'),null);
+    assert.equal(init.headers.get('anthropic-version'),'2023-06-01');return Response.json(result);
+  },{api_key:'provider-secret',api_protocol:'adaptive'});
+  const response=await value.request('/v1/messages',{model:platform==='opencode_go'?'qwen-test':'claude-test',messages:[{role:'user',content:'hello'}],max_tokens:20});
+  assert.equal(response.status,200);assert.deepEqual(await response.json(),result);
+  assert.equal(value.finishes[0].p_input_tokens,8);assert.equal(value.finishes[0].p_output_tokens,2);
+});
+
+test('provider routing preserves original mode defaults, explicit protocols and ordered model rules',()=>{
+  assert.equal(providerEndpoint('deepseek',{},'responses'),'https://api.deepseek.com/responses');
+  assert.equal(providerEndpoint('kimi',{account_mode:'coding'},'anthropic'),'https://api.kimi.com/coding/v1/messages');
+  assert.equal(providerEndpoint('zhipu',{account_mode:'coding'},'chat_completions'),'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions');
+  assert.equal(providerProtocol('kimi',{},'responses','anything'),'chat_completions');
+  assert.equal(providerProtocol('kimi',{api_protocol:'adaptive'},'responses','anything'),'responses');
+  assert.equal(providerProtocol('zhipu',{api_protocol:'adaptive'},'responses','anything'),'chat_completions');
+  assert.equal(providerProtocol('opencode_go',{},'chat_completions','gpt-test'),'responses');
+  assert.equal(providerProtocol('opencode_go',{},'chat_completions','qwen-test'),'anthropic');
+  assert.equal(providerProtocol('command_code',{},'chat_completions','gpt-test'),'chat_completions');
+  assert.equal(providerProtocol('opencode_go',{protocol_rules:[]},'responses','gpt-test'),'chat_completions');
+  assert.equal(providerEndpoint('kimi',{api_protocol:'adaptive',base_url:'https://api.kimi.com/coding/v1'},'anthropic'),'https://api.moonshot.cn/anthropic/v1/messages');
+  for(const base_url of ['https://evil.example','https://api.deepseek.com.evil.example','https://api.deepseek.com?api_key=secret','https://user@api.deepseek.com','https://api.deepseek.com/evil'])assert.throws(()=>parseAccountCredentials({api_key:'secret',base_url},'deepseek','apikey'));
+  assert.throws(()=>parseAccountCredentials({api_key:'secret',api_base_urls:{responses:'https://api.openai.com'}},'deepseek','apikey'));
+  assert.throws(()=>parseAccountCredentials({api_key:'secret',protocol_rules:[{pattern:'g*pt',protocol:'responses'}]},'kimi','apikey'));
+});
+
+test('OpenCode retains caller conversation identity and generates only for Go plans',()=>{
+  const req=headers=>new Request('https://gateway',{headers});
+  assert.equal(openCodeSession(req({'x-opencode-session':'explicit','session-id':'secondary'}),{prompt_cache_key:'body'},true),'explicit');
+  assert.equal(openCodeSession(req({}),{prompt_cache_key:'body'},true),'body');
+  assert.equal(openCodeSession(req({}),{metadata:{user_id:'{"session_id":"claude-conversation"}'}},true),'claude-conversation');
+  assert.equal(openCodeSession(req({}),{prompt_cache_key:'bad\nvalue',metadata:{user_id:'safe'}},true),'safe');
+  assert.equal(openCodeSession(req({}),{},false),undefined);
+  assert.match(openCodeSession(req({}),{},true),/^[a-f0-9-]{36}$/);
+});
 
 test("API-key credentials encrypt losslessly, reject tampering and keep OAuth validation distinct", async () => {
   const credentials = parseAccountCredentials(

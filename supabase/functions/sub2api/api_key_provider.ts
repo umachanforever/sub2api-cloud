@@ -1,4 +1,6 @@
 import {systemOneTokens} from './typesafe.ts';
+import {multiProtocolProvider,providerProtocol,providerEndpoint,openCodeSession,type ProviderProtocol} from './provider_routing.ts';
+import {CODEX_USER_AGENT} from './gateway.ts';
 import {grokImageBody} from './grok_images.ts';
 import { normalizeModernCodexResponses } from "./codex_models.ts";
 import { grokHeaders } from './grok_config.ts';
@@ -22,7 +24,7 @@ export type NativeProtocol =
   | "messages"
   | "gemini"
   | "models";
-const origins: Record<Platform, string> = {
+const origins: Partial<Record<Platform, string>> = {
   openai: "https://api.openai.com",
   anthropic: "https://api.anthropic.com",
   gemini: "https://generativelanguage.googleapis.com",
@@ -51,6 +53,9 @@ export function apiKeyRequest(
     platform,
     "apikey",
   ) as ApiKeyCredentials;
+  const multi=multiProtocolProvider(platform);
+  const nativeProtocol:ProviderProtocol=protocol==='messages'?'anthropic':protocol==='responses'?'responses':'chat_completions';
+  if(multi&&(!['chat','responses','messages','models'].includes(protocol)||protocol!=='models'&&providerProtocol(platform,validated,nativeProtocol,String(body?.model??''))!==nativeProtocol))throw new HttpError(501,'provider_protocol_conversion_required');
   if (
     (["openai", "grok"].includes(platform) &&
       !["chat", "responses", "models", "images", ...(platform === "openai" ? ["embeddings"] : ["voice", "videos"])].includes(protocol)) ||
@@ -78,12 +83,12 @@ export function apiKeyRequest(
     accept: streaming ? "text/event-stream" : "application/json",
   });
   let providerPath = path;
-  if (platform === "openai" || platform === "grok" || platform === "typesafe") {
+  if (platform === "openai" || platform === "grok" || platform === "typesafe" || multi && protocol!=='messages') {
     headers.set("authorization", `Bearer ${validated.api_key}`);
     if (protocol === "responses") providerPath = "/v1/responses";
     if (protocol === "embeddings") providerPath = "/v1/embeddings";
     if (protocol === "images") providerPath = path.endsWith("/edits") ? "/v1/images/edits" : "/v1/images/generations";
-  } else if (platform === "anthropic") {
+  } else if (platform === "anthropic" || multi && protocol==='messages') {
     headers.set("x-api-key", validated.api_key);
     const version = request.headers.get("anthropic-version") ?? "2023-06-01";
     if (!/^\d{4}-\d{2}-\d{2}$/.test(version)) {
@@ -100,7 +105,7 @@ export function apiKeyRequest(
   } else {
     headers.set("x-goog-api-key", validated.api_key);
   }
-  if (platform === "grok" && protocol!=="voice") grokHeaders(headers, validated.base_url || origins.grok);
+  if (platform === "grok" && protocol!=="voice") grokHeaders(headers, validated.base_url || origins.grok!);
   const query = new URLSearchParams();
   if (protocol === "models") {
     const modelId = /\/models\/([^/]+)$/.exec(path)?.[1];
@@ -125,9 +130,22 @@ export function apiKeyRequest(
       query.set(key, value);
     }
   } else if (platform === "gemini" && streaming) query.set("alt", "sse");
+  let target=multi?providerEndpoint(platform,validated,protocol==='models'?'models':nativeProtocol):(validated.base_url || origins[platform]) + providerPath;
+  if(multi){
+    const modelId=protocol==='models'?/\/models\/([^/]+)$/.exec(path)?.[1]:undefined;
+    if(modelId)target+='/'+encodeURIComponent(decodeURIComponent(modelId));
+    if(platform==='opencode_go'){
+      headers.set('user-agent','opencode/1.0.0');
+      if(protocol!=='models'){
+        const session=openCodeSession(request,body,validated.account_mode!=='zen'||target.includes('/zen/go'));
+        if(session)headers.set('x-opencode-session',session);
+      }
+    }
+    if(platform==='command_code')headers.set('user-agent',CODEX_USER_AGENT);
+  }
   const outbound = body ? platform === "grok" && protocol === "images" ? grokImageBody(body,path.endsWith("/edits")) : structuredClone(body) : undefined;
   return {
-    url: (validated.base_url || origins[platform]) + providerPath +
+    url: target +
       (query.size ? `?${query}` : ""),
     init: {
       method: body ? "POST" : "GET",
@@ -197,7 +215,7 @@ export function nativeUsage(
   },
 ): Usage {
   const usage = { ...prior };
-  if (platform === "openai" || platform === "grok") {
+  if (platform === "openai" || platform === "grok" || multiProtocolProvider(platform)&&protocol!=='messages') {
     const totals = protocol === "responses"
       ? (value.response?.usage ?? value.usage)
       : value.usage;
@@ -236,7 +254,7 @@ export function nativeUsage(
         ? "incomplete"
         : "completed";
     }
-  } else if (platform === "anthropic" || platform === "antigravity" && protocol === "messages") {
+  } else if (platform === "anthropic" || (platform === "antigravity" || multiProtocolProvider(platform)) && protocol === "messages") {
     const totals = value.message?.usage ?? value.usage;
     const input = tokens(totals?.input_tokens),
       output = tokens(totals?.output_tokens);
