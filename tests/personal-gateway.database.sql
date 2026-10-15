@@ -24,6 +24,29 @@ BEGIN
     IF result ? 'error' OR result->>'platform'<>'openai' OR result ? 'key_id' THEN RAISE EXCEPTION 'read-only key discovery failed or leaked identity'; END IF;
     IF public.s2a_personal_key_policy(repeat('0',64))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'discovery accepted invalid key'; END IF;
     IF public.s2a_personal_key_policy(h,'127.0.0.1/8')->>'error' IS DISTINCT FROM 'invalid_client_ip' THEN RAISE EXCEPTION 'discovery accepted subnet'; END IF;
+    IF has_function_privilege('anon','public.s2a_personal_key_billing(text,text)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_key_billing(text,text)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_key_billing(text,text)','EXECUTE') THEN RAISE EXCEPTION 'billing ACL mismatch'; END IF;
+    UPDATE public.groups SET rate_multiplier=1.5 WHERE id=g;
+    result:=public.s2a_personal_key_billing(h);
+    IF result->>'object' IS DISTINCT FROM 'sub2api.key_billing' OR (result->>'effective_rate_multiplier')::numeric IS DISTINCT FROM 1.5
+        OR result ? 'user_rate_multiplier' OR result ? 'key_id' THEN RAISE EXCEPTION 'billing group rate mismatch or identity leak'; END IF;
+    UPDATE public.groups SET subscription_type='subscription',peak_rate_enabled=true,peak_start='00:00',peak_end='23:59',peak_rate_multiplier=0 WHERE id=g;
+    result:=public.s2a_personal_key_billing(h);
+    IF (result->>'peak_rate_multiplier')::numeric IS DISTINCT FROM 0 OR result->>'timezone' IS DISTINCT FROM 'Asia/Shanghai'
+        OR (result->>'effective_rate_multiplier')::numeric IS DISTINCT FROM 1.5*s2a_private.gateway_peak_multiplier((SELECT to_jsonb(gr) FROM public.groups gr WHERE id=g),(result->>'observed_at')::timestamptz,'Asia/Shanghai') THEN RAISE EXCEPTION 'billing peak multiplier mismatch'; END IF;
+    UPDATE public.groups SET subscription_type='standard',peak_rate_enabled=false WHERE id=g;
+    ALTER FUNCTION s2a_private.gateway_peak_multiplier(jsonb,timestamptz,text) RENAME TO gateway_peak_multiplier_acceptance;
+    result:=public.s2a_personal_key_billing(h);
+    IF (result->>'effective_rate_multiplier')::numeric IS DISTINCT FROM 1.5 THEN RAISE EXCEPTION 'personal billing depends on native gateway installation'; END IF;
+    ALTER FUNCTION s2a_private.gateway_peak_multiplier_acceptance(jsonb,timestamptz,text) RENAME TO gateway_peak_multiplier;
+    INSERT INTO public.user_group_rate_multipliers(user_id,group_id,rate_multiplier) VALUES(u,g,0);
+    result:=public.s2a_personal_key_billing(h);
+    IF (result->>'user_rate_multiplier')::numeric IS DISTINCT FROM 0 OR (result->>'effective_rate_multiplier')::numeric IS DISTINCT FROM 0 THEN RAISE EXCEPTION 'billing lost zero user override'; END IF;
+    IF EXISTS(SELECT 1 FROM s2a_private.personal_gateway_leases WHERE key_id=k) THEN RAISE EXCEPTION 'billing reserved account'; END IF;
+    IF public.s2a_personal_key_billing(repeat('0',64))->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'billing accepted invalid key'; END IF;
+    DELETE FROM public.user_group_rate_multipliers WHERE user_id=u AND group_id=g;
+    UPDATE public.groups SET rate_multiplier=1 WHERE id=g;
     acquired:=public.s2a_personal_acquire(h,'alias',request);
     IF acquired ? 'error' OR acquired->'account'->>'id' IS DISTINCT FROM a::text
         OR acquired->'account'->>'credential_storage' IS DISTINCT FROM 'vault'
@@ -80,6 +103,7 @@ BEGIN
     result:=public.s2a_personal_finish((acquired->>'lease_id')::uuid,403,'failed',NULL,NULL,NULL,NULL,0,1,NULL,'gpt-5.4');
     IF EXISTS(SELECT FROM public.usage_logs WHERE request_id=request::text) THEN RAISE EXCEPTION 'failed search counted as success'; END IF;
     UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE id=k;
+    IF public.s2a_personal_key_billing(h)->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'billing ignored IP allowlist'; END IF;
     IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'ip_forbidden' OR public.s2a_personal_key_policy(h,'192.0.2.5') ? 'error' THEN RAISE EXCEPTION 'discovery ignored IP allowlist'; END IF;
     UPDATE public.api_keys SET ip_whitelist='[]',ip_blacklist='["192.0.2.0/24"]' WHERE id=k;
     IF public.s2a_personal_key_policy(h)->>'error' IS DISTINCT FROM 'client_ip_required' OR public.s2a_personal_key_policy(h,'192.0.2.5')->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'discovery ignored IP denylist'; END IF;

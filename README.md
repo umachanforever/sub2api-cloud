@@ -125,6 +125,8 @@ See [Deployment](docs/DEPLOYMENT.md), [Architecture](docs/ARCHITECTURE.md), and 
 
 Unqualified Sol-era GPT versions select the Sol variant: `gpt-6` → `gpt-6-sol`, `gpt-6.1` → `gpt-6.1-sol`, and future GPT versions follow the same rule. Explicit variants and account model mappings retain precedence. An alias requires its target model to be available upstream.
 
+`GET /v1/sub2api/billing` returns the authenticated key’s configured token multipliers, including user overrides and peak-hour settings. It uses the inference key, enforces its IP policy, and does not reserve an account or generate billable usage.
+
 OpenAI API-key accounts support `/v1/embeddings` (also `/embeddings`) with text or token batches, float or base64 vectors, model mapping, and input-token usage recording. This endpoint uses the text request body limit and does not support streaming. ChatGPT OAuth accounts do not provide an embeddings API key.
 
 Chat Completions accepts inline file data and provider file IDs. The Messages-to-OpenAI bridge accepts base64 PDFs, document URLs, and plain text documents, including files in tool results. Document citations are supported only by providers that handle them natively; enabling citations through the OpenAI bridge returns an explicit error.

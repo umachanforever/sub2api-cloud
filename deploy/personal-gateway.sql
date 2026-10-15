@@ -254,3 +254,43 @@ ALTER FUNCTION public.s2a_personal_key_policy(text,text) OWNER TO s2a_management
 REVOKE ALL ON FUNCTION public.s2a_personal_key_policy(text,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_key_policy(text,text) TO service_role;
 COMMIT;
+
+-- Read configured token billing multipliers without consuming a request lease.
+CREATE OR REPLACE FUNCTION public.s2a_personal_key_billing(p_key_hash text,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; g public.groups%ROWTYPE; user_rate numeric;
+    resolved numeric; peak numeric:=1; observed timestamptz:=clock_timestamp(); result jsonb;
+    start_minute integer; end_minute integer; current_minute integer; local_at timestamp;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    SELECT * INTO g FROM public.groups WHERE id=(identity->>'group_id')::bigint;
+    IF NOT FOUND THEN RETURN jsonb_build_object('error','group_unavailable','status',403); END IF;
+    SELECT rate_multiplier INTO user_rate FROM public.user_group_rate_multipliers
+        WHERE user_id=(identity->>'user_id')::bigint AND group_id=g.id;
+    resolved:=coalesce(user_rate,g.rate_multiplier);
+    -- The personal gateway installs independently from the native billing gateway.
+    IF g.subscription_type='subscription' AND g.peak_rate_enabled
+        AND g.peak_start ~ '^([0-9]|[01][0-9]|2[0-3]):[0-5][0-9]$'
+        AND g.peak_end ~ '^([0-9]|[01][0-9]|2[0-3]):[0-5][0-9]$' THEN
+        start_minute:=split_part(g.peak_start,':',1)::integer*60+split_part(g.peak_start,':',2)::integer;
+        end_minute:=split_part(g.peak_end,':',1)::integer*60+split_part(g.peak_end,':',2)::integer;
+        local_at:=observed AT TIME ZONE 'Asia/Shanghai';
+        current_minute:=extract(hour FROM local_at)::integer*60+extract(minute FROM local_at)::integer;
+        IF start_minute<end_minute AND current_minute>=start_minute AND current_minute<end_minute THEN peak:=g.peak_rate_multiplier; END IF;
+    END IF;
+    result:=jsonb_build_object('object','sub2api.key_billing','schema_version',1,'billing_scope','token',
+        'group_rate_multiplier',g.rate_multiplier,'resolved_rate_multiplier',resolved,
+        'peak_rate_enabled',g.peak_rate_enabled,'effective_rate_multiplier',resolved*peak,'observed_at',observed);
+    IF resolved IS DISTINCT FROM g.rate_multiplier THEN result:=result || jsonb_build_object('user_rate_multiplier',resolved); END IF;
+    IF g.peak_rate_enabled THEN result:=result || jsonb_build_object('peak_start',g.peak_start,'peak_end',g.peak_end,
+        'peak_rate_multiplier',g.peak_rate_multiplier,'applied_peak_multiplier',peak,'timezone','Asia/Shanghai'); END IF;
+    RETURN result;
+END $$;
+ALTER FUNCTION public.s2a_personal_key_billing(text,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_key_billing(text,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_key_billing(text,text) TO service_role;
+
+NOTIFY pgrst, 'reload schema';
