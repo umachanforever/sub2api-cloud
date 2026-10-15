@@ -420,6 +420,7 @@ BEGIN
     IF task.stage IN ('upload','create') AND task.create_dispatched_at IS NULL THEN
         UPDATE s2a_private.batch_image_runtime SET stage='failed',cancel_requested=true,error_code='BATCH_CANCELLED',lease_id=NULL,lease_until=NULL,updated_at=clock_timestamp() WHERE batch_id=p_id;
         UPDATE public.batch_image_jobs SET status='cancelled',cancelled_count=item_count,finished_at=clock_timestamp(),updated_at=clock_timestamp() WHERE batch_id=p_id;
+        UPDATE public.batch_image_items SET status='cancelled',error_code='BATCH_CANCELLED',indexed_at=clock_timestamp() WHERE job_id=p_id AND status='pending';
     ELSE
         UPDATE s2a_private.batch_image_runtime SET cancel_requested=true,due_at=clock_timestamp(),updated_at=clock_timestamp() WHERE batch_id=p_id;
     END IF;

@@ -191,6 +191,7 @@ BEGIN
  lease:=(public.s2a_batch_image_runtime_claim()->0->>'lease_id')::uuid;
  r:=public.s2a_batch_image_cancel(h,ident);
  IF r->>'status' IS DISTINCT FROM 'cancelled' OR r->>'cancelled_count' IS DISTINCT FROM '1' THEN RAISE EXCEPTION 'queued cancellation failed'; END IF;
+ IF r->'items'->0->>'status' IS DISTINCT FROM 'cancelled' OR r->'items'->0->>'error_code' IS DISTINCT FROM 'BATCH_CANCELLED' THEN RAISE EXCEPTION 'cancelled item left pending'; END IF;
  IF public.s2a_batch_image_runtime_dispatch(ident,lease)->>'error' IS DISTINCT FROM 'batch_image_lease_lost' THEN RAISE EXCEPTION 'cancelled worker dispatched'; END IF;
  IF public.s2a_batch_image_runtime_claim()<>'[]'::jsonb THEN RAISE EXCEPTION 'cancelled task reclaimed'; END IF;
  IF public.s2a_batch_image_cancel(h,ident)->>'status' IS DISTINCT FROM 'cancelled' THEN RAISE EXCEPTION 'cancel replay'; END IF;
