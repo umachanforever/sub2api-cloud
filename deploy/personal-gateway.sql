@@ -95,6 +95,7 @@ BEGIN
             WHERE accounts.deleted_at IS NULL AND accounts.status='active' AND accounts.schedulable
                 AND accounts.platform=g.platform AND NOT(accounts.id=ANY(coalesce(p_excluded,'{}')))
                 AND (bound_account_id IS NULL OR accounts.id=bound_account_id)
+                AND (NOT coalesce((p_billing_context->>'cache_create')::boolean,false) OR (g.platform='gemini' AND accounts.type='apikey'))
                 AND NOT coalesce(accounts.auto_pause_on_expired AND accounts.expires_at<=clock_timestamp(),false)
                 AND coalesce(accounts.overload_until,'-infinity')<=clock_timestamp()
                 AND coalesce(accounts.rate_limit_reset_at,'-infinity')<=clock_timestamp()
@@ -450,5 +451,55 @@ END $$;
 ALTER FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_deleted(text,text,uuid,text) TO service_role;
+-- Retain creation intents before network dispatch so interrupted resources remain traceable.
+CREATE TABLE IF NOT EXISTS s2a_private.cache_creation_intents (
+    public_id text PRIMARY KEY,lease_id uuid NOT NULL,user_id bigint NOT NULL,key_id bigint NOT NULL,
+    group_id bigint NOT NULL,account_id bigint NOT NULL,model text NOT NULL,upstream_model text NOT NULL,
+    display_name text NOT NULL,created_at timestamptz NOT NULL DEFAULT clock_timestamp(),completed_at timestamptz
+);
+ALTER TABLE s2a_private.cache_creation_intents OWNER TO s2a_management;
+ALTER TABLE s2a_private.cache_creation_intents ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON s2a_private.cache_creation_intents FROM PUBLIC,anon,authenticated,service_role;
+CREATE OR REPLACE FUNCTION public.s2a_personal_cache_create(p_key_hash text,p_public_id text,p_lease_id uuid,p_upstream_model text,p_display_name text,p_action text,p_upstream_name text DEFAULT NULL,p_expire_time timestamptz DEFAULT NULL,p_token_count bigint DEFAULT NULL,p_client_ip text DEFAULT NULL)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE policy jsonb; identity jsonb; lease s2a_private.personal_gateway_leases%ROWTYPE; intent s2a_private.cache_creation_intents%ROWTYPE;
+BEGIN
+    policy:=public.s2a_personal_key_policy(p_key_hash,p_client_ip);
+    IF policy ? 'error' THEN RETURN policy; END IF;
+    IF policy->>'platform' IS DISTINCT FROM 'gemini' THEN RETURN jsonb_build_object('error','gemini_cache_requires_gemini_group','status',400); END IF;
+    identity:=public.s2a_gateway_key_lookup(p_key_hash);
+    IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',403); END IF;
+    IF p_public_id IS NULL OR p_public_id !~ '^[a-f0-9]{40}$' OR p_upstream_model IS NULL OR p_upstream_model !~ '^[a-zA-Z0-9._-]{1,200}$'
+        OR p_display_name IS NULL OR length(p_display_name)>128 THEN RETURN jsonb_build_object('error','invalid_cache_creation','status',400); END IF;
+    SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id FOR UPDATE;
+    IF NOT FOUND OR lease.finished_at IS NOT NULL OR lease.expires_at<=clock_timestamp() OR NOT lease.count_only
+        OR lease.user_id<>(identity->>'user_id')::bigint OR lease.key_id<>(identity->>'key_id')::bigint OR lease.group_id<>(identity->>'group_id')::bigint
+        THEN RETURN jsonb_build_object('error','invalid_cache_reservation','status',409); END IF;
+    IF p_action='prepare' THEN
+        INSERT INTO s2a_private.cache_creation_intents(public_id,lease_id,user_id,key_id,group_id,account_id,model,upstream_model,display_name)
+            VALUES(p_public_id,lease.id,lease.user_id,lease.key_id,lease.group_id,lease.account_id,lease.model,p_upstream_model,p_display_name)
+            ON CONFLICT(public_id) DO NOTHING;
+    END IF;
+    SELECT * INTO intent FROM s2a_private.cache_creation_intents WHERE public_id=p_public_id FOR UPDATE;
+    IF NOT FOUND OR intent.lease_id<>lease.id OR intent.upstream_model<>p_upstream_model OR intent.display_name<>p_display_name THEN
+        RETURN jsonb_build_object('error','cache_creation_conflict','status',409);
+    END IF;
+    IF p_action='prepare' THEN RETURN jsonb_build_object('prepared',true); END IF;
+    IF p_action<>'complete' OR p_action IS NULL OR p_upstream_name IS NULL OR (length(p_upstream_name)>495 OR p_upstream_name !~ '^cachedContents/[a-zA-Z0-9_-]+$')
+        OR p_expire_time IS NULL OR NOT isfinite(p_expire_time) OR p_expire_time<=clock_timestamp() OR p_expire_time>clock_timestamp()+interval '24 hours 5 seconds'
+        OR p_token_count IS NULL OR p_token_count<0 THEN RETURN jsonb_build_object('error','invalid_cache_upstream_response','status',400); END IF;
+    IF intent.completed_at IS NOT NULL THEN
+        IF NOT EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id=p_public_id AND upstream_name=p_upstream_name
+            AND expire_time=p_expire_time AND total_token_count=p_token_count) THEN RETURN jsonb_build_object('error','cache_creation_conflict','status',409); END IF;
+        RETURN jsonb_build_object('created',true);
+    END IF;
+    INSERT INTO public.gemini_cached_contents(public_id,user_id,api_key_id,group_id,account_id,upstream_name,model,upstream_model,display_name,total_token_count,expire_time)
+        VALUES(intent.public_id,intent.user_id,intent.key_id,intent.group_id,intent.account_id,p_upstream_name,intent.model,intent.upstream_model,intent.display_name,p_token_count,p_expire_time);
+    UPDATE s2a_private.cache_creation_intents SET completed_at=clock_timestamp() WHERE public_id=p_public_id;
+    RETURN jsonb_build_object('created',true);
+END $$;
+ALTER FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text) TO service_role;
 NOTIFY pgrst, 'reload schema';
 COMMIT;

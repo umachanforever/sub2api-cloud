@@ -1,3 +1,4 @@
+import {geminiCacheCreate} from './gemini_cache_create.ts';
 import {geminiCacheMutation} from './gemini_cache_mutation.ts';
 import {geminiCacheRead} from './gemini_cache_read.ts';
 import {keyBilling} from './key_billing.ts';
@@ -62,6 +63,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (pathname === "/antigravity/models" && request.method === "GET") return await antigravityDiscovery(request,token,db);
       if (pathname === "/v1/usage" && request.method === "GET") return await usageAccess(request, token, db);
       if (pathname === "/v1/sub2api/billing" && request.method === "GET") return await keyBilling(request,token,db);
+      if (request.method==='POST' && pathname==='/v1beta/cachedContents') return await geminiCacheCreate(request,token,db);
       if (['DELETE','PATCH'].includes(request.method) && /^\/v1beta\/cachedContents\/[^/]+$/.test(pathname)) return await geminiCacheMutation(request,pathname,token,db);
       if (request.method === 'GET' && /^\/v1beta\/cachedContents(?:\/[^/]+)?$/.test(pathname)) return await geminiCacheRead(request,pathname,token,db);
       return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);

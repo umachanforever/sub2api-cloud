@@ -3,7 +3,7 @@ SET LOCAL ROLE s2a_management;
 DO $$
 DECLARE u bigint:=nullif(current_setting('s2a.acceptance.user_id',true),'')::bigint;
     k bigint:=nullif(current_setting('s2a.acceptance.key_id',true),'')::bigint;
-    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text; cache_group bigint; cache_account bigint; alternative_cache_account bigint;
+    g bigint; a bigint; h text; request uuid:=gen_random_uuid(); acquired jsonb; result jsonb; lease uuid; search_kind text; cache_group bigint; cache_account bigint; alternative_cache_account bigint; oauth_cache_account bigint;
 BEGIN
     IF has_function_privilege('anon','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_key_policy(text,text)','EXECUTE')
@@ -122,6 +122,11 @@ BEGIN
     INSERT INTO public.account_groups(account_id,group_id) VALUES(cache_account,cache_group);
     INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Alternative cache account','gemini','apikey','{"api_key":"fixture-other-key"}',1,-10) RETURNING id INTO alternative_cache_account;
     INSERT INTO public.account_groups(account_id,group_id) VALUES(alternative_cache_account,cache_group);
+    INSERT INTO public.accounts(name,platform,type,credentials,concurrency,priority) VALUES('Cache-ineligible OAuth fixture','gemini','oauth','{"access_token":"fixture"}',1,-100) RETURNING id INTO oauth_cache_account;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(oauth_cache_account,cache_group);
+    result:=public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cache_create":true,"count_only":true}');
+    IF result ? 'error' OR result->'account'->>'id' IS DISTINCT FROM alternative_cache_account::text THEN RAISE EXCEPTION 'cache creation selected unsupported authentication: %',result; END IF;
+    PERFORM public.s2a_personal_finish((result->>'lease_id')::uuid,200,'completed',NULL,NULL,NULL,NULL,0,1,NULL,'gemini-cache');
     INSERT INTO public.gemini_cached_contents(public_id,user_id,api_key_id,group_id,account_id,upstream_name,model,upstream_model,expire_time)
         VALUES('cache-fixture',u,k,cache_group,cache_account,'cachedContents/provider-private','gemini-cache','gemini-upstream',now()+interval '1 hour');
     result:=public.s2a_personal_cache_read(h,'cachedContents/cache-fixture');
@@ -149,6 +154,17 @@ BEGIN
     IF public.s2a_personal_cache_deleted(h,'cachedContents/cache-fixture',gen_random_uuid())->>'error' IS DISTINCT FROM 'invalid_cache_reservation' THEN RAISE EXCEPTION 'cache deletion accepted missing reservation'; END IF;
     acquired:=public.s2a_personal_acquire(h,'gemini-cache',gen_random_uuid(),'{}',true,NULL,'{"cached_content":"cachedContents/cache-fixture","count_only":true}');
     IF acquired ? 'error' THEN RAISE EXCEPTION 'cache delete admission failed: %',acquired; END IF;
+    IF has_table_privilege('service_role','s2a_private.cache_creation_intents','SELECT') OR has_function_privilege('anon','public.s2a_personal_cache_create(text,text,uuid,text,text,text,text,timestamptz,bigint,text)','EXECUTE') THEN RAISE EXCEPTION 'cache creation intent exposed'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','complete','cachedContents/new-private',now()+interval '1 hour',100)->>'error' IS DISTINCT FROM 'cache_creation_conflict' THEN RAISE EXCEPTION 'unprepared cache completed'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','prepare')->>'prepared' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache create prepare failed'; END IF;
+    IF EXISTS(SELECT 1 FROM public.gemini_cached_contents WHERE public_id=repeat('a',40)) THEN RAISE EXCEPTION 'pending cache exposed'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'other-model','Display','prepare')->>'error' IS DISTINCT FROM 'cache_creation_conflict' THEN RAISE EXCEPTION 'cache intent mutated'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','complete','cachedContents/new-private',now()+interval '1 hour',100)->>'created' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache complete failed'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','complete','cachedContents/new-private',now()+interval '1 hour',100)->>'created' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'cache complete replay failed'; END IF;
+    IF public.s2a_personal_cache_create(h,repeat('a',40),(acquired->>'lease_id')::uuid,'gemini-upstream','Display','complete','cachedContents/different',now()+interval '1 hour',100)->>'error' IS DISTINCT FROM 'cache_creation_conflict' THEN RAISE EXCEPTION 'cache conflict replay accepted'; END IF;
+    result:=public.s2a_personal_cache_read(h,'cachedContents/'||repeat('a',40));
+    IF result->>'displayName' IS DISTINCT FROM 'Display' OR result->>'model' IS DISTINCT FROM 'models/gemini-cache' OR result->'usageMetadata'->>'totalTokenCount' IS DISTINCT FROM '100' THEN RAISE EXCEPTION 'created cache view invalid'; END IF;
+    DELETE FROM public.gemini_cached_contents WHERE public_id=repeat('a',40);
     IF has_function_privilege('anon','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_cache_mutation(text,text,uuid,text,timestamptz,text)','EXECUTE') THEN RAISE EXCEPTION 'cache mutation public privileges'; END IF;
     UPDATE public.gemini_cached_contents SET mutation_lease=gen_random_uuid(),mutation_until=now()+interval '1 hour' WHERE public_id='cache-fixture';
