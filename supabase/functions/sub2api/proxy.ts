@@ -283,6 +283,7 @@ async function proxyWithIdentity(
       p_client_ip: clientIp,
       p_billing_context: {
         policy_model:policyModel,model_candidates:modelCandidates(routingModel),
+        ...(db.config.dataModel==='native'?{inbound_endpoint:path.slice(0,128)}:{}),
         ...(imageIntent&&(imageIntent.image_generation||imageIntent.grok_image_generation)?imageIntent:{}),
         ...(imageJob?{image_task:imageJob.id,image_job_lease:imageJob.lease_id}:{}),
         ...(cacheName?{cached_content:cacheName}:{}),

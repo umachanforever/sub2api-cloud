@@ -12,6 +12,9 @@ CREATE TABLE IF NOT EXISTS s2a_private.personal_gateway_leases (
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS count_only boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS web_search boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS search_operation text;
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS inbound_endpoint varchar(128);
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS client_ip varchar(45);
+ALTER TABLE s2a_private.personal_gateway_leases ADD COLUMN IF NOT EXISTS responses_websocket boolean NOT NULL DEFAULT false;
 ALTER TABLE s2a_private.personal_gateway_leases OWNER TO s2a_management;
 ALTER TABLE s2a_private.personal_gateway_leases ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.personal_gateway_leases FROM PUBLIC,anon,authenticated,service_role;
@@ -55,6 +58,9 @@ BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
         OR jsonb_typeof(p_billing_context)<>'object' THEN RETURN jsonb_build_object('error','invalid_request','status',400); END IF;
+    IF p_billing_context ? 'inbound_endpoint' AND (jsonb_typeof(p_billing_context->'inbound_endpoint')<>'string'
+        OR length(p_billing_context->>'inbound_endpoint') NOT BETWEEN 1 AND 128
+        OR p_billing_context->>'inbound_endpoint' !~ '^/[a-zA-Z0-9_/:.%-]+$') THEN RETURN jsonb_build_object('error','invalid_endpoint','status',400); END IF;
     identity:=public.s2a_gateway_key_lookup(p_key_hash);
     IF identity ? 'error' THEN RETURN identity || jsonb_build_object('status',CASE WHEN identity->>'error'='invalid_api_key' THEN 401 ELSE 403 END); END IF;
     PERFORM 1 FROM public.users WHERE id=(identity->>'user_id')::bigint FOR UPDATE;
@@ -148,8 +154,8 @@ BEGIN
             FOR UPDATE OF accounts LOOP
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
-            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation)
-                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false),coalesce((p_billing_context->>'web_search')::boolean,false),CASE WHEN p_billing_context->>'search_operation' IN ('web_search','x_search') THEN p_billing_context->>'search_operation' ELSE 'alpha_search' END) RETURNING * INTO lease;
+            INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket)
+                VALUES(p_request_id,k.user_id,k.id,g.id,a.id,a.s2a_credential_version,p_model,coalesce((p_billing_context->>'native_stream')::boolean,false),fingerprint,now_at+interval '150 seconds',coalesce((p_billing_context->>'count_only')::boolean,false),coalesce((p_billing_context->>'web_search')::boolean,false),CASE WHEN p_billing_context->>'search_operation' IN ('web_search','x_search') THEN p_billing_context->>'search_operation' ELSE 'alpha_search' END,p_billing_context->>'inbound_endpoint',host(address),coalesce((p_billing_context->>'responses_websocket')::boolean,false)) RETURNING * INTO lease;
             UPDATE s2a_private.accounts SET last_used_at=now_at WHERE id=a.id;
             EXIT;
         END LOOP;
@@ -203,12 +209,12 @@ BEGIN
     IF NOT lease.count_only AND lease.model<>'__models__' AND (p_outcome='completed' OR greatest(coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0))>0) THEN
         INSERT INTO public.usage_logs(user_id,api_key_id,account_id,group_id,request_id,model,requested_model,upstream_model,
             input_tokens,output_tokens,cache_creation_tokens,cache_read_tokens,stream,request_type,duration_ms,first_token_ms,
-            billing_mode,s2a_personal_details)
+            billing_mode,s2a_personal_details,inbound_endpoint,ip_address)
         VALUES(lease.user_id,lease.key_id,lease.account_id,lease.group_id,lease.request_id::text,lease.model,lease.model,
             coalesce(p_upstream_model,lease.model),coalesce(p_input_tokens,0),coalesce(p_output_tokens,0),
-            coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.stream THEN 2 ELSE 1 END,
+            coalesce(p_cache_creation_tokens,0),coalesce(p_cache_read_tokens,0),lease.stream,CASE WHEN lease.responses_websocket THEN 3 WHEN lease.stream THEN 2 ELSE 1 END,
             least(2147483647,greatest(0,floor(extract(epoch FROM now_at-lease.created_at)*1000)))::integer,p_first_token_ms,
-            'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation',coalesce(lease.search_operation,'alpha_search')) ELSE '{}'::jsonb END) RETURNING id INTO usage_id;
+            'token',payload || CASE WHEN lease.web_search THEN jsonb_build_object('web_search_calls',1,'operation',coalesce(lease.search_operation,'alpha_search')) ELSE '{}'::jsonb END,lease.inbound_endpoint,lease.client_ip) RETURNING id INTO usage_id;
     END IF;
     IF p_cooldown_seconds>0 THEN
         UPDATE s2a_private.accounts SET temp_unschedulable_until=greatest(temp_unschedulable_until,now_at+make_interval(secs=>p_cooldown_seconds)),

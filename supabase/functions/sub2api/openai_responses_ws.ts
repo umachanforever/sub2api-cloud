@@ -98,7 +98,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   const requested=payload.model??model;if(typeof requested!=='string'||!requested.trim()||requested.length>200||/[\x00-\x1f\x7f]/.test(requested)||requested==='__models__')throw new HttpError(400,'invalid_model');
   if(model&&requested!==model)throw new HttpError(400,'model_change_requires_reconnect');model=requested;
   const requestId=crypto.randomUUID();
-  const reservation=await db.rpc<Reservation>('s2a_personal_acquire',{p_key_hash:keyHash,p_model:model,p_request_id:requestId,p_excluded:[],p_count_request:true,p_client_ip:clientIp,p_billing_context:{policy_model:model,model_candidates:modelCandidates(model),native_stream:true,responses_websocket:true,...(pinned?{websocket_account:pinned.id}:{})}});
+  const reservation=await db.rpc<Reservation>('s2a_personal_acquire',{p_key_hash:keyHash,p_model:model,p_request_id:requestId,p_excluded:[],p_count_request:true,p_client_ip:clientIp,p_billing_context:{policy_model:model,model_candidates:modelCandidates(model),native_stream:true,responses_websocket:true,inbound_endpoint:'/v1/responses',...(pinned?{websocket_account:pinned.id}:{})}});
   if(!reservation||reservation.error)throw new HttpError(reservation?.status??503,reservation?.error??'database_unavailable');
   let resolve!:()=>void;const done=new Promise<void>(r=>{resolve=r;});active={reservation,started:Date.now(),usage:{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'incomplete'},resolve,done};
   if(ended){await finish(499,'cancelled');return;}

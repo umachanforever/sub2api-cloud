@@ -291,11 +291,12 @@ BEGIN
  INSERT INTO public.api_keys(user_id,key,name,group_id) VALUES(u,'typesafe-'||gen_random_uuid(),'TypeSafe fixture',g) RETURNING id,s2a_key_hash INTO k,h;
  INSERT INTO public.accounts(name,platform,type,credentials,concurrency) VALUES('TypeSafe fixture','typesafe','apikey','{"api_key":"synthetic-key"}',1) RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
+ IF public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/systemone?key=private"}'::jsonb)->>'error' IS DISTINCT FROM 'invalid_endpoint' THEN RAISE EXCEPTION 'Endpoint query accepted'; END IF;
  IF public.s2a_personal_key_policy(h)->>'platform' IS DISTINCT FROM 'typesafe' THEN RAISE EXCEPTION 'TypeSafe policy rejected'; END IF;
- r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid());
+ r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid(),p_client_ip=>'203.0.113.8',p_billing_context=>'{"inbound_endpoint":"/v1/systemone"}'::jsonb);
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'TypeSafe admission rejected'; END IF;
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint,p_upstream_model=>'jev-latest');
- IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0) THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
+ IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=3 AND output_tokens=1 AND actual_cost=0 AND inbound_endpoint='/v1/systemone' AND ip_address='203.0.113.8' AND request_type=1) THEN RAISE EXCEPTION 'TypeSafe native usage missing'; END IF;
  r:=public.s2a_personal_acquire(h,'jev-latest',gen_random_uuid());
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',1099511627776,2147483648,2147483649,2147483650,0,(r->'account'->>'credential_version')::bigint,p_upstream_model=>'jev-latest');
  IF NOT EXISTS(SELECT 1 FROM public.usage_logs WHERE api_key_id=k AND account_id=a AND input_tokens=1099511627776 AND output_tokens=2147483648 AND cache_creation_tokens=2147483649 AND cache_read_tokens=2147483650 AND s2a_personal_details->>'input'='1099511627776') THEN RAISE EXCEPTION 'Large provider token counts lost'; END IF;
@@ -327,9 +328,10 @@ BEGIN
  IF public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>jsonb_build_object('websocket_account',b::text,'responses_websocket',true))->>'error' IS DISTINCT FROM 'no_available_account' THEN RAISE EXCEPTION 'Disabled pinned WebSocket account accepted'; END IF;
  UPDATE public.accounts SET extra='{"openai_apikey_responses_websockets_v2_enabled":false}' WHERE id=a;
  UPDATE public.accounts SET extra='{}' WHERE id=b;
- r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>' {"responses_websocket":true}'::jsonb);
+ r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"responses_websocket":true,"native_stream":true,"inbound_endpoint":"/v1/responses"}'::jsonb);
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'Disabled preferred WebSocket account was not skipped'; END IF;
- PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,200,'completed',3,1,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
+ IF NOT EXISTS(SELECT FROM public.usage_logs WHERE api_key_id=k AND request_type=3 AND stream AND inbound_endpoint='/v1/responses') THEN RAISE EXCEPTION 'WebSocket usage transport metadata missing'; END IF;
  r:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid());
  IF r ? 'error' OR r->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'HTTP selection incorrectly excluded WebSocket-disabled account'; END IF;
  PERFORM public.s2a_personal_finish((r->>'lease_id')::uuid,499,'cancelled',NULL,NULL,NULL,NULL,0,(r->'account'->>'credential_version')::bigint);
