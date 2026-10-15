@@ -243,8 +243,8 @@ test('Command Code explicit rules override discovery and failed discovery falls 
   }
 });
 
-for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`original Anthropic upstream conversion serves ${protocol} with stream=${stream}`,async()=>{
-  const value=await fixture('opencode_go',(url,init)=>{
+for(const platform of ['opencode_go','anthropic'])for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`${platform} original Anthropic upstream conversion serves ${protocol} with stream=${stream}`,async()=>{
+  const value=await fixture(platform,(url,init)=>{
     assert.match(url,/\/messages$/);
     assert.equal(init.headers.get('x-api-key'),'provider-secret');
     const sent=JSON.parse(init.body);assert.equal(sent.stream,true);assert.equal(sent.max_tokens,20);
@@ -256,7 +256,7 @@ for(const protocol of ['responses','chat/completions'])for(const stream of [fals
       {type:'message_delta',delta:{stop_reason:'end_turn'},usage:{output_tokens:4}},
       {type:'message_stop'},
     ]);
-  },{api_key:'provider-secret',api_protocol:'anthropic'});
+  },{api_key:'provider-secret',...(platform==='opencode_go'?{api_protocol:'anthropic'}:{})});
   const response=await value.request('/v1/'+protocol,{model:'claude-test',stream,...(protocol==='responses'?{input:'hello',max_output_tokens:20}:{messages:[{role:'user',content:'hello'}],max_tokens:20})});
   assert.equal(response.status,200);
   if(stream)assert.match(await response.text(),/original anthropic/);
@@ -635,10 +635,6 @@ test("missing or invalid native token counts remain unknown instead of invented 
 test("mismatched protocols and decrypted custom origins fail explicitly before provider fetch", async () => {
   for (
     const [platform, path, body, credentials] of [
-      ["anthropic", "/v1/chat/completions", {
-        model: "test",
-        messages: [{ role: "user", content: "hi" }],
-      }, { api_key: "secret" }],
       ["gemini", "/v1/messages", {
         model: "test",
         messages: [{ role: "user", content: "hi" }],

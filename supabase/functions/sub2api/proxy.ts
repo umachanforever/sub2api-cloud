@@ -468,12 +468,18 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      if(account.type==='service_account'&&platform==='anthropic'&&messages){
+      const nativeAnthropicBridge=platform==='anthropic'&&!apiKey&&(chat||protocol==='responses');
+      let anthropicBody=forwardedBody;
+      if(nativeAnthropicBridge){
+        let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
+        chatBridge=await originalAnthropicBridge(source,keyHash);anthropicBody=chatBridge.body;
+      }
+      if(account.type==='service_account'&&platform==='anthropic'&&(messages||nativeAnthropicBridge)){
         const credentials=await decryptSecret(account,db.config.encryptionKey);
         const routed=(reservation as {composite_route?:{upstream_model?:string}}).composite_route?.upstream_model??routingModel;
         const explicit=!!model_sources&&mappedTarget(model_sources.mapping,routed,'anthropic')!==undefined;
         providerDispatched=true;
-        const outgoing=await vertexAnthropicRequest(credentials,forwardedBody!,request,signal,(url,init)=>accountFetch(db,account,url,init),explicit);
+        const outgoing=await vertexAnthropicRequest(credentials,anthropicBody!,request,signal,(url,init)=>accountFetch(db,account,url,init),explicit);
         native=outgoing;dispatchedModel=outgoing.upstreamModel;errorContext.upstreamModel=dispatchedModel;attemptContext.upstreamModel=dispatchedModel;
         upstreamEndpoint=usageEndpoint(outgoing.url);
         upstream=await accountFetch(db,account,outgoing.url,outgoing.init);
@@ -497,7 +503,7 @@ async function proxyWithIdentity(
         if (db.config.dataModel === "native") delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
         credentials=parseAccountCredentials(credentials,platform,'apikey') as ApiKeyCredentials;
         const providerCatalog=models?[]:await providerCatalogProtocols(db,account,credentials,upstreamModel,signal);
-        const upstreamProtocol=multiProtocolProvider(platform)?providerProtocol(platform,credentials,messages?'anthropic':protocol==='responses'?'responses':'chat_completions',upstreamModel,providerCatalog):undefined;
+        const upstreamProtocol=multiProtocolProvider(platform)?providerProtocol(platform,credentials,messages?'anthropic':protocol==='responses'?'responses':'chat_completions',upstreamModel,providerCatalog):platform==='anthropic'?'anthropic':undefined;
         const bridgeResponses = platform === "openai" && messages || (chat || messages) && upstreamProtocol==='responses';
         const bridgeChat=(messages||protocol==='responses')&&upstreamProtocol==='chat_completions';
         const bridgeAnthropic=(chat||protocol==='responses')&&upstreamProtocol==='anthropic';
@@ -563,7 +569,7 @@ async function proxyWithIdentity(
             ? grokOAuthRequest(credentials, protocol, forwardedPath, imageMultipart ? await grokImageForm(imageMultipart,forwardedBody!) : forwardedBody, request, signal)
             : platform === "gemini"
             ? googleOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal)
-            : anthropicOAuthRequest(credentials, protocol, forwardedPath, forwardedBody, request, signal);
+            : anthropicOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, anthropicBody, request, signal);
           native = outgoing;
             upstreamEndpoint=usageEndpoint(outgoing.url);
           if(voice){
@@ -703,7 +709,7 @@ async function proxyWithIdentity(
           rejection,
         );
       }
-      if(chatBridge)upstream=chatBridge.response(upstream);
+      if(chatBridge){upstream=chatBridge.response(upstream);native=undefined;}
       responseAccepted = native ? native.streaming : stream;
       if (native) {
         if(voice){if(upstream.status===204){await finish(204,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});return new Response(null,{status:204,headers:{'cache-control':'no-store'}});}return voiceResponse(upstream,signal,finish);}

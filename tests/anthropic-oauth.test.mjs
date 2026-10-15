@@ -3,7 +3,7 @@ import test from 'node:test';
 import { proxy } from '../supabase/functions/sub2api/proxy.ts';
 import { refreshAnthropicCredentials } from '../supabase/functions/sub2api/anthropic_oauth.ts';
 
-async function fixture({expired=false,reject=false,stream=false,setupToken=false}={}) {
+async function fixture({expired=false,reject=false,stream=false,setupToken=false,protocol='messages'}={}) {
  let credentials={access_token:'old-provider-token',refresh_token:'private-refresh-token',expires_at:Date.now()+(expired?-1000:3600000),provider_metadata:{preserved:true}};
  if(setupToken)delete credentials.refresh_token;
  let version=1,dispatched=0,refreshes=0;
@@ -37,8 +37,8 @@ async function fixture({expired=false,reject=false,stream=false,setupToken=false
   ].map(x=>'data: '+JSON.stringify(x)+'\n\n').join(''),{headers:{'content-type':'text/event-stream','set-cookie':'private'}});
   return Response.json({type:'message',content:[{type:'text',text:'hello'}],stop_reason:'end_turn',usage:{input_tokens:3,cache_read_input_tokens:4,output_tokens:2}});
  }};
- const request=new Request('https://gateway.invalid/v1/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'claude-test',messages:[{role:'user',content:'hello'}],max_tokens:16,stream})});
- const response=await proxy(request,'/v1/messages','existing-app-key',db,{requestId:crypto.randomUUID(),started:Date.now()});
+ const request=new Request('https://gateway.invalid/v1/'+protocol,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model:'claude-test',...(protocol==='responses'?{input:'hello',max_output_tokens:16}:{messages:[{role:'user',content:'hello'}],max_tokens:16}),stream})});
+ const response=await proxy(request,'/v1/'+protocol,'existing-app-key',db,{requestId:crypto.randomUUID(),started:Date.now()});
  const text=await response.text();
  return {response,text,finished,saved,refreshes,dispatched};
 }
@@ -61,4 +61,10 @@ test('refresh failures never expose upstream tokens or malformed rotated credent
  const credentials={access_token:'private',refresh_token:'private-refresh'};
  await assert.rejects(refreshAnthropicCredentials(credentials,async()=>new Response('private-refresh',{status:400})),error=>error.code==='anthropic_oauth_refresh_failed'||error.message==='anthropic_oauth_refresh_failed');
  await assert.rejects(refreshAnthropicCredentials(credentials,async()=>Response.json({access_token:'ok',expires_in:-1})),/invalid_oauth_refresh_response/);
+});
+
+for(const protocol of ['responses','chat/completions'])test(`native Anthropic OAuth bridges ${protocol} and preserves refresh retry`,async()=>{
+ const result=await fixture({protocol,reject:true});assert.equal(result.response.status,200);
+ const value=JSON.parse(result.text);assert.equal(protocol==='responses'?value.output.find(item=>item.type==='message').content[0].text:value.choices[0].message.content,'hello');
+ assert.equal(result.refreshes,1);assert.equal(result.dispatched,2);assert.equal(result.finished[0].p_input_tokens,7);
 });
