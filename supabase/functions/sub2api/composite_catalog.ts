@@ -1,4 +1,5 @@
 import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
+import {astraCodexModel} from './api_key_codex_capabilities.ts';
 import {codexCatalogDescriptor} from './codex_catalog.ts';
 import {mappedTarget} from './model_mapping.ts';
 import {defaultSolModel,modernCodexModel} from './codex_models.ts';
@@ -54,9 +55,9 @@ function sourceImageInput(source:CompositeCapabilitySource,target:string):boolea
  const canonical=target.trim().toLowerCase().split('/').at(-1)!;
  if(source.platform==='grok')return source.official&&['grok-4.3','grok-4.5','grok-4.6','grok-4.7','grok-build-0.1','grok-4.20-0309-reasoning','grok-4.20-0309-non-reasoning','grok-4.20-multi-agent-0309'].includes(canonical);
  const raw=source.modalities[target],modalities=Array.isArray(raw)?raw.filter(value=>value==='text'||value==='image'):[];
- if(modalities.length){if(source.platform==='openai'&&source.official&&canonical==='gpt-6-astra')return true;return modalities.includes('image');}
+ if(modalities.length){if(source.platform==='openai'&&source.official&&astraCodexModel(target))return true;return modalities.includes('image');}
  if(canonical==='deepseek-v4-flash-vision-exp')return source.type==='apikey';
- return source.platform==='openai'&&['oauth','apikey'].includes(source.type)&&(['gpt-6-sol','gpt-6-luna','gpt-6-astra','gpt-6.1-sol'].includes(modernCodexModel(canonical)?.id??'')||/^(?:gpt-5|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-4-vision)/.test(canonical));
+ return source.platform==='openai'&&['oauth','apikey'].includes(source.type)&&(astraCodexModel(target)||['gpt-6-sol','gpt-6-luna','gpt-6-astra','gpt-6.1-sol'].includes(modernCodexModel(canonical)?.id??'')||/^(?:gpt-5|gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-4-vision)/.test(canonical));
 }
 function sourceSupports(source:CompositeCapabilitySource,model:string):boolean{
  if(source.platform==='openai'&&source.passthrough)return true;

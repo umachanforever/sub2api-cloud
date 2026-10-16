@@ -52,7 +52,7 @@ async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,s
   body=await catalogBody(await accountFetch(db,account,outbound.url,outbound.init));
   if(manifest){
    const models=Array.isArray(body.models)?entries(body,'models','slug'):entries(body,'data','id').map(entry=>({...entry,slug:entry.id}));
-   body={...body,models:models.flatMap(entry=>{const descriptor=codexCatalogDescriptor(entry.slug);return descriptor?[completePinnedMetadata(descriptor,entry,account.model_metadata,metadataMapping)]:[]})};
+   body={...body,models:models.flatMap(entry=>{const descriptor=codexCatalogDescriptor(entry.slug);return descriptor?[completePinnedMetadata(descriptor,entry,account.model_metadata,metadataMapping,credentials.base_url)]:[]})};
    delete body.data;
   }else if(Array.isArray(body.models)){body=modelListFromManifest(body);}else entries(body,'data','id');
  }else{

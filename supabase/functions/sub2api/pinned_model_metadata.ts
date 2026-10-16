@@ -1,5 +1,6 @@
 import {modelMetadata} from './model_capabilities.ts';
 import {mappedTarget} from './model_mapping.ts';
+import {apiKeyCodexCapabilities,astraCodexModel} from './api_key_codex_capabilities.ts';
 type Entry=Record<string,any>;
 const capabilityFields=['service_tiers','supports_search_tool','apply_patch_tool_type','comp_hash','tool_mode','use_responses_lite','multi_agent_reasoning_effort','multi_agent_version'];
 const descriptions:Record<string,string>={none:"Use the model's default behavior without configurable reasoning",minimal:'Minimal reasoning for the fastest responses',low:'Fast responses with lighter reasoning',medium:'Balanced reasoning for most coding tasks',high:'Greater reasoning depth for coding and agent tasks',xhigh:'Extra-high reasoning depth for difficult tasks',max:'Maximum reasoning depth for complex tasks',ultra:'Maximum reasoning with automatic task delegation'};
@@ -14,7 +15,7 @@ function completeMissing(defaults:Entry,provided:Entry):Entry{
 }
 // Synced account metadata fills missing live fields before local descriptor defaults.
 // Explicit live nullable tool capabilities remain authoritative, including false/null.
-export function completePinnedMetadata(descriptor:Entry,entry:Entry,snapshot:unknown,mapping:Record<string,string>):Entry{
+export function completePinnedMetadata(descriptor:Entry,entry:Entry,snapshot:unknown,mapping:Record<string,string>,baseURL?:string):Entry{
  const slug=String(entry.slug),target=mappedTarget(mapping,slug,'openai')??slug;
  const raw=(snapshot as {models?:Record<string,Entry>}|undefined)?.models?.[target];
  const provided={...entry};
@@ -32,9 +33,10 @@ export function completePinnedMetadata(descriptor:Entry,entry:Entry,snapshot:unk
   for(const [key,value] of Object.entries(synced))if(provided[key]===undefined||provided[key]===null)provided[key]=value;
   for(const [key,value] of Object.entries(metadata.codex_tool_capabilities??{}))if(!Object.hasOwn(provided,key))provided[key]=value;
  }
+ for(const [key,value] of Object.entries(apiKeyCodexCapabilities(target,baseURL)))if(!Object.hasOwn(provided,key))provided[key]=value;
  const result=completeMissing(descriptor,provided);
  for(const field of capabilityFields)if(Object.hasOwn(provided,field))result[field]=field==='service_tiers'&&provided[field]===null?[]:provided[field];
  // API-key providers use full Responses for the original targeted model set.
- if(['gpt-6.1-sol','gpt-6-astra','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(target)&&result.use_responses_lite===true)result.use_responses_lite=false;
+ if((astraCodexModel(target)||['gpt-6.1-sol','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(target))&&result.use_responses_lite===true)result.use_responses_lite=false;
  return result;
 }

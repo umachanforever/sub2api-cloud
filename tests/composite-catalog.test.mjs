@@ -105,3 +105,13 @@ test('persistent exact ownership prevents a temporarily unavailable foreign acco
  const input={sources:[source('openai')],capability_sources:[{platform:'openai',type:'oauth',mapping:{},passthrough:true,official:true,modalities:{}},{platform:'anthropic',type:'apikey',mapping:{'gpt-6.1-sol':'claude-fable-5'},passthrough:false,official:false,modalities:{}}],routes:[]};
  assert.deepEqual(compositeCodexCatalog(input).models.find(model=>model.slug==='gpt-6.1-sol').input_modalities,['text']);
 });
+test('qualified Astra capability repair remains official-account scoped and intersects all candidates',()=>{
+ const target='openai/GPT_6_ASTRA_20261015';
+ const make=(official,modalities)=>({platform:'openai',type:'apikey',mapping:{'vision-alias':target},passthrough:false,official,modalities:modalities?{[target]:modalities}:{}});
+ const input={sources:[source('openai',{'vision-alias':target})],capability_sources:[make(true,['text'])],routes:[]};
+ const modalities=()=>compositeCodexCatalog(input).models.find(m=>m.slug==='vision-alias').input_modalities;
+ assert.deepEqual(modalities(),['text','image']);
+ input.capability_sources.push(make(false,['text']));assert.deepEqual(modalities(),['text']);
+ input.capability_sources=[make(false)];assert.deepEqual(modalities(),['text','image']);
+ input.capability_sources=[make(false,['text'])];assert.deepEqual(modalities(),['text']);
+});
