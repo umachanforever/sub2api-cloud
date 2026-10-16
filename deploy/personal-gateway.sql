@@ -121,6 +121,34 @@ END $$;
 ALTER FUNCTION s2a_private.account_mapping_accepts(text,text,jsonb,jsonb,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.account_mapping_accepts(text,text,jsonb,jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
 
+-- Group routing prioritizes eligible accounts; it never bypasses admission or
+-- prevents fallback when every preferred account is unavailable.
+CREATE OR REPLACE FUNCTION s2a_private.group_routing_accounts(p_config jsonb,p_enabled boolean,p_model text)
+RETURNS bigint[] LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
+DECLARE selected jsonb; entry record; ids bigint[];
+BEGIN
+ IF NOT coalesce(p_enabled,false) OR p_model IS NULL OR p_model='__models__' OR jsonb_typeof(p_config) IS DISTINCT FROM 'object' THEN RETURN '{}'::bigint[]; END IF;
+ selected:=p_config->p_model;
+ IF jsonb_typeof(selected) IS DISTINCT FROM 'array' THEN selected:=NULL;
+ ELSIF jsonb_array_length(selected)=0 THEN selected:=NULL; END IF;
+ IF selected IS NULL THEN
+  FOR entry IN SELECT key,value FROM jsonb_each(p_config) LOOP
+   IF right(entry.key,1)='*' AND starts_with(p_model,left(entry.key,-1)) AND jsonb_typeof(entry.value)='array' THEN
+    IF jsonb_array_length(entry.value)>0 THEN selected:=entry.value; EXIT; END IF;
+   END IF;
+  END LOOP;
+ END IF;
+ IF selected IS NULL THEN RETURN '{}'::bigint[]; END IF;
+ SELECT coalesce(array_agg(id ORDER BY position) FILTER(WHERE id IS NOT NULL),'{}'::bigint[]) INTO ids FROM (
+  SELECT ordinality AS position,CASE WHEN jsonb_typeof(value)='number' AND value::text ~ '^[1-9][0-9]{0,18}$'
+   THEN CASE WHEN value::text::numeric<=9223372036854775807 THEN value::text::bigint END END AS id
+  FROM jsonb_array_elements(selected) WITH ORDINALITY
+ ) candidates;
+ RETURN ids;
+END $$;
+ALTER FUNCTION s2a_private.group_routing_accounts(jsonb,boolean,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.group_routing_accounts(jsonb,boolean,text) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_key_hash text,p_model text,p_request_id uuid,p_excluded bigint[] DEFAULT '{}',
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
@@ -129,7 +157,7 @@ DECLARE identity jsonb; k public.api_keys; g public.groups; a s2a_private.accoun
     group_rpm integer; user_rpm integer; route jsonb; target_platform text; routed_model text; route_mapping jsonb; route_target text; normalized_model text;
     lease s2a_private.personal_gateway_leases; address inet; network text; pattern text;
     allowed boolean; fingerprint text; now_at timestamptz; account jsonb; cache_binding jsonb; video_binding jsonb; image_binding jsonb; bound_account_id bigint;
-    native_gemini_catalog boolean; gemini_sources jsonb;
+    native_gemini_catalog boolean; gemini_sources jsonb; routing_accounts bigint[]:='{}';
 BEGIN
     IF p_request_id IS NULL OR p_model IS NULL OR length(p_model) NOT BETWEEN 1 AND 200
         OR p_model ~ '[[:cntrl:]]' OR cardinality(p_excluded)>3 OR array_position(p_excluded,NULL) IS NOT NULL
@@ -163,6 +191,9 @@ BEGIN
         END IF;
         IF route ? 'error' THEN RETURN route; END IF;
         target_platform:=route->>'platform'; routed_model:=route->>'upstream_model';
+    END IF;
+    IF target_platform IN ('openai','anthropic') AND g.platform IN (target_platform,'composite') THEN
+        routing_accounts:=s2a_private.group_routing_accounts(g.model_routing,g.model_routing_enabled,p_model);
     END IF;
     IF NOT coalesce(g.allow_image_generation,false) AND (coalesce((CASE WHEN target_platform='grok' THEN p_billing_context->>'grok_image_generation' ELSE p_billing_context->>'image_generation' END)::boolean,false) OR lower(p_model) ~ '^(gpt-image-|grok-imagine(?:$|-edit$|-image))')
         AND NOT coalesce((p_billing_context->>'count_only')::boolean,false)
@@ -278,7 +309,8 @@ BEGIN
                 AND coalesce(accounts.temp_unschedulable_until,'-infinity')<=clock_timestamp()
                 AND (NOT g.require_oauth_only OR accounts.type<>'apikey')
                 AND (NOT g.require_privacy_set OR (accounts.platform<>'openai' OR accounts.extra->>'privacy_mode'='training_off'))
-            ORDER BY CASE WHEN native_gemini_catalog THEN CASE
+            ORDER BY CASE WHEN accounts.id=ANY(routing_accounts) THEN 0 ELSE 1 END,
+                CASE WHEN native_gemini_catalog THEN CASE
                 WHEN accounts.type='apikey' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'api_key',''))<>'' THEN 0
                 WHEN accounts.type='apikey' THEN 9
                 WHEN accounts.type='oauth' AND btrim(coalesce(s2a_private.account_credentials(accounts.id)->>'project_id',''))='' THEN 1

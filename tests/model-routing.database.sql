@@ -1,0 +1,61 @@
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE g bigint; other_group bigint; u bigint; a bigint; b bigint; foreign_account bigint; h text; decision jsonb; platform text; role_name text;
+BEGIN
+ FOREACH role_name IN ARRAY ARRAY['anon','authenticated','service_role'] LOOP
+  IF has_function_privilege(role_name,'s2a_private.group_routing_accounts(jsonb,boolean,text)','EXECUTE') THEN RAISE EXCEPTION 'routing helper exposed to %',role_name; END IF;
+ END LOOP;
+ IF s2a_private.group_routing_accounts('{"public":[9],"pub*":[8]}',true,'public') IS DISTINCT FROM ARRAY[9::bigint] THEN RAISE EXCEPTION 'exact routing did not win'; END IF;
+ IF s2a_private.group_routing_accounts('{"public":[],"pub*":[8]}',true,'public') IS DISTINCT FROM ARRAY[8::bigint] THEN RAISE EXCEPTION 'empty exact routing prevented wildcard fallback'; END IF;
+ IF s2a_private.group_routing_accounts('{"public":["8",0,-1,1.5,9999999999999999999,7]}',true,'public') IS DISTINCT FROM ARRAY[7::bigint] THEN RAISE EXCEPTION 'invalid routing identifiers accepted'; END IF;
+ IF s2a_private.group_routing_accounts('{"public":[9]}',false,'public')<>'{}'::bigint[] OR s2a_private.group_routing_accounts('[]',true,'public')<>'{}'::bigint[] THEN RAISE EXCEPTION 'disabled or malformed routing used'; END IF;
+ FOREACH platform IN ARRAY ARRAY['openai','anthropic','gemini','composite'] LOOP
+  INSERT INTO public.groups(name,platform) VALUES('Routing acceptance '||platform,platform) RETURNING id INTO g;
+  INSERT INTO public.groups(name,platform) VALUES('Foreign routing group '||platform,platform) RETURNING id INTO other_group;
+  INSERT INTO public.users(email,password_hash,concurrency) VALUES('routing-'||gen_random_uuid()||'@example.invalid','!fixture',10) RETURNING id INTO u;
+  INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-'||gen_random_uuid(),'Routing key') RETURNING s2a_key_hash INTO h;
+  INSERT INTO public.accounts(name,platform,type,credentials,priority,concurrency) VALUES('Ordinary priority',CASE WHEN platform='composite' THEN 'openai' ELSE platform END,'apikey','{"api_key":"synthetic-first"}',0,1) RETURNING id INTO a;
+  INSERT INTO public.accounts(name,platform,type,credentials,priority,concurrency) VALUES('Preferred routing',CASE WHEN platform='composite' THEN 'openai' ELSE platform END,'apikey','{"api_key":"synthetic-second"}',100,1) RETURNING id INTO b;
+  INSERT INTO public.accounts(name,platform,type,credentials,priority) VALUES('Foreign routing',CASE WHEN platform='composite' THEN 'openai' ELSE platform END,'apikey','{"api_key":"synthetic-foreign"}',-100) RETURNING id INTO foreign_account;
+  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g),(foreign_account,other_group);
+  UPDATE public.groups SET model_routing=jsonb_build_object('gpt-6.1-sol',jsonb_build_array(b)) WHERE id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'disabled routing changed normal priority for %: %',platform,decision->>'error'; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE public.groups SET model_routing_enabled=true WHERE id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM (CASE WHEN platform='gemini' THEN a ELSE b END)::text THEN RAISE EXCEPTION 'preferred platform-scoped routing failed for %: %',platform,decision->>'error'; END IF;
+  IF platform<>'gemini' THEN
+   decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+   IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'routing bypassed account concurrency for %',platform; END IF;
+  END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_excluded=>ARRAY[b],p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'routing bypassed retry exclusion for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE s2a_private.accounts SET overload_until=now()+interval '1 hour' WHERE id=b;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'routing bypassed cooldown for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE s2a_private.accounts SET overload_until=NULL WHERE id=b;
+  UPDATE public.accounts SET credentials='{"api_key":"synthetic-second","model_mapping":{"other-model":"other-model"}}' WHERE id=b;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'routing bypassed account model support for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE public.accounts SET credentials='{"api_key":"synthetic-second"}' WHERE id=b;
+  UPDATE public.groups SET model_routing=jsonb_build_object('gpt-6.1-sol',jsonb_build_array(foreign_account)) WHERE id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'routing crossed account group for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE public.groups SET model_routing=jsonb_build_object('gpt-*',jsonb_build_array(b),'gpt-6.1-sol',jsonb_build_array(a)) WHERE id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM a::text THEN RAISE EXCEPTION 'exact routing did not override prefix for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+  UPDATE public.groups SET model_routing=jsonb_build_object('gpt-*',jsonb_build_array(b)) WHERE id=g;
+  decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
+  IF decision->'account'->>'id' IS DISTINCT FROM (CASE WHEN platform='gemini' THEN a ELSE b END)::text THEN RAISE EXCEPTION 'prefix routing failed for %',platform; END IF;
+  UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g;
+ END LOOP;
+END $$;
+ROLLBACK;
