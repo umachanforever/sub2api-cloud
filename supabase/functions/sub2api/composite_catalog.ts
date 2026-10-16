@@ -38,6 +38,18 @@ function selectedRoute(input:CompositeCatalogSources,model:string){
  return input.routes.map((route,index)=>({route,index})).filter(({route})=>['any','responses'].includes(route.endpoint)&&(route.match_type==='exact'?route.model===model:model.startsWith(route.model)))
   .sort((a,b)=>Number(b.route.match_type==='exact')-Number(a.route.match_type==='exact')||Number(b.route.endpoint==='responses')-Number(a.route.endpoint==='responses')||b.route.model.length-a.route.model.length||a.index-b.index)[0]?.route;
 }
+function codexSelection(input:CompositeCatalogSources,id:string){
+ const route=selectedRoute(input,id),requested=route?.upstream_model||id;
+ const blocked=!route&&input.routes.some(entry=>entry.match_type==='exact'?entry.model===id:id.startsWith(entry.model));
+ const sources=input.capability_sources??input.sources;
+ const owners=new Set(sources.filter(source=>Object.hasOwn(source.mapping,requested)&&source.mapping[requested]?.trim()).map(source=>source.platform));
+ const platform=route?.platform??(blocked?undefined:owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
+ const targets=new Set(sources.filter(source=>source.platform===platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
+ // An explicit Responses route defines descriptor identity directly. Account
+ // mappings still participate in per-account metadata and capability lookup.
+ const target=route?requested:!blocked&&targets.size===1?[...targets][0]:id;
+ return {requested,platform,target,resolved:platform!==undefined};
+}
 function detectedPlatform(model:string):string|undefined{
  model=model.trim().toLowerCase().replace(/^models\//,'');
  const slash=model.indexOf('/');
@@ -80,13 +92,7 @@ export function compositeCodexCatalog(input:CompositeCatalogSources,allowlist?:M
  const models=[];
  for(const {id} of catalog.data){
   if(id.includes('*')||!codexCatalogDescriptor(id))continue;
-  const route=selectedRoute(input,id),requested=route?.upstream_model||id;
-  const metadataSources=input.capability_sources??input.sources;
-  const owners=new Set(metadataSources.filter(source=>typeof source.mapping[requested]==='string'&&Object.hasOwn(source.mapping,requested)&&source.mapping[requested].trim()).map(source=>source.platform));
-  const platform=route?.platform??(owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
-  const targets=new Set(metadataSources.filter(source=>source.platform===platform).map(source=>mappedTarget(source.mapping,requested,source.platform)).filter((target):target is string=>typeof target==='string'));
-  if(!route&&owners.size>1)targets.add('custom-model');
-  const target=targets.size===1?[...targets][0]:targets.size>1?'custom-model':requested;
+  const {requested,platform,target}=codexSelection(input,id);
   const descriptor=codexCatalogDescriptor(defaultSolModel(target)??target);
   if(!descriptor)continue;
   if(descriptor.slug!==id){descriptor.slug=id;descriptor.display_name=id;descriptor.description='Custom model routed through sub2api-cloud.';}
@@ -102,10 +108,8 @@ export async function completeCompositeCodexCatalog(input:CompositeCatalogSource
  const body=compositeCodexCatalog(input,allowlist);
  const fields=['display_name','description','default_reasoning_level','supported_reasoning_levels','input_modalities','context_window','max_context_window'];
  for(const descriptor of body.models){
-  const id=descriptor.slug,route=selectedRoute(input,id),requested=route?.upstream_model||id;
+  const id=descriptor.slug,{requested,platform,resolved}=codexSelection(input,id);
   const all=input.capability_sources??[];
-  const owners=new Set(all.filter(source=>Object.hasOwn(source.mapping,requested)&&source.mapping[requested]?.trim()).map(source=>source.platform));
-  const platform=route?.platform??(owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
   const rules=input.model_routing??{},routed=rules[id]?.length?rules[id]:Object.entries(rules).find(([pattern,ids])=>pattern.endsWith('*')&&id.startsWith(pattern.slice(0,-1))&&ids.length)?.[1];
   const accounts=all.filter(source=>source.platform===platform&&(!routed?.length||routed.map(String).includes(String(source.id))));
   const explicit=requested===id&&accounts.some(source=>Object.hasOwn(source.mapping,id)&&source.mapping[id]?.trim());
@@ -128,7 +132,8 @@ export async function completeCompositeCodexCatalog(input:CompositeCatalogSource
    if(source.platform==='openai'&&source.type==='apikey'&&(astraCodexModel(target)||['gpt-6.1-sol','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(target))&&caps.use_responses_lite===true)caps.use_responses_lite=false;
    candidates.push({...metadata,codex_tool_capabilities:caps});
   }
-  const conflict=!routed?.length&&(platform===undefined&&owners.size>1||explicit&&targets.size>1&&missing);
+  const declaredTargets=new Set(all.filter(source=>Object.hasOwn(source.mapping,id)&&source.mapping[id]?.trim()).map(source=>source.platform+'\0'+source.mapping[id].trim()));
+  const conflict=!routed?.length&&(!resolved&&declaredTargets.size>1||explicit&&targets.size>1&&missing);
   if(!candidates.length&&!conflict)continue;
   const patch=await originalCodexMetadata({model:id,candidates:candidates.length?candidates:[{}],descriptor:Object.fromEntries(fields.map(field=>[field,descriptor[field]])),missing:missing||conflict,conflict,public_alias:alias&&!conflict});
   Object.assign(descriptor,patch);
