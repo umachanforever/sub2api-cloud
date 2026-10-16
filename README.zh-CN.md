@@ -60,6 +60,8 @@ curl "$OPENAI_BASE_URL/models" \
 
 同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口按已启用账号分别返回数据，`windows` 保留各供应商的额度周期；上游不提供额度查询的账号标记为 `supported: false`。添加 `?refresh=true` 可立即向上游刷新。
 
+浏览器可直接打开 `https://<project-ref>.supabase.co/functions/v1/sub2api/usage?key=<你的API密钥>`，只显示该密钥有权使用的账号。
+
 `gpt-6`、`gpt-6.1` 等别名默认选择对应的 `-sol` 版本，账号模型映射优先。实际可用模型取决于订阅账号。
 
 ## 详细文档

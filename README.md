@@ -60,6 +60,8 @@ curl "$OPENAI_BASE_URL/models" \
 
 Use the same key with `/responses`, `/chat/completions`, and `/usage`. The usage endpoint lists enabled accounts separately, with provider-specific quota windows in `windows`. Accounts without an upstream quota API are marked `supported: false`. Add `?refresh=true` for a fresh upstream reading.
 
+Open usage directly in a browser: `https://<project-ref>.supabase.co/functions/v1/sub2api/usage?key=<your-api-key>`. It shows only accounts authorized by that key.
+
 Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless an account mapping overrides them. Available models depend on your subscription account.
 
 ## Documentation

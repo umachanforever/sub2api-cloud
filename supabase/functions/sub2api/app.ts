@@ -39,6 +39,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         pathname = "/v1" + pathname;
       }
       if (/^\/images\/batches(?:\/|$)/.test(pathname)) pathname='/v1'+pathname;
+      if (pathname === "/usage") pathname = "/v1/usage";
       const antigravityRoute = /^\/antigravity\/v1(?:beta)?\//.test(pathname);
       if (antigravityRoute) pathname = pathname.slice("/antigravity".length);
       gatewayRequest = /^\/v1(?:beta)?(?:\/|$)/.test(pathname) || ["/antigravity/models", "/alpha/search", "/backend-api/codex/alpha/search", "/backend-api/codex/models", "/messages/count_tokens", "/responses", "/backend-api/codex/responses", "/responses/input_tokens", "/backend-api/codex/responses/input_tokens"].includes(pathname);
@@ -68,7 +69,7 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         : [];
 
       const usageLinkKey = pathname === "/v1/usage" && request.method === "GET" ? new URL(request.url).searchParams.get("key") : null;
-      if (usageLinkKey !== null && !/^sk-usage-[a-f0-9]{64}$/.test(usageLinkKey)) throw new HttpError(401, "unauthorized");
+      if (usageLinkKey !== null && (!usageLinkKey || usageLinkKey.length > 512 || /[\s\x00-\x1f\x7f]/.test(usageLinkKey))) throw new HttpError(401, "unauthorized");
       const supplied = [bearer, usageLinkKey, ...nativeKeys].filter((value): value is string => !!value);
       if (new Set(supplied).size > 1) throw new HttpError(400, "conflicting_credentials");
       const token = supplied[0];

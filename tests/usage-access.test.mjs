@@ -101,9 +101,9 @@ test('direct read-only links show separate enabled account names and windows',as
  const body=await r.json();assert.deepEqual(body.accounts.map(a=>a.account_name),['First','Second']);
  assert.deepEqual(body.accounts.map(a=>a.five_hour.used_percent),[12,45]);
 });
-test('URL credentials accept only usage tokens and reject conflicting headers',async()=>{
+test('usage URL rejects malformed and conflicting credentials and inference routes reject query keys',async()=>{
  const app=handler(()=>assert.fail('invalid URL credentials must not query the database'));
- for(const key of ['sk-s2a-'+'a'.repeat(64),'short',''])assert.equal((await app(new Request('https://edge/v1/usage?key='+key))).status,401);
+ for(const key of ['', 'a'.repeat(513), 'sk-invalid%20key'])assert.equal((await app(new Request('https://edge/v1/usage?key='+key))).status,401);
  assert.equal((await app(new Request('https://edge/v1/usage?key=sk-usage-'+'a'.repeat(64),{headers:{authorization:'Bearer different'}}))).status,400);
  assert.equal((await app(new Request('https://edge/v1/responses?key=sk-usage-'+'a'.repeat(64),{method:'POST',body:'{}'}))).status,401);
 });
@@ -192,4 +192,29 @@ test('Gemini AI Studio OAuth reports unsupported subscription quota without cont
   });
   const a = (await (await app(request('?refresh=true'))).json()).accounts[0];
   assert.equal(a.supported, false); assert.equal(a.stale, false); assert.equal(a.error, 'quota_not_supported'); assert.deepEqual(a.windows, []);
+});
+
+
+test('browser URLs accept the authorized inference key on short and versioned usage paths', async () => {
+  const key = 'sk-s2a-' + 'a'.repeat(64);
+  let reads = 0;
+  const app = handler(async (url, init, args) => {
+    assert.ok(url.pathname.endsWith('/s2a_personal_usage_accounts'));
+    assert.equal(args.p_key_hash, await hashKey(key)); reads++;
+    return Response.json({ accounts: [account()] });
+  });
+  for (const path of ['/usage', '/v1/usage']) {
+    const response = await app(new Request('https://edge/functions/v1/sub2api' + path + '?key=' + key));
+    assert.equal(response.status, 200); assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+    const body = await response.json(); assert.equal(body.accounts.length, 1); assert.equal(JSON.stringify(body).includes(key), false);
+  }
+  assert.equal(reads, 2);
+});
+
+test('browser key access retains database authorization failures', async () => {
+  for (const [error, status] of [['invalid_api_key', 401], ['group_forbidden', 403], ['ip_forbidden', 403]]) {
+    const app = handler(() => Response.json({ error, status }));
+    const response = await app(new Request('https://edge/functions/v1/sub2api/usage?key=sk-' + 'a'.repeat(64)));
+    assert.equal(response.status, status);
+  }
 });

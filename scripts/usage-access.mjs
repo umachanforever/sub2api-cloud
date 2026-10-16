@@ -27,7 +27,7 @@ export async function issueUsageAccess(env = process.env, options = {}) {
   const baseURL = project.origin + '/functions/v1/sub2api/v1';
   const path = new URL(options.link ? '../.local/usage-link.json' : '../.local/agent-usage.json', import.meta.url);
   await mkdir(new URL('../.local/', import.meta.url), { recursive: true, mode: 0o700 });
-  await writeFile(path, JSON.stringify({ base_url: baseURL, api_key: token, usage_url: baseURL + '/usage', refresh_url: baseURL + '/usage?refresh=true', authentication: 'Authorization: Bearer <api_key>', scope: 'usage:read', ...(options.link ? { browser_url: baseURL + '/usage?key=' + token } : {}) }, null, 2) + '\n', { mode: 0o600 });
+  await writeFile(path, JSON.stringify({ base_url: baseURL, api_key: token, usage_url: baseURL + '/usage', refresh_url: baseURL + '/usage?refresh=true', authentication: 'Authorization: Bearer <api_key>', scope: 'usage:read', ...(options.link ? { browser_url: project.origin + '/functions/v1/sub2api/usage?key=' + token } : {}) }, null, 2) + '\n', { mode: 0o600 });
   await chmod(path, 0o600);
   console.log(`Read-only usage configuration saved: ${fileURLToPath(path)}`);
   return { path: fileURLToPath(path) };
