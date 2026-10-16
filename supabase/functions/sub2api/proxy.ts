@@ -61,6 +61,7 @@ import { hashKey, readBody,parseAccountCredentials } from "./validation.ts";
 import { json } from "./http.ts";
 import { trackedStream, UsageObserver, type Usage } from "./stream.ts";
 import {
+  ChatHistoryError,
   chatToResponses,
   chatToAPIResponses,
   completedResponse,
@@ -676,6 +677,9 @@ async function proxyWithIdentity(
                 : forwardedBody,
             );
           } catch (error) {
+            if (error instanceof ChatHistoryError) {
+              throw new HttpError(400, "invalid_chat_history", error.message);
+            }
             throw new HttpError(
               400,
               error instanceof Error && error.message.startsWith("Unsupported")

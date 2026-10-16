@@ -1,6 +1,14 @@
 // OpenAI Chat Completions ↔ Responses protocol conversion.
 type Item = Record<string, any>;
 
+export class ChatHistoryError extends Error {
+  readonly index: number;
+  constructor(index: number, reason: string) {
+    super(`messages[${index}]: ${reason}`);
+    this.index = index;
+  }
+}
+
 function textContent(value: unknown, role: string): string | Item[] | null {
   if (value === null || value === undefined) return null;
   if (typeof value === "string") return value;
@@ -11,6 +19,11 @@ function textContent(value: unknown, role: string): string | Item[] | null {
         type: role === "assistant" ? "output_text" : "input_text",
         text: part.text,
       };
+    }
+    if (role === "assistant" && ["thinking", "reasoning"].includes(part?.type)) {
+      const text = part.thinking ?? part.text;
+      if (typeof text !== "string") throw new Error("Invalid assistant reasoning");
+      return { type: "output_text", text: `<thinking>${text}</thinking>` };
     }
     if (part?.type === "image_url" && (role === "user" || role === "tool")) {
       const image = part.image_url;
@@ -111,14 +124,29 @@ export function chatToResponses(body: Item): Item {
     }
     instructions.push(body.instructions);
   }
-  for (const message of body.messages) {
+  for (const [index, message] of body.messages.entries()) {
     if (
       !message ||
       !["system", "developer", "user", "assistant", "tool"].includes(
         message.role,
       )
-    ) throw new Error("Invalid chat role");
-    const content = textContent(message.content, message.role);
+    ) throw new ChatHistoryError(index, "Invalid chat role");
+    let content;
+    try {
+      content = textContent(message.content, message.role);
+    } catch (error) {
+      throw new ChatHistoryError(index, error instanceof Error ? error.message : "Invalid chat content");
+    }
+    if (message.role === "assistant") {
+      const reasoning = message.reasoning_content ?? message.reasoning;
+      if (reasoning !== undefined && reasoning !== null && typeof reasoning !== "string") {
+        throw new ChatHistoryError(index, "Invalid assistant reasoning");
+      }
+      if (reasoning) {
+        const prefix = { type: "output_text", text: `<thinking>${reasoning}</thinking>` };
+        content = [prefix, ...(typeof content === "string" ? [{ type: "output_text", text: content }] : content ?? [])];
+      }
+    }
     if (message.role === "system" || message.role === "developer") {
       if (content === null) throw new Error("Missing instructions");
       instructions.push(
@@ -132,7 +160,7 @@ export function chatToResponses(body: Item): Item {
       if (
         typeof message.tool_call_id !== "string" || !message.tool_call_id ||
         content === null
-      ) throw new Error("Invalid tool result");
+      ) throw new ChatHistoryError(index, "Invalid tool result");
       input.push({
         type: "function_call_output",
         call_id: message.tool_call_id,
@@ -160,22 +188,22 @@ export function chatToResponses(body: Item): Item {
     if (
       message.tool_calls !== undefined &&
       (message.role !== "assistant" || !Array.isArray(message.tool_calls))
-    ) throw new Error("Invalid tool calls");
+    ) throw new ChatHistoryError(index, "Invalid tool calls");
     for (const call of message.tool_calls ?? []) {
       if (
         call?.type !== "function" || typeof call.id !== "string" || !call.id ||
         typeof call.function?.name !== "string" || !call.function.name ||
         typeof call.function.arguments !== "string"
-      ) throw new Error("Invalid tool call");
+      ) throw new ChatHistoryError(index, "Invalid tool call");
       input.push({
         type: "function_call",
         call_id: call.id,
         name: call.function.name,
-        arguments: call.function.arguments,
+        arguments: call.function.arguments || "{}",
       });
     }
-    if (content === null && !message.tool_calls?.length) {
-      throw new Error("Missing message content");
+    if (content === null && message.role !== "assistant" && !message.tool_calls?.length) {
+      throw new ChatHistoryError(index, "Missing message content");
     }
   }
   if (

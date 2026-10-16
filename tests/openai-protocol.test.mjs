@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  ChatHistoryError,
   chatToResponses,
   chatToAPIResponses,
   completedResponse,
@@ -16,6 +17,41 @@ const config = {
   encryptionKey: Buffer.alloc(32, 7).toString("base64"),
   adminIds: [],
 };
+
+test('agent history accepts interrupted assistant turns and preserves reasoning and tool pairs', () => {
+  const body = { model: 'gpt-6.1', messages: [
+    { role: 'user', content: 'continue' },
+    { role: 'assistant', content: null },
+    { role: 'assistant', reasoning: 'Check the previous result.' },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'Look up the value.' }],
+      tool_calls: [{ id: 'call-history', type: 'function', function: { name: 'lookup', arguments: '' } }] },
+    { role: 'tool', tool_call_id: 'call-history', content: '42' },
+    { role: 'assistant', content: null, reasoning_content: 'Ready to answer.' },
+    { role: 'user', content: 'What was the result?' },
+  ] };
+  const original = structuredClone(body);
+  const result = chatToResponses(body);
+  assert.deepEqual(body, original);
+  assert.deepEqual(result.input.map(item => item.type), [
+    'message', 'message', 'message', 'function_call', 'function_call_output', 'message', 'message',
+  ]);
+  assert.equal(result.input[1].content[0].text, '<thinking>Check the previous result.</thinking>');
+  assert.equal(result.input[2].content[0].text, '<thinking>Look up the value.</thinking>');
+  assert.equal(result.input[3].arguments, '{}');
+  assert.equal(result.input[4].call_id, result.input[3].call_id);
+  assert.equal(result.input[5].content[0].text, '<thinking>Ready to answer.</thinking>');
+});
+
+test('malformed history reports only its position and a static reason', async () => {
+  const messages = [{ role: 'user', content: 'private prompt' },
+    { role: 'assistant', tool_calls: [{ id: 'private-call', type: 'function', function: { name: 'private-tool', arguments: {} } }] }];
+  assert.throws(() => chatToResponses({ model: 'gpt-6.1', messages }), error =>
+    error instanceof ChatHistoryError && error.index === 1 && error.message === 'messages[1]: Invalid tool call');
+  const { request } = await fixture(() => { throw Error('Invalid history must not reach upstream'); });
+  const response = await request('/v1/chat/completions', { model: 'gpt-6.1', messages });
+  assert.equal(response.status, 400);
+  assert.deepEqual((await response.json()).error, { type: 'invalid_chat_history', message: 'messages[1]: Invalid tool call' });
+});
 const complete = {
   id: "resp-test",
   object: "response",
