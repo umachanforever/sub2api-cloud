@@ -1,6 +1,6 @@
 # Supabase Deployment
 
-This release focuses on OpenAI subscription forwarding. Ordinary OpenAI API requests require only the cloud gateway; Live and extended-duration companion connections are outside the deployment scope.
+The cloud gateway handles supported subscription accounts and provider API keys. Ordinary AI requests do not require the local management services.
 
 ## Services
 

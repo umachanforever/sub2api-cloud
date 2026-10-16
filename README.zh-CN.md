@@ -2,11 +2,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-通过 Supabase 将 ChatGPT 订阅转为 API，在本地网页控制台管理账号、密钥和用量。
+基于 Supabase 的 AI API 网关，支持订阅账号与供应商 API Key，在本地网页控制台管理账号、密钥和用量。
 
-- 支持 OpenAI Responses、Chat Completions、流式响应和附件输入。
+- 接入 OpenAI、Anthropic、Gemini 等供应商。
+- 支持 Responses、Chat Completions、Messages 和 Gemini API 格式，流式响应及附件能力取决于供应商。
 - 支持多个订阅账号、模型列表与模型别名。
-- 分别查看每个已启用账号的 5 小时和 7 日订阅用量。
+- 分别查看每个已启用 OpenAI 订阅账号的 5 小时和 7 日用量。
 - 云端完成鉴权、凭据自动刷新和用量记录。
 - 支持本地或云端 Supabase；关闭本地控制台后，云端 API 仍可使用。
 
@@ -37,7 +38,7 @@ chmod 600 .env.local
 npm run up -- --cloud
 ```
 
-打开[本地控制台](http://127.0.0.1:3000)，登录后添加 OpenAI 订阅账号、绑定分组并创建 API Key。自动生成的管理员凭据保存在 `.env.local`。
+打开[本地控制台](http://127.0.0.1:3000)，登录后添加供应商账号、绑定对应分组并创建 API Key。自动生成的管理员凭据保存在 `.env.local`。
 
 使用本地 Supabase 时执行 `npm run up -- --local`。切换云端后，可用 `npm run down -- --local` 关闭本地 Supabase，节省资源。
 
@@ -57,7 +58,7 @@ curl "$OPENAI_BASE_URL/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口分别返回已启用订阅账号的数据，添加 `?refresh=true` 可立即向上游刷新。
+同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口分别返回已启用 OpenAI 订阅账号的数据，添加 `?refresh=true` 可立即向上游刷新。
 
 `gpt-6`、`gpt-6.1` 等别名默认选择对应的 `-sol` 版本，账号模型映射优先。实际可用模型取决于订阅账号。
 

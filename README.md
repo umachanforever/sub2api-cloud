@@ -2,11 +2,12 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Turn your ChatGPT subscription into an API with Supabase. Manage accounts, API keys, and usage through a local web console.
+An AI API gateway for subscription accounts and provider API keys, powered by Supabase. Manage accounts, API keys, and usage through a local web console.
 
-- OpenAI Responses and Chat Completions, including streaming and attachment input.
+- Connect OpenAI, Anthropic, Gemini, and other supported providers.
+- Responses, Chat Completions, Messages, and Gemini API formats, with streaming and attachment support depending on the provider.
 - Multiple subscription accounts, model discovery, and model aliases.
-- Five-hour and seven-day usage windows for each enabled account.
+- Five-hour and seven-day usage windows for enabled OpenAI subscription accounts.
 - Cloud authentication, automatic credential refresh, and usage recording.
 - Local or cloud Supabase deployment. Cloud API access continues when the local console is stopped.
 
@@ -37,7 +38,7 @@ Leave `SUPABASE_SERVICE_ROLE_KEY` blank to retrieve it automatically during setu
 npm run up -- --cloud
 ```
 
-Open [the console](http://127.0.0.1:3000), sign in, add an OpenAI subscription account, assign it to a group, and create an API key. Generated administrator credentials are saved in `.env.local`.
+Open [the console](http://127.0.0.1:3000), sign in, add a provider account, assign it to a matching group, and create an API key. Generated administrator credentials are saved in `.env.local`.
 
 For local Supabase, use `npm run up -- --local`. Stop the local Supabase stack with `npm run down -- --local` when switching to cloud mode.
 
@@ -57,7 +58,7 @@ curl "$OPENAI_BASE_URL/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-Use the same key with `/responses`, `/chat/completions`, and `/usage`. The usage endpoint lists enabled subscription accounts separately; add `?refresh=true` for a fresh upstream reading.
+Use the same key with `/responses`, `/chat/completions`, and `/usage`. The usage endpoint lists enabled OpenAI subscription accounts separately; add `?refresh=true` for a fresh upstream reading.
 
 Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless an account mapping overrides them. Available models depend on your subscription account.
 
