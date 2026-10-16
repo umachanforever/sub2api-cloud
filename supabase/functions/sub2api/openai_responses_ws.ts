@@ -1,3 +1,4 @@
+import {normalizeServiceTier} from './service_tier.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {responsesWebSocketMode} from './responses_ws_mode.ts';
 import {bridgeInput,bridgeResponses,type BridgeHistory} from './responses_http_bridge.ts';
@@ -98,6 +99,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  const receive=async(text:string)=>{
   if(ended)return;signal.throwIfAborted();
   const payload=JSON.parse(text);if(!payload||typeof payload!=='object'||Array.isArray(payload)||payload.type!==undefined&&payload.type!=='response.create')throw new HttpError(400,'invalid_websocket_request');
+  normalizeServiceTier(payload);
   const requested=payload.model??model;if(typeof requested!=='string'||!requested.trim()||requested.length>200||/[\x00-\x1f\x7f]/.test(requested)||requested==='__models__')throw new HttpError(400,'invalid_model');
   if(model&&requested!==model)throw new HttpError(400,'model_change_requires_reconnect');model=requested;
   const requestId=crypto.randomUUID(),turnStarted=Date.now();

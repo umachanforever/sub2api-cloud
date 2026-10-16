@@ -1,3 +1,4 @@
+import {normalizeServiceTier} from './service_tier.ts';
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
@@ -272,6 +273,7 @@ async function proxyWithIdentity(
         throw new HttpError(400, "invalid_request");
       }
       if (messageTokens && raw.stream === true) throw new HttpError(400, "invalid_request");
+      if(chat||protocol==='responses'&&!inputTokens)normalizeServiceTier(raw);
       body = inputTokens ? inputTokenRequest(raw) : raw;
     } catch (error) {
       if (error instanceof HttpError) throw error;

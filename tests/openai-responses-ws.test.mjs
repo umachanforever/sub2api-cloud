@@ -116,3 +116,17 @@ test('Composite Responses WebSocket cannot reuse a socket after account platform
   for(let i=0;i<20&&f.finishes.length<2;i++)await new Promise(resolve=>setTimeout(resolve,5));assert.equal(f.finishes.length,2);assert.equal(f.finishes[1].p_outcome,'failed');
  }
 });
+
+test('Responses WebSocket rejects invalid service tiers before reserving an account',async t=>{
+ const f=await setup(t);
+ const failed=waitFor(f.client,event=>event.type==='error');
+ f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello',service_tier:'unknown'})});
+ await failed;assert.equal(f.requests.length,0);assert.equal(f.finishes.length,0);f.client.onclose();
+});
+test('Responses WebSocket normalizes fast on upstream response.create frames',async t=>{
+ const f=await setup(t);let forwarded;
+ f.server.on('connection',socket=>socket.on('message',text=>{forwarded=JSON.parse(text);socket.send(JSON.stringify({type:'response.completed',response:{id:'resp_tier',status:'completed',output:[],usage:{input_tokens:1,output_tokens:1}}}));}));
+ const done=waitFor(f.client,event=>event.type==='response.completed');
+ f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello',service_tier:' FAST '})});
+ await done;assert.equal(forwarded.service_tier,'priority');f.client.onclose();
+});
