@@ -11,7 +11,7 @@
 - 云端完成鉴权、凭据自动刷新和用量记录。
 - 支持本地或云端 Supabase；关闭本地控制台后，云端 API 仍可使用。
 
-Supabase 提供免费额度和 HTTPS 地址，节省主机与域名费用。中国大陆客户端可直连云端网关使用 OpenAI API，无需翻墙或运行本地代理。使用额度取决于上游账号及 [Supabase 套餐](https://supabase.com/pricing)。
+Supabase 提供免费额度和 HTTPS 地址，节省主机与域名费用。全球客户端均可通过云端网关调用 OpenAI、Anthropic、Gemini 等 API，中国大陆客户端也无需翻墙或运行本地代理。使用额度取决于上游账号及 [Supabase 套餐](https://supabase.com/pricing)。
 
 ## 快速开始
 

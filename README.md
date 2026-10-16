@@ -11,7 +11,7 @@ An AI API gateway for subscription accounts and provider API keys, powered by Su
 - Cloud authentication, automatic credential refresh, and usage recording.
 - Local or cloud Supabase deployment. Cloud API access continues when the local console is stopped.
 
-Supabase provides free-tier hosting and an HTTPS endpoint, reducing server and domain costs. Clients in mainland China can access OpenAI APIs directly through the cloud gateway, without a VPN or local proxy. Usage quotas depend on your upstream account and [Supabase plan](https://supabase.com/pricing).
+Supabase provides free-tier hosting and an HTTPS endpoint, reducing server and domain costs. Clients worldwide can access OpenAI, Anthropic, Gemini, and other supported APIs through the cloud gateway. Clients in mainland China can also connect without a VPN or local proxy. Usage quotas depend on your upstream account and [Supabase plan](https://supabase.com/pricing).
 
 ## Quick start
 
