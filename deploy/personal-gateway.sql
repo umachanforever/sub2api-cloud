@@ -149,6 +149,17 @@ END $$;
 ALTER FUNCTION s2a_private.group_routing_accounts(jsonb,boolean,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.group_routing_accounts(jsonb,boolean,text) FROM PUBLIC,anon,authenticated,service_role;
 
+CREATE OR REPLACE FUNCTION s2a_private.fast_policy_context(p_user bigint,p_force boolean) RETURNS jsonb
+LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
+DECLARE raw text; settings jsonb;
+BEGIN
+ SELECT value INTO raw FROM public.settings WHERE key='openai_fast_policy_settings';
+ BEGIN settings:=raw::jsonb; EXCEPTION WHEN invalid_text_representation THEN settings:=NULL; END;
+ RETURN jsonb_build_object('user_id',p_user::text,'force_priority',coalesce(p_force,false),'settings',settings);
+END $$;
+ALTER FUNCTION s2a_private.fast_policy_context(bigint,boolean) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.fast_policy_context(bigint,boolean) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION public.s2a_personal_acquire(
     p_key_hash text,p_model text,p_request_id uuid,p_excluded bigint[] DEFAULT '{}',
     p_count_request boolean DEFAULT true,p_client_ip text DEFAULT NULL,p_billing_context jsonb DEFAULT '{}'
@@ -355,7 +366,7 @@ BEGIN
         CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean
             WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END)
         || CASE WHEN p_model='__models__' THEN jsonb_build_object('model_metadata',a.extra->'upstream_model_metadata') ELSE '{}'::jsonb END,
-        'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
+        'fast_policy',s2a_private.fast_policy_context(k.user_id,g.force_openai_fast AND g.platform IN ('openai','composite')),'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
         || CASE WHEN p_model='__models__' AND g.platform='openai' AND g.codex_models_manifest_config->'enabled' IS DISTINCT FROM 'true'::jsonb THEN jsonb_build_object('configured_model_sources',s2a_private.composite_catalog_sources(g.id)) ELSE '{}'::jsonb END
         || CASE WHEN gemini_sources IS NOT NULL THEN jsonb_build_object('gemini_catalog_sources',gemini_sources) ELSE '{}'::jsonb END
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;

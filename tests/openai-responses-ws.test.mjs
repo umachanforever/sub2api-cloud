@@ -15,7 +15,7 @@ async function setup(t,options={}){
  const client=new Client(),requests=[],finishes=[],stored=await encryptCredentials({api_key:'provider-private'},Buffer.alloc(32,7).toString('base64'));
  const db=new Database({url:'https://db.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),dataModel:'native'},async(url,init)=>{
   if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:options.policyPlatform??options.platform??'openai'});
-  if(String(url).endsWith('/s2a_personal_acquire')){requests.push(JSON.parse(init.body));return Response.json({lease_id:'lease-'+requests.length,upstream_model:typeof options.upstreamModel==='function'?options.upstreamModel(requests.length):options.upstreamModel,account:{...stored,id:'1',type:'apikey',platform:options.platform??'openai',websocket_settings:options.settings,credential_version:1,...options.accountAtTurn?.(requests.length)}});}
+  if(String(url).endsWith('/s2a_personal_acquire')){requests.push(JSON.parse(init.body));return Response.json({lease_id:'lease-'+requests.length,fast_policy:options.fastPolicy?.(requests.length),upstream_model:typeof options.upstreamModel==='function'?options.upstreamModel(requests.length):options.upstreamModel,account:{...stored,id:'1',type:'apikey',platform:options.platform??'openai',websocket_settings:options.settings,credential_version:1,...options.accountAtTurn?.(requests.length)}});}
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));if(options.finishDelay)await new Promise(resolve=>setTimeout(resolve,options.finishDelay));return Response.json({applied:true});}
   if(options.fetch)return options.fetch(url,init);
   throw Error('Unexpected RPC');
@@ -129,4 +129,21 @@ test('Responses WebSocket normalizes fast on upstream response.create frames',as
  const done=waitFor(f.client,event=>event.type==='response.completed');
  f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello',service_tier:' FAST '})});
  await done;assert.equal(forwarded.service_tier,'priority');f.client.onclose();
+});
+
+test('Responses WebSocket retains its initial fast policy across subsequent turns',async t=>{
+ const f=await setup(t,{fastPolicy:turn=>({user_id:'7',force_priority:false,settings:{rules:[{service_tier:'all',action:turn===1?'filter':'block'}]}})});const tiers=[];
+ f.server.on('connection',socket=>socket.on('message',text=>{tiers.push(JSON.parse(text).service_tier);socket.send(JSON.stringify({type:'response.completed',response:{id:'resp_policy_'+tiers.length,status:'completed',usage:{input_tokens:1,output_tokens:1}}}));}));
+ for(let turn=0;turn<2;turn++){
+  const done=waitFor(f.client,event=>event.type==='response.completed');
+  f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello',service_tier:'flex'})});await done;
+ }
+ assert.deepEqual(tiers,[undefined,undefined]);assert.equal(f.finishes.length,2);f.client.onclose();
+});
+test('Responses WebSocket policy blocks release the acquired lease without provider dispatch',async t=>{
+ const f=await setup(t,{fastPolicy:()=>({user_id:'7',force_priority:true,settings:{rules:[{service_tier:'priority',action:'block'}]}})});let connected=false;
+ f.server.on('connection',()=>{connected=true;});
+ const done=waitFor(f.client,event=>event.type==='error');f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello'})});await done;
+ for(let attempt=0;!f.finishes.length&&attempt<50;attempt++)await new Promise(resolve=>setTimeout(resolve,5));
+ assert.equal(connected,false);assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_status,403);f.client.onclose();
 });

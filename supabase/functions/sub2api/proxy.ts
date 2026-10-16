@@ -1,3 +1,4 @@
+import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
 import {normalizeServiceTier} from './service_tier.ts';
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
@@ -420,6 +421,7 @@ async function proxyWithIdentity(
     };
     let chatBridge:OriginalChatBridge|undefined;
     try {
+      if(forwardedBody&&!inputTokens&&!messageTokens&&(chat||messages||protocol==='responses'))applyFastPolicy(forwardedBody,(reservation as {fast_policy?:FastPolicyContext}).fast_policy,account,upstreamModel);
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(models&&!nativeGeminiModels&&(pinnedFallback||db.config.dataModel==='native'&&account.platform==='openai'&&account.type==='apikey'&&(codexModels||clientVersion!==null))){
         providerDispatched=true;

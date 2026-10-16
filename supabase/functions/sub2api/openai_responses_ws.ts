@@ -1,3 +1,4 @@
+import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
 import {normalizeServiceTier} from './service_tier.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {responsesWebSocketMode} from './responses_ws_mode.ts';
@@ -16,7 +17,7 @@ import {modelCandidates} from './model_policy.ts';
 import {apiKeyRequest,nativeUsage} from './api_key_provider.ts';
 import {resolveProxy} from './account_proxy.ts';
 import type {Usage} from './stream.ts';
-type Reservation={error?:string;status?:number;lease_id:string;account:Account&{type:string};model_sources?:ModelSources;upstream_model?:string};
+type Reservation={fast_policy?:FastPolicyContext;error?:string;status?:number;lease_id:string;account:Account&{type:string};model_sources?:ModelSources;upstream_model?:string};
 type Upgrade=(request:Request)=>{response:Response;socket:WebSocket};
 const MAX=32*1024*1024;
 export async function openAIResponsesWebSocket(request:Request,token:string,db:Database,upgrade:Upgrade=request=>Deno.upgradeWebSocket(request),dial:(url:URL,options:ClientOptions)=>NodeWebSocket=(url,options)=>new NodeWebSocket(url,options)):Promise<Response>{
@@ -27,7 +28,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  if(!['openai','grok','composite'].includes(policy.platform??''))throw new HttpError(400,'responses_websocket_group_required');
  const {response,socket:client}=upgrade(request),signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
  let upstream:NodeWebSocket|undefined,agent:ProxyAgent|undefined,ended=false,model:string|undefined,upstreamModel:string|undefined,pinned:Reservation['account']|undefined;
- let history:BridgeHistory|undefined,sessionMode:string|undefined;
+ let history:BridgeHistory|undefined,sessionMode:string|undefined,policySnapshot:FastPolicyContext|undefined;
  let eventBytes=0,eventCount=0;
  let pending=0,pendingBytes=0,sequence=Promise.resolve(),events=Promise.resolve();
  let active:{reservation:Reservation;started:number;usage:Usage;settled?:Promise<void>;resolve:()=>void;done:Promise<void>}|undefined;
@@ -112,6 +113,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   const next=reservation.account.platform==='openai'?defaultSolModel(mapped)??mapped:mapped;if(upstreamModel&&next!==upstreamModel)throw new HttpError(409,'model_change_requires_reconnect');upstreamModel=next;
   let body:Record<string,unknown>={...payload,model:next};delete body.type;delete body.stream;
   if(reservation.account.type==='oauth'&&reservation.account.platform==='openai'){const input=body.input,empty=input===undefined||Array.isArray(input)&&!input.length;body=normalizeBody({...body,input:empty?[{role:'user',content:''}]:input});if(empty){if(input===undefined)delete body.input;else body.input=[];}delete body.stream;}
+  policySnapshot??=reservation.fast_policy;applyFastPolicy(body,policySnapshot,reservation.account,next);
   const mode=responsesWebSocketMode(reservation.account);
   if(mode==='off')throw new HttpError(403,'websocket_disabled_for_account');
   if(sessionMode&&mode!==sessionMode)throw new HttpError(409,'websocket_mode_changed');sessionMode??=mode;
