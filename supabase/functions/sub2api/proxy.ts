@@ -461,6 +461,11 @@ async function proxyWithIdentity(
         return json(200,counted);
       }
       if (inputTokens || messageTokens) {
+        // Match the original gateway's client-side estimation fallback.
+        if(messageTokens&&account.platform==='antigravity'){
+          await finish(404,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'completed'});
+          return json(404,{type:'error',error:{type:'not_found_error',message:'count_tokens endpoint is not supported for this platform'}});
+        }
         if(account.type==='service_account')throw new HttpError(501,'provider_protocol_unsupported');
         const input_tokens=messageTokens
           ? await countMessageTokens(db,account,forwardedBody!,request,signal,()=>{providerDispatched=true;},()=>{upstreamReceived=true;})

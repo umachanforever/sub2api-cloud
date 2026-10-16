@@ -106,3 +106,18 @@ test('provider-specific preflight routes reject mismatched accounts before conta
     assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_outcome,'failed');assert.equal(value.finishes[0].p_cooldown_seconds,0);
   }
 });
+test('Antigravity count_tokens preserves the original 404 estimation fallback without upstream traffic or billing',async()=>{
+  for(const path of ['/v1/messages/count_tokens','/antigravity/v1/messages/count_tokens']){
+    const value=await fixture(()=>assert.fail('Unsupported counting must not contact the provider'),{platform:'antigravity',type:'oauth'});
+    const body={model:'claude-sonnet-4-5',messages:[{role:'user',content:'hello'}]};
+    assert.equal((await value.request(path,body,{})).status,401);
+    assert.equal(value.leases.length,0);
+    const response=await value.request(path,body);
+    assert.equal(response.status,404);
+    assert.deepEqual(await response.json(),{type:'error',error:{type:'not_found_error',message:'count_tokens endpoint is not supported for this platform'}});
+    assert.equal(value.leases.length,1);assert.equal(value.leases[0].p_billing_context.count_only,true);
+    assert.equal(value.finishes.length,1);assert.equal(value.finishes[0].p_status,404);
+    assert.equal(value.finishes[0].p_outcome,'completed');assert.equal(value.finishes[0].p_cooldown_seconds,0);
+    for(const field of ['p_input_tokens','p_output_tokens','p_cache_creation_tokens','p_cache_read_tokens'])assert.equal(value.finishes[0][field],null);
+  }
+});
