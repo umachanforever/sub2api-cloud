@@ -7,7 +7,7 @@
 - 接入 OpenAI、Anthropic、Gemini 等供应商。
 - 支持 Responses、Chat Completions、Messages 和 Gemini API 格式，流式响应及附件能力取决于供应商。
 - 支持多个订阅账号、模型列表与模型别名。
-- 分别查看每个已启用 OpenAI 订阅账号的 5 小时和 7 日用量。
+- 按账号查看用量和订阅额度，具体指标以供应商提供的数据为准。
 - 云端完成鉴权、凭据自动刷新和用量记录。
 - 支持本地或云端 Supabase；关闭本地控制台后，云端 API 仍可使用。
 

@@ -7,7 +7,7 @@ An AI API gateway for subscription accounts and provider API keys, powered by Su
 - Connect OpenAI, Anthropic, Gemini, and other supported providers.
 - Responses, Chat Completions, Messages, and Gemini API formats, with streaming and attachment support depending on the provider.
 - Multiple subscription accounts, model discovery, and model aliases.
-- Five-hour and seven-day usage windows for enabled OpenAI subscription accounts.
+- Per-account usage and subscription allowances, where provided by the upstream service.
 - Cloud authentication, automatic credential refresh, and usage recording.
 - Local or cloud Supabase deployment. Cloud API access continues when the local console is stopped.
 
