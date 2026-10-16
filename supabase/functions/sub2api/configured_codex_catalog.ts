@@ -14,7 +14,7 @@ export function configuredCodexCatalog(body:Record<string,any>,input:ConfiguredM
  if(allowlist?.enabled)for(const id of allowlist.models.map(id=>id.trim())){
   if(id&&!id.includes('*')&&accounts.some(source=>mappedTarget(source.mapping,id,'openai')?.trim()))configured.add(id);
  }
- const seen=new Set(body.models.map((entry:Record<string,any>)=>entry.slug?.trim()));
+ const seen=new Set(body.models.map((entry:Record<string,any>)=>typeof entry?.slug==='string'?entry.slug.trim():undefined));
  const models=[...body.models];
  for(const id of [...configured].sort()){
   if(seen.has(id))continue;

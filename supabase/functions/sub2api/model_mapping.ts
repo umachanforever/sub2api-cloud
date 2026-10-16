@@ -33,7 +33,7 @@ export function mappedCatalog(value:Record<string,any>,sources:ModelSources|unde
  if(!sources || !Object.keys(sources.mapping).length)return value;
  const field=Array.isArray(value.data)?'data':Array.isArray(value.models)?'models':null;if(!field)return value;
  const idField=field==='data'?'id':['gemini','antigravity'].includes(platform)?'name':'slug';
- const id=(entry:Record<string,any>)=>String(entry[idField]).replace(/^models\//,'');
+ const id=(entry:Record<string,any>)=>String(entry?.[idField]).replace(/^models\//,'');
  const original=value[field] as Record<string,any>[],entries=sources.include_upstream?[...original]:[];
  for(const [alias,target] of Object.entries(sources.mapping)) {
   if(entries.some(entry=>id(entry)===alias))continue;

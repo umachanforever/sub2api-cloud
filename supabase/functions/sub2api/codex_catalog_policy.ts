@@ -6,7 +6,7 @@ type Entry=Record<string,any>;
 export function applyCodexCatalogPolicy(body:Entry,allowlist?:ModelAllowlist,ordered=false):Entry{
  const selected=new Set(allowlist?.enabled?allowlist.models.map(id=>id.trim()):[]);
  const models=(body.models as Entry[]).flatMap(entry=>{
-  const slug=typeof entry.slug==='string'?entry.slug.trim():'';
+  const slug=typeof entry?.slug==='string'?entry.slug.trim():'';
   if(!slug)return allowlist?.enabled?[]:[entry];
   if(slug.includes('*')||!codexCatalogModelAllowed(slug)||!allowsModel(allowlist,slug))return [];
   if(slug.startsWith('codex-auto-'))return selected.has(slug)?[{...entry,visibility:'list'}]:[];

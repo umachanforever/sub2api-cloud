@@ -53,3 +53,24 @@ test('OAuth mapping aliases absent from the live manifest receive full original 
  assert.equal(alias.display_name,'custom-alias');assert.ok(alias.model_messages.instructions_template.length>1000);
  assert.equal(manifest.models[0].instructions,'keep');
 });
+
+test('scheduled OAuth Codex discovery preserves slugless raw entries and filters them with an allowlist',async()=>{
+ const raw=[null,7,'opaque',[],{extension:true},{slug:42},{slug:'live',extension:'keep'}];
+ let allowlist;
+ const config={url:'https://db.invalid',serviceKey:'service',encryptionKey:'',adminIds:[],dataModel:'native'};
+ const handler=createHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_allowlist:allowlist,configured_model_sources:{sources:[source({'other':'target'})]},account:{id:'1',platform:'openai',type:'oauth',credential_storage:'vault',credentials:{access_token:'synthetic'},credential_version:1}});
+  if(String(url).endsWith('/s2a_personal_finish'))return Response.json(null);
+  return Response.json({models:raw});
+ });
+ const get=path=>new Request('https://gateway'+path,{headers:{authorization:'Bearer sk-client'}});
+ for(const path of ['/backend-api/codex/models','/v1/models?client_version=0.150.0']){
+  const response=await handler(get(path));assert.equal(response.status,200);
+  assert.deepEqual((await response.json()).models.slice(0,raw.length),raw);
+ }
+ allowlist={enabled:true,models:['live']};
+ const selected=await handler(get('/backend-api/codex/models'));assert.equal(selected.status,200);
+ assert.deepEqual((await selected.json()).models,[raw.at(-1)]);
+ allowlist=undefined;
+ assert.equal((await handler(get('/v1/models'))).status,502);
+});

@@ -779,7 +779,9 @@ async function proxyWithIdentity(
       if (models) {
         const rawManifest = await upstream.json();
         const manifest = configuredCodexCatalog(mappedCatalog(rawManifest,model_sources,"openai"),(reservation as {configured_model_sources?:ConfiguredModelSources}).configured_model_sources,model_allowlist);
-        const catalog = filterModelCatalog(model_allowlist,mappedCatalog(modelListFromManifest(rawManifest),model_sources,"openai"));
+        const catalog = clientVersion !== null || codexModels
+          ? { data: [] }
+          : filterModelCatalog(model_allowlist,mappedCatalog(modelListFromManifest(rawManifest),model_sources,"openai"));
         const model = modelId
           ? catalog.data.find((entry: {id:string}) =>
             entry.id === decodeURIComponent(modelId)
