@@ -1,3 +1,4 @@
+import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
 import {codexCatalogDescriptor} from './codex_catalog.ts';
 import {mappedTarget} from './model_mapping.ts';
 import {defaultSolModel,modernCodexModel} from './codex_models.ts';
@@ -89,5 +90,5 @@ export function compositeCodexCatalog(input:CompositeCatalogSources,allowlist?:M
   descriptor.input_modalities=imageInput(input,platform,requested)?['text','image']:['text'];
   models.push(descriptor);
  }
- return {models};
+ return applyCodexCatalogPolicy({models},allowlist);
 }

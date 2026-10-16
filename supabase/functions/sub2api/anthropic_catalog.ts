@@ -19,5 +19,5 @@ export function anthropicModelCatalog(available:string[],allowlist?:ModelAllowli
 export function anthropicCodexCatalog(available:string[],allowlist?:ModelAllowlist,capabilities:CompositeCapabilitySource[]=[]){
   const catalog=anthropicModelCatalog(available,allowlist) as {data:{id:string}[]};
   if(!catalog.data.length)return {models:[]};
-  return compositeCodexCatalog({sources:[{platform:'anthropic',passthrough:false,mapping:Object.fromEntries(catalog.data.map(entry=>[entry.id,entry.id]))}],routes:[],capability_sources:capabilities});
+  return compositeCodexCatalog({sources:[{platform:'anthropic',passthrough:false,mapping:Object.fromEntries(catalog.data.map(entry=>[entry.id,entry.id]))}],routes:[],capability_sources:capabilities},allowlist);
 }

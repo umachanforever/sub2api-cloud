@@ -17,7 +17,7 @@ test('pinned discovery fans out concurrently, merges in configuration order and 
   return Response.json({models:[{slug:'shared',display_name:'Second metadata'},{slug:'second',instructions:'second'}]});
  });
  const result=await app(get('/backend-api/codex/models'));assert.equal(result.status,200);const body=await result.json();
- assert.deepEqual(body.models.map(m=>m.slug),['shared','alias','second']);assert.equal(body.models[0].instructions,'first');assert.equal(body.models[0].display_name,'First metadata');assert.equal(acquired,1);
+ assert.deepEqual(body.models.map(m=>m.slug),['shared','second','alias']);assert.equal(body.models[0].instructions,'first');assert.equal(body.models[0].display_name,'First metadata');assert.equal(acquired,1);
  const cached=await app(get('/backend-api/codex/models',result.headers.get('etag')));assert.equal(cached.status,304);assert.equal(await cached.text(),'');
 });
 

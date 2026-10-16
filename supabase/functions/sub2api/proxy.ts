@@ -1,3 +1,4 @@
+import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
@@ -771,7 +772,7 @@ async function proxyWithIdentity(
       }
       if (models) {
         const rawManifest = await upstream.json();
-        const manifest = filterModelCatalog(model_allowlist,mappedCatalog(rawManifest,model_sources,"openai"));
+        const manifest = applyCodexCatalogPolicy(mappedCatalog(rawManifest,model_sources,"openai"),model_allowlist);
         const catalog = filterModelCatalog(model_allowlist,mappedCatalog(modelListFromManifest(rawManifest),model_sources,"openai"));
         const model = modelId
           ? catalog.data.find((entry: {id:string}) =>

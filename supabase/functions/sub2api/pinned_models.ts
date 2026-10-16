@@ -1,3 +1,4 @@
+import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
 import {completePinnedMetadata} from './pinned_model_metadata.ts';
 import {type Account,credentialsFor} from './accounts.ts';
 import {accountFetch} from './account_proxy.ts';
@@ -64,7 +65,9 @@ async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,s
  const credentials=await decryptSecret(account,db.config.encryptionKey);
  const mapping=credentials.model_mapping;
  if(account.model_passthrough||!mapping||typeof mapping!=='object'||Array.isArray(mapping)||!Object.keys(mapping).length)return body;
- const field=manifest?'models':'data',key=manifest?'slug':'id',original=entries(body,field,key),byId=new Map(original.map(entry=>[entry[key].trim(),entry]));
+ const field=manifest?'models':'data',key=manifest?'slug':'id';
+ const original=entries(body,field,key).filter(entry=>!manifest||!entry[key].trim().startsWith('codex-auto-')||allowlist?.enabled&&allowlist.models.some(id=>id.trim()===entry[key].trim()));
+ const byId=new Map(original.map(entry=>[entry[key].trim(),entry]));
  const candidates=[...byId.keys(),...Object.keys(mapping).sort(),...(allowlist?.enabled?allowlist.models:[])],seen=new Set<string>(),projected:Entry[]=[];
  for(const id of candidates){
   if(!id||id.includes('*')||seen.has(id))continue;
@@ -104,7 +107,8 @@ export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,
  if(!bodies.length){if(catalog.fallback_to_scheduler)return null;throw new HttpError(catalog.accounts.length?502:503,catalog.accounts.length?'pinned_model_upstream_failed':'no_available_pinned_account');}
  const field=manifest&&!modelId?'models':'data',key=field==='models'?'slug':'id',seen=new Set<string>(),merged:Entry[]=[];
  for(const body of bodies)for(const entry of entries(body,field,key)){const id=entry[key].trim();if(!seen.has(id)){seen.add(id);merged.push(entry);}}
- const value=filterModelCatalog(catalog.model_allowlist,{...bodies[0],[field]:merged});
+ const combined={...bodies[0],[field]:merged};
+ const value=field==='models'?applyCodexCatalogPolicy(combined,catalog.model_allowlist,true):filterModelCatalog(catalog.model_allowlist,combined);
  if(modelId){const model=value.data.find((entry:Entry)=>entry.id===modelId);if(!model)throw new HttpError(404,'model_not_found');return json(200,model);}
  return codexManifestResponse(value,request);
 }
