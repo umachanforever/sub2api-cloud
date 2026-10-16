@@ -97,7 +97,7 @@ async function cachedSourceCatalog(db:Database,account:PinnedAccount,request:Req
  return body;
 }
 
-export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,request:Request,signal:AbortSignal,modelId:string|undefined,manifest:boolean):Promise<Response|null>{
+export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,request:Request,signal:AbortSignal,modelId:string|undefined,manifest:boolean,ordered=true):Promise<Response|null>{
  if(!catalog||catalog.error)throw new HttpError(catalog?.status??503,catalog?.error??'invalid_pinned_model_catalog');
  if(!Array.isArray(catalog.accounts)||catalog.accounts.length>10)throw new HttpError(503,'invalid_pinned_model_catalog');
  // Promise.allSettled retains configuration order even when upstreams finish out of order.
@@ -108,7 +108,7 @@ export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,
  const field=manifest&&!modelId?'models':'data',key=field==='models'?'slug':'id',seen=new Set<string>(),merged:Entry[]=[];
  for(const body of bodies)for(const entry of entries(body,field,key)){const id=entry[key].trim();if(!seen.has(id)){seen.add(id);merged.push(entry);}}
  const combined={...bodies[0],[field]:merged};
- const value=field==='models'?applyCodexCatalogPolicy(combined,catalog.model_allowlist,true):filterModelCatalog(catalog.model_allowlist,combined);
+ const value=field==='models'?applyCodexCatalogPolicy(combined,catalog.model_allowlist,ordered):filterModelCatalog(catalog.model_allowlist,combined);
  if(modelId){const model=value.data.find((entry:Entry)=>entry.id===modelId);if(!model)throw new HttpError(404,'model_not_found');return json(200,model);}
  return codexManifestResponse(value,request);
 }

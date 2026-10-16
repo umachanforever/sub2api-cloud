@@ -319,6 +319,7 @@ async function proxyWithIdentity(
       throw new HttpError(reservation.status, reservation.error);
     }
     if('pinned_catalog' in reservation){
+      if(requiredPlatform&&requiredPlatform!=='openai')throw new HttpError(400,'provider_route_mismatch');
       if(!models||nativeGeminiModels||pinnedFallback)throw new HttpError(503,'invalid_pinned_model_catalog');
       const result=await pinnedModelCatalog(db,reservation.pinned_catalog,request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels);
       if(result)return result;
@@ -417,11 +418,12 @@ async function proxyWithIdentity(
     };
     let chatBridge:OriginalChatBridge|undefined;
     try {
-      if(pinnedFallback&&models){
+      if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
+      if(models&&!nativeGeminiModels&&(pinnedFallback||db.config.dataModel==='native'&&account.platform==='openai'&&account.type==='apikey'&&(codexModels||clientVersion!==null))){
         providerDispatched=true;
         let result:Response|null;
         try{
-          result=await pinnedModelCatalog(db,{accounts:[account as PinnedModelCatalog['accounts'][number]],model_allowlist},request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels);
+          result=await pinnedModelCatalog(db,{accounts:[account as PinnedModelCatalog['accounts'][number]],model_allowlist},request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels,pinnedFallback);
         }catch(error){
           if(error instanceof HttpError&&error.code==='pinned_model_upstream_failed'&&attempt<2){
             await finish(502,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'failed'});
@@ -434,7 +436,6 @@ async function proxyWithIdentity(
         return result;
       }
       if(db.config.dataModel==='native'&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===false&&!models&&!inputTokens&&!messageTokens&&!geminiTokens&&imageGenerationIntent(path,upstreamModel,body,account.platform))throw new HttpError(403,'image_generation_forbidden');
-      if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');
       if (search) {
         if(account.type==='service_account')throw new HttpError(501,'provider_protocol_unsupported');
