@@ -2,188 +2,69 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-面向开发者的 AI API 网关：核心请求运行在 Supabase 云端，管理端沿用原版 Sub2API 的 Go 后端和 Vue 控制台。支持接入 OpenAI、Anthropic、Gemini OAuth 账号与受支持供应商的 API Key，管理账号池、调用密钥与 Token 用量。
+通过 Supabase 将 ChatGPT 订阅转为 API，在本地网页控制台管理账号、密钥和用量。
 
-Supabase 负责 API 鉴权、凭据刷新、供应商请求、流式响应和用量记录。本地管理端直接读写同一套云端数据，**关闭本地服务后，云端 AI API 仍可独立使用**。小程序自身的登录认证保持独立。
+- 支持 OpenAI Responses、Chat Completions、流式响应和附件输入。
+- 支持多个订阅账号、模型列表与模型别名。
+- 分别查看每个已启用账号的 5 小时和 7 日订阅用量。
+- 云端完成鉴权、凭据自动刷新和用量记录。
+- 支持本地或云端 Supabase；关闭本地控制台后，云端 API 仍可使用。
 
-使用 Supabase 的主要目的是利用免费额度和平台提供的 HTTPS 地址，减少额外购买主机、域名及运行本地代理软件的费用。在 Supabase 地址可直连、部署区域可访问模型供应商的情况下，中国大陆客户端可免翻墙调用。实际可用性及免费额度取决于网络和 [Supabase 当前套餐](https://supabase.com/pricing)。
+Supabase 提供免费额度和 HTTPS 地址，节省主机与域名费用。地址可直连时，中国大陆客户端无需翻墙或运行本地代理。实际可用性和额度取决于网络、上游账号及 [Supabase 套餐](https://supabase.com/pricing)。
 
-## 云端部署
+## 快速开始
 
-Chat 协议兼容层复用原版 Go 转换器，通过随项目提供的 WebAssembly 模块在 Supabase 内执行，转换过程不依赖本地 Go 服务。
-
-准备 Node.js 24+、带 Compose 2.24+ 的 Docker 和 Supabase CLI。
+安装 Node.js 24+、Docker Compose 2.24+ 和 Supabase CLI，创建 Supabase 项目，然后执行：
 
 ```sh
 cp .env.example .env.local
 chmod 600 .env.local
-# Fill the Supabase project settings in .env.local.
-npm run up -- --cloud
 ```
 
-打开 http://127.0.0.1:3000 。启动命令会创建独立的管理数据库角色，应用原版 Go 业务表与云端网关函数，关联管理员的 Supabase 身份，部署 Edge Function，并启动本地管理服务。
+填写 `.env.local`：
 
-| 配置项 | 用途 |
+| 配置 | 内容 |
 | --- | --- |
-| `SUPABASE_URL` | Supabase 项目地址 |
-| `SUPABASE_PUBLISHABLE_KEY` | 公开 publishable 或 anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | 可留空；通过 access token 自动读取已有的服务端密钥 |
-| `SUPABASE_DB_PASSWORD` | CLI 使用的项目数据库密码 |
-| `SUPABASE_ACCESS_TOKEN` | 初始化数据库权限所需的 Management API 令牌 |
+| `SUPABASE_URL` | 项目地址 |
+| `SUPABASE_PUBLISHABLE_KEY` | Publishable 或 anon key |
+| `SUPABASE_DB_PASSWORD` | 数据库密码 |
+| `SUPABASE_ACCESS_TOKEN` | Supabase 访问令牌 |
 | `SUB2API_LOCAL_ADMIN_EMAIL` | 管理员邮箱 |
-| `SUB2API_ADMIN_USER_IDS` | 已有管理员 Auth UUID；留空可自动创建 |
 
-Supabase 会生成 service-role key，并自动注入云端 Edge Function。本地部署时如留空，会通过 Management API 读取项目已有密钥，无需手动复制，也不会重新生成或轮换密钥。
-
-保留 `SUB2API_DATA_MODEL=native`。管理员密码和凭据加密密钥如未填写，会自动生成并保存到 `.env.local`；本地管理服务的数据库密码与服务密钥保存在 `.local/`。这些文件不进入 Git，也不会发送到浏览器。
-
-控制台使用 Supabase Auth 登录。供应商凭据由 Supabase Vault 加密保存，API 鉴权与用量记录直接使用原版 Go 业务表。个人云端调用不受商业计费逻辑限制，也不扣减用户余额。
-
-使用 Gemini CLI 或 Antigravity OAuth 授权前，请在 `.env.local` 配置对应的 `GEMINI_CLI_OAUTH_CLIENT_ID` / `GEMINI_CLI_OAUTH_CLIENT_SECRET` 或 `ANTIGRAVITY_OAUTH_CLIENT_ID` / `ANTIGRAVITY_OAUTH_CLIENT_SECRET`。Google OAuth 客户端信息由部署者提供。Gemini 支持 AI Studio 和 Code Assist，可通过 `GEMINI_OAUTH_CLIENT_ID` / `GEMINI_OAUTH_CLIENT_SECRET` 配置自定义 AI Studio 客户端。一键部署会同步云端刷新所需配置，Code Assist 的项目信息保存在加密账号凭据中。
-
-Grok API Key 与 OAuth 账号支持原生 Chat Completions、Responses 和模型列表，可返回普通 JSON 或 SSE 流式响应。OAuth 请求使用官方 Grok CLI 客户端标识，并在云端刷新凭据；账号凭据可选择官方 xAI 区域地址。
-
-Antigravity OAuth 账号提供供应商模型目录，以及 Gemini 原生 `generateContent` / `streamGenerateContent` 和 Claude Messages 接口，支持普通 JSON 与 SSE 流式响应。Claude 客户端可使用 `/antigravity` 基础路径和同一分组的调用密钥。配置 `ANTIGRAVITY_OAUTH_CLIENT_ID` 和 `ANTIGRAVITY_OAUTH_CLIENT_SECRET` 后，由云端刷新凭据。网关保留加密的项目 ID，在保留调用方指令的同时注入上游身份提示，解包内部响应，并在供应商固定的 daily 和 production 地址间执行故障切换。
-
-Gemini 的 `cachedContent` 引用限定于创建缓存的密钥和分组，并固定使用原账号。不存在、已过期、属于其他密钥或模型不匹配的缓存会在请求上游前被拒绝。
-
-`POST /v1beta/cachedContents` 通过 Gemini API Key 账号创建缓存，支持模型映射，默认有效期 1 小时、最长 24 小时，并固定密钥、分组和账号归属。上游资源携带唯一创建标识，请求发送前保存创建意图。
-`GET /v1beta/cachedContents` 分页列出当前密钥和分组所属的有效缓存，支持 `pageSize` 和 `pageToken`。`GET /v1beta/cachedContents/{id}` 返回公开缓存信息，不暴露上游资源名或账号标识。
-`DELETE /v1beta/cachedContents/{id}` 通过缓存绑定的 API Key 账号删除资源，仅在上游确认资源不存在后移除本地绑定。
-`PATCH /v1beta/cachedContents/{id}` 支持更新 `ttl` 或 `expireTime`（最长 24 小时），保留缓存身份，并串行处理更新与删除。中断操作保留占用状态，恢复时先将绑定上游的有效期回滚到记录值；不存在或即将过期的资源会被移除。
-Supabase 每分钟执行缓存修改恢复。签名任务接管超时租约、恢复上游记录的有效期，并移除不存在或已过期的资源；无需本地管理端运行，也不依赖客户端密钥仍处于启用状态。
-同一定时任务会在请求租约过期后清理中断创建的缓存。上游分页结果仅供内部处理，清理时匹配所属账号、唯一创建标识和模型；分页进度会保存，上游失败时保留意图供后续重试。
-
-TypeSafe API Key 账号支持 `POST /v1/systemone`，使用原生 `jev-latest` 模型及 `noul`、`choice`、`score` 问题格式。接口采用非流式请求，供应商 JSON 响应原样返回，响应上限为 4 MiB；模型发现使用同一分组下的调用密钥。
-
-OpenAI 分组支持原生 Responses WebSocket：通过 `GET /v1/responses`、`/responses` 或 `/backend-api/codex/responses` 建立连接，升级请求携带 Bearer 密钥，随后发送 `response.create` JSON 帧。每轮独立检查权限、记录用量，并绑定同一供应商账号；使用 `previous_response_id` 继续上游会话。切换模型需要重新连接，账户 WebSocket 停用开关及 `http_bridge` 模式选择在云端生效。OpenAI 的 `http_bridge` 模式及 Grok Responses WebSocket 通过 HTTP 流式请求桥接，并在连接内续接对话和工具调用历史。连接期限为云端网关的 120 秒。
-
-## 本地 Supabase
+`SUPABASE_SERVICE_ROLE_KEY` 可留空，部署时自动获取。
 
 ```sh
-npm run up -- --local
-```
-
-本地模式会启动独立的 Supabase 容器组，创建对应业务表和管理员，不需要云端账户。管理员信息保存在 `.local/admin.json`，本地 Edge Function 需要保持启动终端运行。本地与云端的数据和账号相互独立。
-
-```sh
-npm run down -- --local
 npm run up -- --cloud
 ```
 
-切换到云端后，本地 Supabase 可以保持关闭，以节省资源。需要管理时运行本地控制台、Go 管理服务与 Redis；即使这些本地容器全部关闭，云端 AI API 也仍可使用。
+打开[本地控制台](http://127.0.0.1:3000)，登录后添加 OpenAI 订阅账号、绑定分组并创建 API Key。自动生成的管理员凭据保存在 `.env.local`。
+
+使用本地 Supabase 时执行 `npm run up -- --local`。切换云端后，可用 `npm run down -- --local` 关闭本地 Supabase，节省资源。
 
 ## API 调用
 
-控制台会显示项目的云端网关地址：
+使用控制台显示的 Base URL：
 
 ```text
-https://<project-ref>.supabase.co/functions/v1/sub2api
+https://<project-ref>.supabase.co/functions/v1/sub2api/v1
 ```
-
-网关同时支持原版根路径别名 `/models`、`/models/:model`、`/chat/completions`、`/responses`、`/embeddings` 和 `/images/generations`，使用相同的云函数入口，并与 `/v1` 路径共用鉴权、模型策略和用量记录。
-
-Codex 客户端标识会自动跟随官方稳定版。Supabase Cron 每 6 小时检查一次，本地服务关闭后仍会执行；请求处理也会刷新过期版本。界面中的自动同步开关同时控制两条更新路径，手动指定的客户端版本优先生效。实际模型可用性还取决于上游账号。
-
-在原版控制台创建供应商账号，绑定对应平台的分组，再创建 API Key。从 `/v1/models` 选择可用模型；也可使用账号的模型映射，保留现有应用使用的模型名。
 
 ```sh
-export AI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/sub2api'
-export AI_API_KEY='your-issued-api-key'
-curl "$AI_BASE_URL/v1/models" -H "Authorization: Bearer $AI_API_KEY"
+export OPENAI_BASE_URL='https://<project-ref>.supabase.co/functions/v1/sub2api/v1'
+export OPENAI_API_KEY='sk-your-key'
+
+curl "$OPENAI_BASE_URL/models" \
+  -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-网关提供 Responses、Chat Completions、Anthropic Messages 与 Gemini API 格式，按照供应商和凭据类型支持普通响应及流式响应。
+同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口分别返回已启用订阅账号的数据，添加 `?refresh=true` 可立即向上游刷新。
 
-### 订阅用量
+`gpt-6`、`gpt-6.1` 等别名默认选择对应的 `-sol` 版本，账号模型映射优先。实际可用模型取决于订阅账号。
 
-`GET /v1/usage` 返回当前 Key 所属分组中 OpenAI OAuth 账号的 5 小时、7 日订阅额度，使用 `Authorization: Bearer <api-key>` 鉴权。每个账号包含 `five_hour` 和 `seven_day`，提供已用比例 `used_percent`、剩余比例 `remaining_percent`、窗口长度 `window_seconds` 和重置时间 `reset_at`。这些是账号共享的订阅额度，不是当前 Key 单独消耗的 Token 总数。不支持的平台分组返回空账号列表；缺失的额度信息为 `null`。
+## 详细文档
 
-快照最多复用 60 秒；添加 `?refresh=true` 直接查询上游，添加 `?account_id=<id>` 可指定账号。通过 `fetched_at`、`age_seconds`、`cached` 和 `stale` 判断数据新鲜程度；上游失败时返回账号级 `error`，并将保留的快照标为过期。
-
-```sh
-curl "$AI_BASE_URL/v1/usage?refresh=true" -H "Authorization: Bearer $AI_API_KEY"
-```
-
-需要完整 API 能力的 Agent，可在本地控制台运行时执行 `npm run agent:access`；在 `.env.local` 配置管理员登录信息和已有的 `GPT_SUBSCRIPTION_GATEWAY_KEY`。命令会在同一供应商分组创建标准 `sk-` 调用 Key，将 `base_url`、`api_key`、模型和用量地址保存到私有文件 `.local/agent-access.json`。这个 Key 支持 AI 请求、模型列表和用量查询，可在控制台管理。如果 `.local/agent-usage.json` 中有旧的只读 Key，会将其撤销并更新该配置。
-
-执行 `npm run verify:cloud`，可使用 `.local/agent-access.json` 验收云端网关的鉴权、模型列表、普通与流式 Responses 和 Chat Completions、返回模型一致性、Responses 与 Messages 输入 Token 预估及用量接口，无需启动本地管理服务。验收会发送四次简短的 AI 请求和两次预估请求。使用 `npm run verify:cloud -- --codex` 可额外验收 Codex 原生模型清单和一次带来源的独立网页搜索。
-
-执行 `npm run verify:attachments`，可使用 `.local/agent-access.json` 验收 Responses、Chat Completions、Messages 的 PDF 和图片读取。命令会发送六次 AI 请求，检查仅写在 PDF 内的随机验证码和生成 PNG 中的颜色，并要求返回输入 Token 用量。请使用支持视觉和 PDF 的模型与账户。
-
-执行 `npm run verify:websocket`，可验收 Responses WebSocket 的两轮真实调用、输入 Token 用量及 `previous_response_id` 上下文复用。第二轮不会再次提供验证码，模型必须从第一轮上下文中读取。执行 `npm run verify:independence -- --websocket`，可在本地服务停机期间同时检查该能力。命令使用 `.local/agent-access.json`，WebSocket 验收会发送两次 AI 请求。
-
-执行 `npm run verify:schedulers`，可使用 `.env.local` 检查五项云端调度：每小时请求维护，以及四项任务处理器通过 `pg_net` 发出签名请求后的实际 HTTP 响应。命令需要 `SUPABASE_ACCESS_TOKEN`，不会读取请求头、密钥或响应正文。检查会触发现有任务处理器，因此可能执行已排队的任务；HTTP 接收成功不代表上游推理已完成。
-
-执行 `npm run verify:storage`，可使用 `.env.local` 验收 Supabase 私有文件存储。命令上传一个小型临时文件，检查授权读取、公开访问被拒绝和短期签名下载，然后删除文件并确认清理完成，不会发送 AI 请求。
-
-执行 `npm run verify:independence`，可暂时停止本项目的本地控制台、管理服务和 Redis，再运行云端验收，最后恢复原本运行的容器。命令会先确认容器归属，验收失败或中断时也会恢复服务，其他 Docker 项目继续运行。
-
-仅需查看用量时，可选用 `npm run usage:access` 生成 `sk-usage-` 只读 Key，配置保存在 `.local/agent-usage.json`。它无法调用 AI 或访问管理接口，并继承关联调用 Key 的分组、有效期、启用状态和 IP 限制。在 `s2a_private.usage_tokens` 设置对应记录的 `revoked_at` 可撤销授权；停用或删除关联调用 Key 也会阻止访问。
-
-常用数据页面在切换菜单时也会保留已加载的界面状态 60 秒。不同筛选条件分别保存；修改数据后其他页面快照失效，退出登录会清空页面缓存。实时监控和支付流程保持原有生命周期。
-
-如需直接在浏览器中查询，在生成 Agent 调用配置后运行 `npm run usage:link`。只读链接保存在 `.local/usage-link.json` 的 `browser_url`。该链接按名称分别显示关联 Key 所属分组内每个已启用订阅账户的 5 小时和 7 日用量，不显示停用账户。
-
-控制台的仪表板、用量、账号详情、设置等成功的数据查询统一在当前标签页内存缓存 60 秒。修改数据或切换登录身份会清空缓存；认证、OAuth 流程、导出和流式接口直接请求，携带 `Cache-Control: no-cache` 可强制重新读取。
-
-## 目录
-
-| 目录 | 内容 |
-| --- | --- |
-| `backend/` | 原版 Go 管理后端 |
-| `frontend/` | 原版 Vue 控制台与云端身份适配 |
-| `supabase/functions/sub2api/` | 云端 AI 请求处理与供应商协议 |
-| `supabase/migrations/` | Supabase 项目基础结构 |
-| `deploy/` | 管理数据权限、Vault 凭据存储与云端 RPC |
-| `scripts/` | 初始化、部署及本地控制台服务 |
-| `tests/` | 网关与管理功能验证 |
-| `docs/` | 部署、架构及上游资料 |
-
-详细说明见 [Deployment](docs/DEPLOYMENT.md)、[Architecture](docs/ARCHITECTURE.md) 和 [Contributing](CONTRIBUTING.md)。
+[部署说明](docs/DEPLOYMENT.md) · [架构说明](docs/ARCHITECTURE.md) · [参与贡献](CONTRIBUTING.md)
 
 ## 开源许可
 
-基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)，使用 LGPL-3.0-or-later 许可证。原版许可证和作者声明保存在 [LICENSE](LICENSE)、[COPYING](COPYING) 与 [NOTICE](NOTICE)。
-
-Sol 系列的 GPT 版本名默认选择 Sol：`gpt-6` → `gpt-6-sol`、`gpt-6.1` → `gpt-6.1-sol`，后续 GPT 版本沿用此规则。明确指定的变体及账户模型映射优先。别名对应的目标模型仍需上游实际支持。
-
-OpenAI API Key 账户支持 `/v1/embeddings`（也支持 `/embeddings`），包括文本或 Token 批量输入、浮点或 base64 向量、模型映射和输入 Token 用量记录。该接口使用文本请求体上限，不支持流式响应。ChatGPT OAuth 账户不提供 embeddings API Key。
-
-Chat Completions 支持内联文件数据及上游文件 ID。Messages 转 OpenAI 桥接支持 base64 PDF、文档 URL、纯文本文档，以及工具返回的文件。文档引用标注需要上游原生支持；通过 OpenAI 桥接启用引用标注会明确报错。
-
-OpenAI 账户支持 `POST /v1/responses/input_tokens`，以及 `/responses/input_tokens`、`/backend-api/codex/responses/input_tokens` 别名。网关优先使用上游预检接口；接口不支持时，在 Edge Function 内按原版 tiktoken 方式估算。预检不会新增生成用量记录，也不扣余额；回退结果为估算值，多模态输入同样如此。
-
-Anthropic 格式客户端可通过 `POST /v1/messages/count_tokens` 或 `/messages/count_tokens` 预估输入 Token，支持 Bearer 和 `x-api-key` 鉴权。OpenAI 账号通过 Responses 预估接口转换，Grok 账号使用本地估算，Anthropic 账号使用原生计数接口。这些请求不会写入生成用量。
-
-Gemini 客户端可通过 `POST /v1beta/models/{model}:countTokens` 计数，支持 Bearer、`x-goog-api-key` 或查询参数密钥。接口支持原生 contents 和嵌套生成请求，缓存引用固定使用所属账号；网络故障、限流、服务端错误或 OAuth 权限不足时使用原版文本估算。这些请求不会写入生成用量。
-
-Codex 客户端可通过 `GET /backend-api/codex/models` 获取原生模型清单；OpenAI OAuth 账号无需传入 `client_version` 即可返回 Codex 模型元数据。
-
-`GET /antigravity/models` 返回与原版一致的 Antigravity 内置模型目录，并按 API Key 分组的模型白名单过滤。接口校验密钥和 IP 访问限制，不占用账号，也不请求上游服务。
-
-`GET /v1/sub2api/billing` 可查询当前密钥的 Token 倍率配置，包括用户覆盖值和高峰时段配置。使用推理密钥鉴权并检查其 IP 限制，不占用订阅账号，也不产生计费用量。
-
-OpenAI API Key 账号支持 `POST /v1/images/edits` 和 `/images/edits`，可传入 JSON 图片 URL 或 multipart 附件，支持多图与蒙版。模型映射、流式图片事件和上游 Token 用量复用图片生成处理链路，默认图片模型为 `gpt-image-2`。
-OpenAI OAuth 订阅账号支持 `gpt-image-1.5`、`gpt-image-2`、`gpt-image-2.5-flare` 和 `gpt-image-2.5-sunburst` 及其已支持快照的 Codex 原生图片生成与编辑。multipart 图片和蒙版在云端网关内转换为 data URL。
-
-Grok API Key 和 OAuth 账号也支持 `POST /v1/images/generations` 图片生成及 `/v1/images/edits` 图片编辑。Grok 请求必须指定 Imagine 图片模型，`grok-imagine` 会解析为 `grok-imagine-image-quality`。编辑支持 JSON `image`、`images`、`reference_images` 引用（URL 字符串或图片对象），或 multipart 上传，最多三张源图片及可选蒙版。网关将 `size` 转换为原生分辨率与宽高比参数。
-图片响应支持 `b64_json` 和 `response_format=url` 的 data URL，并保留正确的图片类型。流式编辑使用 `image_edit.*` 事件；上游返回完整 JSON 时，网关会转换为 SSE 完成事件，Token 用量只记录一次。
-在分组设置中开启图片生成权限，可使用同步图片、异步任务和 Responses 图片工具。关闭权限后，排队任务不能开始执行，已完成的结果仍可查询。
-
-异步图片生成与编辑使用 `POST /v1/images/generations/async`、`POST /v1/images/edits/async` 和 `GET /v1/images/tasks/:task_id`，同时支持根路径别名。提交返回 HTTP 202 和 `poll_url`，使用同一个 API Key 查询任务。请求与生成文件保存在 Supabase 私有存储中，结果签名链接有效期为 10 分钟。任务保留 24 小时；分钟级签名调度负责执行排队任务并清理过期文件。调用中断后仅恢复已存结果，不重新生成。每个 Key 最多排队 4 个任务，每个用户最多 16 个。图片推理沿用网关的 120 秒执行超时。配置 `.local/agent-access.json` 后，可运行 `npm run verify:images -- --edit` 验收真实生成、multipart 编辑、鉴权查询与签名下载。
-
-其他 OAuth 图片模型通过 Responses 的 `image_generation` 工具桥接，支持输入图片、蒙版、渐进图片事件和完成用量记录。图片模型与 Responses 驱动模型分别选择。
-
-
-Grok 分组支持异步视频创建 `POST /v1/videos`、`/v1/videos/generations`，视频编辑 `/v1/videos/edits`，以及视频延长 `/v1/videos/extensions`。请指定视频模型和提示词；编辑与延长通过 `video.url` 提供源视频，延长可省略提示词。使用创建任务的网关 Key 轮询 `GET /v1/videos/{request_id}`，通过 `GET /v1/videos/{request_id}/content` 下载，支持二进制流、Range 分段读取和取消下载。状态响应返回本项目的鉴权下载地址，不暴露上游签名。Supabase 将公开任务 ID 绑定至 Key、分组、模型和订阅账号。若创建结果不确定，错误响应会包含公开任务 ID，查询返回 `creation_unknown`，网关不会自动重复提交。
-
-Grok 分组支持 `POST /v1/tts` 语音合成和 `/v1/stt` 语音转文字，可使用 API Key 或 OAuth 鉴权。网关保留合成参数、multipart 上传边界、转写 JSON 和二进制音频响应，使用官方 xAI 语音接口，并在请求完成或取消后释放账号。 自定义语音支持 `POST /v1/custom-voices` 创建、`GET /v1/custom-voices` 列表，以及 `GET`、`PATCH`、`DELETE /v1/custom-voices/{voice_id}` 查询、修改和删除。通过 `GET /v1/custom-voices/{voice_id}/audio` 获取音频样本，上传内容和查询参数原样转发。 实时语音使用 `GET /v1/realtime?model=grok-voice-latest`，通过 WebSocket 建连并使用同一 Bearer 密钥，将 API 地址的 `https://` 换成 `wss://` 即可。文本和二进制帧原样转发，握手使用账号配置的代理。连接当前沿用网关 120 秒的请求时限。
-
-Grok 分组支持 `POST /v1/web_search`、`/v1/x_search` 及其根路径别名，可使用 API Key 或 OAuth 账号。支持 `query` 或 `input`，最多返回 20 条结果；X 搜索还支持账号、日期及图片和视频理解选项。返回的摘要须匹配上游真实搜索来源。
-
-Codex 独立网页搜索支持 `POST /v1/alpha/search`、`/alpha/search` 和 `/backend-api/codex/alpha/search`。OpenAI OAuth 与 API Key 账号使用各自原生接口，个人访问令牌通过 Responses 托管网页搜索工具兜底。成功搜索记录一次不扣费的调用，失败搜索不会写入成功用量。
-
-云端网关和本地控制台代理的 AI 请求体默认上限均为 256 MiB，与原版 Sub2API 一致；embeddings、搜索和 systemone 专用文本路由上限为 32 MiB。部署前可通过 `SERVER_MAX_REQUEST_BODY_SIZE`、`GATEWAY_MAX_BODY_SIZE` 和 `GATEWAY_TEXT_MAX_BODY_SIZE` 按字节配置。服务器上限设为 `0` 仅关闭全局限制，网关限制仍然生效。Supabase 运行内存及上游服务限制可能使大型附件的实际可用上限更低。
-
-云端临时请求记录保留 30 天，用于请求重试和幂等校验。每小时最多清理 1,000 条更早的过期记录，保留用量历史及仍被缓存创建或视频任务引用的记录。
+基于 [Wei-Shaw/sub2api](https://github.com/Wei-Shaw/sub2api)，采用 LGPL-3.0-or-later 许可证。详见 [LICENSE](LICENSE) 和 [NOTICE](NOTICE)。
