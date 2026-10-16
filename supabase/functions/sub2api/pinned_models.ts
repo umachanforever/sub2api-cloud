@@ -34,6 +34,14 @@ function entries(body:Entry,field:string,key:string):Entry[]{
  for(const entry of body[field])if(!entry||typeof entry!=='object'||Array.isArray(entry)||typeof entry[key]!=='string'||!entry[key].trim())throw new HttpError(502,'invalid_pinned_model_catalog');
  return body[field];
 }
+// Codex manifests retain opaque entries; ordinary model lists remain strict.
+function manifestEntries(body:Entry):any[]{
+ if(!Array.isArray(body.models))throw new HttpError(502,'invalid_pinned_model_catalog');
+ return body.models;
+}
+function manifestSlug(entry:any):string{
+ return typeof entry?.slug==='string'?entry.slug.trim():'';
+}
 async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,signal:AbortSignal,manifest:boolean,allowlist?:ModelAllowlist):Promise<Entry>{
  if(account.platform!=='openai'||!['oauth','apikey'].includes(account.type))throw new HttpError(503,'invalid_pinned_model_account');
  const incoming=new URL(request.url),clientVersion=incoming.searchParams.get('client_version');
@@ -51,8 +59,8 @@ async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,s
   }
   body=await catalogBody(await accountFetch(db,account,outbound.url,outbound.init));
   if(manifest){
-   const models=Array.isArray(body.models)?entries(body,'models','slug'):entries(body,'data','id').map(entry=>({...entry,slug:entry.id}));
-   body={...body,models:models.flatMap(entry=>{const descriptor=codexCatalogDescriptor(entry.slug);return descriptor?[completePinnedMetadata(descriptor,entry,account.model_metadata,metadataMapping,credentials.base_url)]:[]})};
+   const models=Array.isArray(body.models)?manifestEntries(body):entries(body,'data','id').map(entry=>({...entry,slug:entry.id}));
+   body={...body,models:models.flatMap(entry=>{const slug=manifestSlug(entry);if(!slug)return [entry];const descriptor=codexCatalogDescriptor(slug);return descriptor?[completePinnedMetadata(descriptor,entry,account.model_metadata,metadataMapping,credentials.base_url)]:[]})};
    delete body.data;
   }else if(Array.isArray(body.models)){body=modelListFromManifest(body);}else entries(body,'data','id');
  }else{
@@ -61,13 +69,13 @@ async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,s
   const forward=()=>{const headers=buildHeaders(credentials,identity);headers.set('accept','application/json');return accountFetch(db,account,CODEX_MODELS_URL+'?client_version='+encodeURIComponent(clientVersion||identity.version),{method:'GET',headers,signal});};
   let response=await forward();
   if(response.status===401){await response.body?.cancel();credentials=await credentialsFor(db,account,credentials.access_token);response=await forward();}
-  const raw=await catalogBody(response);entries(raw,'models','slug');body=manifest?raw:modelListFromManifest(raw);
+  const raw=await catalogBody(response);manifestEntries(raw);body=manifest?raw:modelListFromManifest(raw);
  }
  const credentials=await decryptSecret(account,db.config.encryptionKey);
  const mapping=credentials.model_mapping;
  if(account.model_passthrough||!mapping||typeof mapping!=='object'||Array.isArray(mapping)||!Object.keys(mapping).length)return body;
  const field=manifest?'models':'data',key=manifest?'slug':'id';
- const original=entries(body,field,key).filter(entry=>!manifest||!entry[key].trim().startsWith('codex-auto-')||allowlist?.enabled&&allowlist.models.some(id=>id.trim()===entry[key].trim()));
+ const original=(manifest?manifestEntries(body).filter(entry=>manifestSlug(entry)):entries(body,field,key)).filter(entry=>!manifest||!entry[key].trim().startsWith('codex-auto-')||allowlist?.enabled&&allowlist.models.some(id=>id.trim()===entry[key].trim()));
  const byId=new Map(original.map(entry=>[entry[key].trim(),entry]));
  const candidates=[...byId.keys(),...Object.keys(mapping).sort(),...(allowlist?.enabled?allowlist.models:[])],seen=new Set<string>(),projected:Entry[]=[];
  for(const id of candidates){
@@ -107,7 +115,12 @@ export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,
  const bodies=results.flatMap(result=>result.status==='fulfilled'?[result.value]:[]);
  if(!bodies.length){if(catalog.fallback_to_scheduler)return null;throw new HttpError(catalog.accounts.length?502:503,catalog.accounts.length?'pinned_model_upstream_failed':'no_available_pinned_account');}
  const field=manifest&&!modelId?'models':'data',key=field==='models'?'slug':'id',seen=new Set<string>(),merged:Entry[]=[];
- for(const body of bodies)for(const entry of entries(body,field,key)){const id=entry[key].trim();if(!seen.has(id)){seen.add(id);merged.push(entry);}}
+ const seenOpaque=new Set<string>();
+ for(const body of bodies)for(const entry of field==='models'?manifestEntries(body):entries(body,field,key)){
+  const id=field==='models'?manifestSlug(entry):entry[key].trim();
+  const fingerprint=id||JSON.stringify(entry),known=id?seen:seenOpaque;
+  if(!known.has(fingerprint)){known.add(fingerprint);merged.push(entry);}
+ }
  const combined={...bodies[0],[field]:merged};
  const value=field==='models'?(ordered?applyCodexCatalogPolicy(combined,catalog.model_allowlist,true):configuredCodexCatalog(combined,catalog.configured_model_sources,catalog.model_allowlist)):filterModelCatalog(catalog.model_allowlist,combined);
  if(modelId){const model=value.data.find((entry:Entry)=>entry.id===modelId);if(!model)throw new HttpError(404,'model_not_found');return json(200,model);}

@@ -152,3 +152,28 @@ test('API-key manifests disable Responses Lite for targeted models and their pub
  });
  const response=await app(get('/backend-api/codex/models'));assert.equal(response.status,200);const model=(await response.json()).models[0];assert.equal(model.slug,'public');assert.equal(model.use_responses_lite,false);
 });
+
+for(const type of ['oauth','apikey'])test('pinned '+type+' manifests retain opaque entries and deduplicate separately from model slugs',async()=>{
+ let allowlist;
+ const opaque=[null,7,'opaque',[],{extension:true},{slug:42}];
+ const app=createHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({pinned_catalog:{accounts:[account(1,type),account(2,type)],model_allowlist:allowlist}});
+  const first=new Headers(init.headers).get('authorization')==='Bearer token-1';
+  return Response.json({models:[...opaque,{slug:'shared',display_name:first?'First':'Second'},...(first?[]:[{extension:'second'},{slug:'second'}])]});
+ });
+ const response=await app(get('/backend-api/codex/models'));assert.equal(response.status,200);
+ const models=(await response.json()).models;assert.deepEqual(models.slice(0,opaque.length),opaque);assert.equal(models[opaque.length].slug,'shared');assert.equal(models[opaque.length].display_name,'First');assert.deepEqual(models[opaque.length+1],{extension:'second'});assert.equal(models.at(-1).slug,'second');
+ allowlist={enabled:true,models:['second','shared']};
+ const selected=await app(get('/backend-api/codex/models'));assert.equal(selected.status,200);
+ assert.deepEqual((await selected.json()).models.map(entry=>entry.slug),['second','shared']);
+ assert.equal((await app(get('/v1/models'))).status,502);
+});
+
+for(const type of ['oauth','apikey'])test('pinned '+type+' mapping skips opaque entries without rejecting valid aliases',async()=>{
+ const app=createHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({pinned_catalog:{accounts:[account(1,type,{'public-model':'upstream-model'})]}});
+  return Response.json({models:[null,7,[],{slug:42},{slug:'upstream-model',instructions:'keep'}]});
+ });
+ const response=await app(get('/backend-api/codex/models'));assert.equal(response.status,200);
+ const models=(await response.json()).models;assert.deepEqual(models.map(entry=>entry.slug),['public-model']);assert.equal(models[0].instructions,'keep');
+});
