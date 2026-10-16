@@ -47,4 +47,33 @@ BEGIN
     UPDATE s2a_private.usage_tokens SET revoked_at=now() WHERE token_hash=usage_hash;
     IF public.s2a_personal_usage_accounts(usage_hash)->>'error' IS DISTINCT FROM 'invalid_api_key' THEN RAISE EXCEPTION 'revoked usage token accepted'; END IF;
 END $$;
+DO $$
+DECLARE u bigint; g bigint; k bigint; a bigint; b bigint; version bigint; result jsonb;
+    key_hash text:=encode(sha256(convert_to('synthetic-multi-usage-key','UTF8')),'hex');
+    sampled bigint:=extract(epoch FROM now())::bigint;
+BEGIN
+    IF has_function_privilege('anon','public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb)','EXECUTE')
+        OR has_function_privilege('authenticated','public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb)','EXECUTE')
+        OR has_table_privilege('service_role','s2a_private.provider_usage_snapshots','SELECT') THEN RAISE EXCEPTION 'provider usage ACL mismatch'; END IF;
+    INSERT INTO public.users(email,password_hash) VALUES('multi-usage-'||gen_random_uuid()::text||'@example.invalid','!fixture') RETURNING id INTO u;
+    INSERT INTO public.groups(name,platform) VALUES('Mixed usage fixture','composite') RETURNING id INTO g;
+    INSERT INTO public.api_keys(user_id,group_id,key,name) VALUES(u,g,'synthetic-multi-usage-key','Mixed usage fixture') RETURNING id INTO k;
+    INSERT INTO public.accounts(name,platform,type,credentials) VALUES('Claude fixture','anthropic','oauth','{"access_token":"synthetic-only"}') RETURNING id,s2a_credential_version INTO a,version;
+    INSERT INTO public.accounts(name,platform,type,credentials) VALUES('Gemini fixture','gemini','apikey','{"api_key":"synthetic-only"}') RETURNING id INTO b;
+    INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g);
+    result:=public.s2a_personal_usage_accounts(key_hash);
+    IF jsonb_array_length(result->'accounts')<>2 THEN RAISE EXCEPTION 'mixed provider accounts excluded'; END IF;
+    IF NOT public.s2a_personal_usage_save(a,version,sampled,'[{"id":"five_hour","used_percent":25}]') THEN RAISE EXCEPTION 'snapshot save failed'; END IF;
+    IF public.s2a_personal_usage_save(a,version+1,sampled,'[]') OR public.s2a_personal_usage_save(a,version,sampled-1,'[]')
+        OR public.s2a_personal_usage_save(a,version,sampled+120,'[]') OR public.s2a_personal_usage_save(a,version,sampled,'{}') THEN RAISE EXCEPTION 'invalid or older snapshot accepted'; END IF;
+    result:=public.s2a_personal_usage_accounts(key_hash,NULL,a);
+    IF result->'accounts'->0->'usage_snapshot'->'windows'->0->>'used_percent' IS DISTINCT FROM '25' THEN RAISE EXCEPTION 'snapshot not projected'; END IF;
+    UPDATE s2a_private.accounts SET s2a_credential_version=version+1 WHERE id=a;
+    result:=public.s2a_personal_usage_accounts(key_hash,NULL,a);
+    IF result->'accounts'->0->'usage_snapshot' IS DISTINCT FROM 'null'::jsonb THEN RAISE EXCEPTION 'old credential snapshot leaked'; END IF;
+    UPDATE public.groups SET platform='anthropic' WHERE id=g;
+    result:=public.s2a_personal_usage_accounts(key_hash);
+    IF jsonb_array_length(result->'accounts')<>1 OR result->'accounts'->0->>'platform' IS DISTINCT FROM 'anthropic' THEN RAISE EXCEPTION 'provider group boundary ignored'; END IF;
+END $$;
 ROLLBACK;

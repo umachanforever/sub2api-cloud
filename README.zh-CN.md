@@ -11,7 +11,7 @@
 - 云端完成鉴权、凭据自动刷新和用量记录。
 - 支持本地或云端 Supabase；关闭本地控制台后，云端 API 仍可使用。
 
-Supabase 提供免费额度和 HTTPS 地址，节省主机与域名费用。地址可直连时，中国大陆客户端无需翻墙或运行本地代理。实际可用性和额度取决于网络、上游账号及 [Supabase 套餐](https://supabase.com/pricing)。
+Supabase 提供免费额度和 HTTPS 地址，节省主机与域名费用。中国大陆客户端可直连云端网关使用 OpenAI API，无需翻墙或运行本地代理。使用额度取决于上游账号及 [Supabase 套餐](https://supabase.com/pricing)。
 
 ## 快速开始
 
@@ -58,7 +58,7 @@ curl "$OPENAI_BASE_URL/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口分别返回已启用 OpenAI 订阅账号的数据，添加 `?refresh=true` 可立即向上游刷新。
+同一密钥可调用 `/responses`、`/chat/completions` 和 `/usage`。用量接口按已启用账号分别返回数据，`windows` 保留各供应商的额度周期；上游不提供额度查询的账号标记为 `supported: false`。添加 `?refresh=true` 可立即向上游刷新。
 
 `gpt-6`、`gpt-6.1` 等别名默认选择对应的 `-sol` 版本，账号模型映射优先。实际可用模型取决于订阅账号。
 

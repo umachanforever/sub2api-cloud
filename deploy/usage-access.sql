@@ -11,6 +11,37 @@ ALTER TABLE s2a_private.usage_tokens OWNER TO s2a_management;
 ALTER TABLE s2a_private.usage_tokens ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.usage_tokens FROM PUBLIC,anon,authenticated,service_role;
 
+CREATE TABLE IF NOT EXISTS s2a_private.provider_usage_snapshots (
+    account_id bigint PRIMARY KEY REFERENCES s2a_private.accounts(id) ON DELETE CASCADE,
+    credential_version bigint NOT NULL,
+    fetched_at bigint NOT NULL,
+    windows jsonb NOT NULL CHECK (jsonb_typeof(windows)='array' AND octet_length(windows::text)<=65536)
+);
+ALTER TABLE s2a_private.provider_usage_snapshots OWNER TO s2a_management;
+ALTER TABLE s2a_private.provider_usage_snapshots ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON s2a_private.provider_usage_snapshots FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.s2a_personal_usage_save(
+    p_account_id bigint,p_version bigint,p_fetched_at bigint,p_windows jsonb
+) RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+BEGIN
+    IF p_fetched_at IS NULL OR p_fetched_at<0 OR p_fetched_at>extract(epoch FROM now())+60
+        OR p_windows IS NULL OR jsonb_typeof(p_windows)<>'array' THEN RETURN false; END IF;
+    IF jsonb_array_length(p_windows)>100 OR octet_length(p_windows::text)>65536 THEN RETURN false; END IF;
+    PERFORM 1 FROM s2a_private.accounts WHERE id=p_account_id AND s2a_credential_version=p_version
+        AND deleted_at IS NULL AND status='active' FOR UPDATE;
+    IF NOT FOUND THEN RETURN false; END IF;
+    INSERT INTO s2a_private.provider_usage_snapshots AS current(account_id,credential_version,fetched_at,windows)
+        VALUES(p_account_id,p_version,p_fetched_at,p_windows)
+        ON CONFLICT(account_id) DO UPDATE SET credential_version=excluded.credential_version,
+            fetched_at=excluded.fetched_at,windows=excluded.windows
+        WHERE current.credential_version<>excluded.credential_version OR current.fetched_at<=excluded.fetched_at;
+    RETURN FOUND;
+END $$;
+ALTER FUNCTION public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_usage_save(bigint,bigint,bigint,jsonb) TO service_role;
+
 CREATE OR REPLACE FUNCTION public.s2a_personal_usage_accounts(
     p_key_hash text,p_client_ip text DEFAULT NULL,p_account_id bigint DEFAULT NULL
 ) RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -44,14 +75,17 @@ BEGIN
         END LOOP;
     END IF;
     SELECT coalesce(jsonb_agg(public.s2a_gateway_account_snapshot(a.id) || jsonb_build_object(
-        'name',a.name,'status',a.status,'proxy_id',a.proxy_id::text,'quota_snapshot',(SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb)
+        'name',a.name,'status',a.status,'proxy_id',a.proxy_id::text,
+        'usage_snapshot',(SELECT jsonb_build_object('fetched_at',s.fetched_at,'windows',s.windows)
+            FROM s2a_private.provider_usage_snapshots s WHERE s.account_id=a.id AND s.credential_version=a.s2a_credential_version),
+        'quota_snapshot',(SELECT coalesce(jsonb_object_agg(e.key,e.value),'{}'::jsonb)
             FROM jsonb_each(coalesce(a.extra,'{}'::jsonb)) e
             WHERE e.key ~ '^codex_(usage_updated_at|(5h|7d)_(used_percent|window_minutes|reset_after_seconds|reset_at))$')) ORDER BY a.id),'[]'::jsonb)
     INTO accounts FROM (
         SELECT a.* FROM s2a_private.accounts a
         JOIN public.account_groups ag ON ag.account_id=a.id
-        WHERE ag.group_id=(identity->>'group_id')::bigint AND a.platform=identity->>'platform'
-            AND a.deleted_at IS NULL AND a.status='active' AND a.type='oauth' AND a.platform='openai'
+        WHERE ag.group_id=(identity->>'group_id')::bigint AND (a.platform=identity->>'platform' OR identity->>'platform'='composite')
+            AND a.deleted_at IS NULL AND a.status='active'
             AND (p_account_id IS NULL OR a.id=p_account_id)
         ORDER BY a.id LIMIT 21
     ) a;

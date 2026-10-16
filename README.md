@@ -11,7 +11,7 @@ An AI API gateway for subscription accounts and provider API keys, powered by Su
 - Cloud authentication, automatic credential refresh, and usage recording.
 - Local or cloud Supabase deployment. Cloud API access continues when the local console is stopped.
 
-Supabase provides free-tier hosting and an HTTPS endpoint, reducing server and domain costs. Clients in mainland China can connect without a VPN where the Supabase endpoint is reachable. Availability and quotas depend on your network, upstream account, and [Supabase plan](https://supabase.com/pricing).
+Supabase provides free-tier hosting and an HTTPS endpoint, reducing server and domain costs. Clients in mainland China can access OpenAI APIs directly through the cloud gateway, without a VPN or local proxy. Usage quotas depend on your upstream account and [Supabase plan](https://supabase.com/pricing).
 
 ## Quick start
 
@@ -58,7 +58,7 @@ curl "$OPENAI_BASE_URL/models" \
   -H "Authorization: Bearer $OPENAI_API_KEY"
 ```
 
-Use the same key with `/responses`, `/chat/completions`, and `/usage`. The usage endpoint lists enabled OpenAI subscription accounts separately; add `?refresh=true` for a fresh upstream reading.
+Use the same key with `/responses`, `/chat/completions`, and `/usage`. The usage endpoint lists enabled accounts separately, with provider-specific quota windows in `windows`. Accounts without an upstream quota API are marked `supported: false`. Add `?refresh=true` for a fresh upstream reading.
 
 Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless an account mapping overrides them. Available models depend on your subscription account.
 

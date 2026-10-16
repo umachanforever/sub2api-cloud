@@ -107,3 +107,89 @@ test('URL credentials accept only usage tokens and reject conflicting headers',a
  assert.equal((await app(new Request('https://edge/v1/usage?key=sk-usage-'+'a'.repeat(64),{headers:{authorization:'Bearer different'}}))).status,400);
  assert.equal((await app(new Request('https://edge/v1/responses?key=sk-usage-'+'a'.repeat(64),{method:'POST',body:'{}'}))).status,401);
 });
+
+test('mixed-provider groups route quota reads independently and expose only public windows', async () => {
+  const seen = [], saves = [];
+  const providerAccounts = ['anthropic', 'antigravity', 'gemini', 'grok'].map((platform, i) => account({
+    id: String(i + 100), platform, quota_snapshot: {}, usage_snapshot: { fetched_at: now, windows: [{ id: 'cached', used_percent: 99 }] },
+    credentials: { access_token: 'provider-secret', expires_at: Date.now() + 3600_000, project_id: 'private-project' },
+  }));
+  const app = handler((url, init, args) => {
+    if (url.pathname.endsWith('/s2a_personal_usage_accounts')) return Response.json({ accounts: providerAccounts });
+    if (url.pathname.endsWith('/s2a_personal_usage_save')) { saves.push(args); return Response.json(true); }
+    assert.equal(new Headers(init.headers).get('authorization'), 'Bearer provider-secret');
+    seen.push(url.href);
+    if (url.hostname === 'api.anthropic.com') {
+      assert.equal(new Headers(init.headers).get('anthropic-beta'), 'oauth-2025-04-20');
+      assert.equal(new Headers(init.headers).get('user-agent'), 'claude-code/2.1.7');
+      return Response.json({ five_hour: { utilization: 21, resets_at: new Date((now + 1000) * 1000).toISOString() }, seven_day_sonnet: { utilization: 65 }, secret: 'never-return' });
+    }
+    if (url.pathname.endsWith('fetchAvailableModels')) {
+      assert.equal(init.method, 'POST'); assert.equal(args.project, 'private-project');
+      return Response.json({ models: { 'claude-model': { quotaInfo: { remainingFraction: 0.25, resetTime: new Date((now + 5000) * 1000).toISOString() }, private: 'never-return' } } });
+    }
+    if (url.pathname.endsWith('retrieveUserQuota')) return Response.json({ buckets: [{ modelId: 'gemini-model', remainingFraction: 0.5, resetTime: new Date((now + 1000) * 1000).toISOString(), private: 'never-return' }] });
+    assert.equal(url.hostname, 'cli-chat-proxy.grok.com');
+    assert.equal(new Headers(init.headers).get('x-xai-token-auth'), 'xai-grok-cli');
+    return Response.json({ config: url.search ? { creditUsagePercent: 42, currentPeriod: { type: 'weekly', end: new Date((now + 2000) * 1000).toISOString() } } : { monthlyLimit: { val: '10000' }, used: { val: '2000' }, billingPeriodEnd: new Date((now + 80000) * 1000).toISOString() } });
+  });
+  const response = await app(request('?refresh=true'));
+  assert.equal(response.status, 200);
+  const body = await response.json();
+  assert.deepEqual(body.accounts.map(a => a.platform), ['anthropic', 'antigravity', 'gemini', 'grok']);
+  assert.ok(body.accounts.every(a => a.supported && !a.cached && !a.stale));
+  assert.equal(body.accounts[0].five_hour.used_percent, 21);
+  assert.equal(body.accounts[0].seven_day, null);
+  assert.equal(body.accounts[1].windows[0].used_percent, 75);
+  assert.equal(body.accounts[1].windows[0].window_seconds, null);
+  assert.equal(body.accounts[2].windows[0].model, 'gemini-model');
+  assert.equal(body.accounts[3].seven_day.used_percent, 42);
+  assert.equal(body.accounts[3].windows.find(w => w.id === 'monthly').used_percent, 20);
+  assert.equal(seen.length, 5); assert.equal(saves.length, 4);
+  for (const secret of ['provider-secret', 'private-project', 'never-return']) assert.equal(JSON.stringify(body).includes(secret), false);
+});
+
+test('provider cache lasts one minute, sanitizes payloads, and retains stale values on upstream failure', async () => {
+  const windows = [{ id: 'five_hour', used_percent: 30, remaining_percent: 999, window_seconds: 18000,
+    reset_at: new Date((now + 1000) * 1000).toISOString(), secret: 'never-return' }];
+  for (const expired of [false, true]) {
+    let reads = 0;
+    const app = handler(url => {
+      if (url.pathname.endsWith('/s2a_personal_usage_accounts')) return Response.json({ accounts: [account({ platform: 'anthropic', usage_snapshot: { fetched_at: now - (expired ? 61 : 0), windows } })] });
+      reads++; return new Response('private failure', { status: 403 });
+    });
+    const body = await (await app(request())).json(), a = body.accounts[0];
+    assert.equal(reads, expired ? 1 : 0); assert.equal(a.stale, expired); assert.equal(a.cached, true);
+    assert.equal(a.five_hour.remaining_percent, 70);
+    assert.equal(a.error, expired ? 'quota_upstream_error' : undefined);
+    assert.equal(JSON.stringify(body).includes('never-return'), false);
+    assert.equal(JSON.stringify(body).includes('private failure'), false);
+  }
+});
+
+test('unsupported credential types are listed without querying or fabricating quota', async () => {
+  const app = handler(url => {
+    assert.ok(url.pathname.endsWith('/s2a_personal_usage_accounts'));
+    return Response.json({ accounts: [account({ platform: 'anthropic', type: 'apikey' }), account({ id: '43', platform: 'typesafe', type: 'apikey' })] });
+  });
+  const { accounts } = await (await app(request('?refresh=true'))).json();
+  assert.equal(accounts.length, 2);
+  for (const a of accounts) { assert.equal(a.supported, false); assert.deepEqual(a.windows, []); assert.equal(a.five_hour, null); assert.equal(a.seven_day, null); assert.equal(a.error, 'quota_not_supported'); }
+});
+
+test('invalid or missing provider quota is unknown, never zero utilization', async () => {
+  for (const [platform, payload] of [['anthropic', { five_hour: {} }], ['antigravity', { models: { x: { quotaInfo: {} } } }], ['gemini', { buckets: [{ remainingFraction: 2 }] }], ['grok', { config: {} }]]) {
+    const app = handler(url => url.pathname.endsWith('/s2a_personal_usage_accounts') ? Response.json({ accounts: [account({ platform, credentials: { access_token: 'provider-secret', expires_at: Date.now() + 3600000, project_id: 'project' } })] }) : Response.json(payload));
+    const a = (await (await app(request())).json()).accounts[0];
+    assert.equal(a.stale, true); assert.equal(a.error, 'quota_unavailable'); assert.deepEqual(a.windows, []);
+  }
+});
+
+test('Gemini AI Studio OAuth reports unsupported subscription quota without contacting Code Assist', async () => {
+  const app = handler(url => {
+    assert.ok(url.pathname.endsWith('/s2a_personal_usage_accounts'));
+    return Response.json({ accounts: [account({ platform: 'gemini', credentials: { access_token: 'provider-secret', oauth_type: 'ai_studio', expires_at: Date.now() + 3600000 } })] });
+  });
+  const a = (await (await app(request('?refresh=true'))).json()).accounts[0];
+  assert.equal(a.supported, false); assert.equal(a.stale, false); assert.equal(a.error, 'quota_not_supported'); assert.deepEqual(a.windows, []);
+});
