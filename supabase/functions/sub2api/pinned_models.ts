@@ -1,3 +1,4 @@
+import {completePinnedMetadata} from './pinned_model_metadata.ts';
 import {type Account,credentialsFor} from './accounts.ts';
 import {accountFetch} from './account_proxy.ts';
 import {apiKeyRequest} from './api_key_provider.ts';
@@ -11,7 +12,7 @@ import {filterModelCatalog,type ModelAllowlist} from './model_policy.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {json} from './http.ts';
 type Entry=Record<string,any>;
-type PinnedAccount=Account & {type:'oauth'|'apikey';platform:'openai';model_passthrough?:boolean};
+type PinnedAccount=Account & {type:'oauth'|'apikey';platform:'openai';model_passthrough?:boolean;model_metadata?:unknown};
 export type PinnedModelCatalog={accounts:PinnedAccount[];fallback_to_scheduler?:boolean;model_allowlist?:ModelAllowlist;error?:string;status?:number};
 
 async function catalogBody(response:Response):Promise<Entry>{
@@ -31,21 +32,13 @@ function entries(body:Entry,field:string,key:string):Entry[]{
  for(const entry of body[field])if(!entry||typeof entry!=='object'||Array.isArray(entry)||typeof entry[key]!=='string'||!entry[key].trim())throw new HttpError(502,'invalid_pinned_model_catalog');
  return body[field];
 }
-function completeMetadata(defaults:Entry,provided:Entry):Entry{
- const result={...defaults,...provided};
- for(const key of Object.keys(defaults)){
-  const value=provided[key],fallback=defaults[key];
-  if(value===undefined||value===null)result[key]=fallback;
-  else if(value&&typeof value==='object'&&!Array.isArray(value)&&fallback&&typeof fallback==='object'&&!Array.isArray(fallback))result[key]=completeMetadata(fallback,value);
- }
- return result;
-}
 async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,signal:AbortSignal,manifest:boolean,allowlist?:ModelAllowlist):Promise<Entry>{
  if(account.platform!=='openai'||!['oauth','apikey'].includes(account.type))throw new HttpError(503,'invalid_pinned_model_account');
  const incoming=new URL(request.url),clientVersion=incoming.searchParams.get('client_version');
  let body:Entry;
  if(account.type==='apikey'){
   const credentials=await decryptApiKeyCredentials(account,db.config.encryptionKey);
+  const metadataMapping=(credentials as typeof credentials & {model_mapping?:Record<string,string>}).model_mapping??{};
   delete (credentials as typeof credentials & {model_mapping?:unknown}).model_mapping;
   const discoveryRequest=new Request(new URL('/v1/models',request.url));
   const outbound=apiKeyRequest('openai',credentials,'models','/v1/models',undefined,discoveryRequest,signal);
@@ -57,7 +50,7 @@ async function sourceCatalog(db:Database,account:PinnedAccount,request:Request,s
   body=await catalogBody(await accountFetch(db,account,outbound.url,outbound.init));
   if(manifest){
    const models=Array.isArray(body.models)?entries(body,'models','slug'):entries(body,'data','id').map(entry=>({...entry,slug:entry.id}));
-   body={...body,models:models.flatMap(entry=>{const descriptor=codexCatalogDescriptor(entry.slug);return descriptor?[completeMetadata(descriptor,entry)]:[]})};
+   body={...body,models:models.flatMap(entry=>{const descriptor=codexCatalogDescriptor(entry.slug);return descriptor?[completePinnedMetadata(descriptor,entry,account.model_metadata,metadataMapping)]:[]})};
    delete body.data;
   }else if(Array.isArray(body.models)){body=modelListFromManifest(body);}else entries(body,'data','id');
  }else{

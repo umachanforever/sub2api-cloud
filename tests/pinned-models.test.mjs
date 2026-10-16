@@ -118,3 +118,37 @@ test('pinned catalogs reuse successful source reads for a minute and isolate rot
  const original=Date.now;const future=original()+61000;
  try{Date.now=()=>future;assert.equal((await app(get())).status,200);assert.equal(reads,4);}finally{Date.now=original;}
 });
+
+test('synced API-key model metadata fills live omissions and preserves explicit nullable capability fields',async()=>{
+ const source={...account(1,'apikey'),model_metadata:{models:{'gpt-6.1-sol':{id:'gpt-6.1-sol',display_name:'Synced name',description:'Synced description',reasoning:true,default_reasoning_level:'high',supported_reasoning_levels:['low','high'],input_modalities:['text','image'],context_window:123456,max_context_window:234567,codex_tool_capabilities:{supports_search_tool:true,tool_mode:'synced',use_responses_lite:true,service_tiers:[{id:'fast',name:'Fast'}]}}}}};
+ let live=false;
+ const app=createHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({pinned_catalog:{accounts:[source]}});
+  return Response.json({models:[{slug:'gpt-6.1-sol',supports_search_tool:false,tool_mode:null,use_responses_lite:null,service_tiers:null,...(live?{display_name:'Live name',context_window:999999,input_modalities:['text']}:{})}]});
+ });
+ const first=(await (await app(get('/backend-api/codex/models'))).json()).models[0];
+ assert.equal(first.display_name,'Synced name');assert.equal(first.description,'Synced description');assert.equal(first.context_window,123456);assert.equal(first.max_context_window,234567);assert.deepEqual(first.input_modalities,['text','image']);assert.equal(first.default_reasoning_level,'high');assert.deepEqual(first.supported_reasoning_levels.map(level=>level.effort),['low','high']);assert.equal(first.supports_search_tool,false);assert.equal(first.tool_mode,null);assert.equal(first.use_responses_lite,null);assert.deepEqual(first.service_tiers,[]);
+ live=true;source.credential_version++;
+ const second=(await (await app(get('/backend-api/codex/models'))).json()).models[0];assert.equal(second.display_name,'Live name');assert.equal(second.context_window,999999);assert.deepEqual(second.input_modalities,['text']);
+});
+
+test('synced metadata follows mapped targets and changing snapshots invalidates cached catalogs',async()=>{
+ const source={...account(1,'apikey',{'public':'target'}),model_metadata:{models:{target:{id:'target',display_name:'Target private name',description:'Target description',reasoning:false,input_modalities:['text'],context_window:123456,codex_tool_capabilities:{supports_search_tool:false}}}}};
+ let reads=0;
+ const app=createHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({pinned_catalog:{accounts:[source]}});
+  reads++;return Response.json({object:'list',data:[{id:'target'}]});
+ });
+ const first=(await (await app(get('/backend-api/codex/models'))).json()).models[0];assert.equal(first.slug,'public');assert.equal(first.display_name,'public');assert.equal(first.context_window,123456);assert.equal(first.supports_search_tool,false);assert.equal(first.default_reasoning_level,'none');
+ source.model_metadata.models.target.context_window=654321;
+ const second=(await (await app(get('/backend-api/codex/models'))).json()).models[0];assert.equal(second.context_window,654321);assert.equal(reads,2);
+});
+
+test('API-key manifests disable Responses Lite for targeted models and their public aliases',async()=>{
+ const source={...account(1,'apikey',{'public':'gpt-6.1-sol'})};
+ const app=createHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({pinned_catalog:{accounts:[source]}});
+  return Response.json({models:[{slug:'gpt-6.1-sol',use_responses_lite:true}]});
+ });
+ const response=await app(get('/backend-api/codex/models'));assert.equal(response.status,200);const model=(await response.json()).models[0];assert.equal(model.slug,'public');assert.equal(model.use_responses_lite,false);
+});

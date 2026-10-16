@@ -17,8 +17,10 @@ BEGIN
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g),(b,g),(foreign_account,other_group);
  UPDATE public.groups SET codex_models_manifest_config=jsonb_build_object('enabled',true,'account_ids',jsonb_build_array(a,b,a,foreign_account),'fallback_to_scheduler',true) WHERE id=g;
  UPDATE s2a_private.accounts SET overload_until=now()+interval '1 hour',rate_limit_reset_at=now()+interval '1 hour',temp_unschedulable_until=now()+interval '1 hour' WHERE id=a;
+ UPDATE s2a_private.accounts SET extra=coalesce(extra,'{}')||'{"upstream_model_metadata":{"models":{"gpt-6.1-sol":{"id":"gpt-6.1-sol","context_window":123456}}}}'::jsonb WHERE id IN (a,b);
  sources:=s2a_private.pinned_model_sources(g);
  IF jsonb_array_length(sources->'accounts')<>2 OR sources->'accounts'->0->>'id' IS DISTINCT FROM a::text OR sources->'accounts'->1->>'id' IS DISTINCT FROM b::text THEN RAISE EXCEPTION 'pinned order, deduplication or membership mismatch'; END IF;
+ IF sources->'accounts'->0->'model_metadata'->'models'->'gpt-6.1-sol'->>'context_window' IS DISTINCT FROM '123456' THEN RAISE EXCEPTION 'pinned metadata snapshot missing'; END IF;
  IF sources->'fallback_to_scheduler' IS DISTINCT FROM 'true'::jsonb THEN RAISE EXCEPTION 'fallback policy lost'; END IF;
  IF sources->'accounts'->0->>'credential_storage' IS DISTINCT FROM 'vault' OR sources->'accounts'->0->'credentials'->>'api_key' IS DISTINCT FROM 'synthetic-first' THEN RAISE EXCEPTION 'trusted pinned snapshot unavailable'; END IF;
  IF EXISTS(SELECT FROM s2a_private.accounts WHERE id IN (a,b) AND credentials::text LIKE '%synthetic-%') THEN RAISE EXCEPTION 'pinned credentials not encrypted at rest'; END IF;
@@ -31,7 +33,11 @@ BEGIN
  IF NOT decision ? 'pinned_catalog' THEN RAISE EXCEPTION 'disabled scheduler fallback bypassed'; END IF;
  UPDATE public.groups SET codex_models_manifest_config=jsonb_set(codex_models_manifest_config,'{fallback_to_scheduler}','true') WHERE id=g;
  decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/models","pinned_models_fallback":true}');
+ IF decision->'account'->'model_metadata'->'models'->'gpt-6.1-sol'->>'context_window' IS DISTINCT FROM '123456' THEN RAISE EXCEPTION 'fallback metadata snapshot missing'; END IF;
  IF decision->'account'->>'id' IS DISTINCT FROM b::text OR NOT decision ? 'lease_id' THEN RAISE EXCEPTION 'enabled fallback did not use normal scheduler'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET finished_at=now() WHERE group_id=g AND finished_at IS NULL;
+ decision:=public.s2a_personal_acquire(h,'gpt-6.1-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses"}');
+ IF decision ? 'error' OR decision->'account' ? 'model_metadata' THEN RAISE EXCEPTION 'inference admission carries unnecessary model metadata'; END IF;
  UPDATE public.api_keys SET ip_whitelist='["192.0.2.0/24"]' WHERE s2a_key_hash=h;
  decision:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
  IF decision->>'error' IS DISTINCT FROM 'ip_forbidden' OR decision ? 'pinned_catalog' THEN RAISE EXCEPTION 'pinned discovery bypassed key IP policy'; END IF;

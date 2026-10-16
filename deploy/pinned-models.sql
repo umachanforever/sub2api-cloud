@@ -31,7 +31,7 @@ BEGIN
   WHERE a.deleted_at IS NULL AND a.platform='openai' AND a.status='active' AND a.schedulable
    AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=statement_timestamp(),false)
  ) SELECT coalesce(jsonb_agg(public.s2a_gateway_account_snapshot(id)
-    ||jsonb_build_object('proxy_id',proxy_id::text,'model_passthrough',
+    ||jsonb_build_object('proxy_id',proxy_id::text,'model_metadata',extra->'upstream_model_metadata','model_passthrough',
      CASE WHEN jsonb_typeof(extra->'openai_passthrough')='boolean' THEN (extra->>'openai_passthrough')::boolean
       WHEN jsonb_typeof(extra->'openai_oauth_passthrough')='boolean' THEN (extra->>'openai_oauth_passthrough')::boolean ELSE false END) ORDER BY position),'[]'::jsonb)
  INTO sources FROM eligible;
