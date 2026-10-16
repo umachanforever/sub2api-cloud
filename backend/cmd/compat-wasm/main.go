@@ -33,6 +33,37 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "fast_policy" {
+		var value struct {
+			Settings     json.RawMessage `json:"settings"`
+			SettingsJSON *string         `json:"settings_json"`
+			UserID       string          `json:"user_id"`
+			AccountType  string          `json:"account_type"`
+			Model        string          `json:"model"`
+			Tier         string          `json:"tier"`
+		}
+		if err := json.Unmarshal(input.Body, &value); err != nil {
+			return nil, err
+		}
+		raw := value.Settings
+		if value.SettingsJSON != nil {
+			raw = []byte(*value.SettingsJSON)
+		}
+		var settings OpenAIFastPolicySettings
+		if json.Unmarshal(raw, &settings) != nil {
+			settings = OpenAIFastPolicySettings{}
+		}
+		if value.Tier != "missing" {
+			normalized := normalizeOpenAIServiceTier(value.Tier)
+			if normalized == nil {
+				return map[string]string{"action": "pass", "message": ""}, nil
+			}
+			value.Tier = *normalized
+		}
+		userID, _ := strconv.ParseInt(value.UserID, 10, 64)
+		action, message := evaluateOpenAIFastPolicyWithSettings(&settings, userID, &Account{Platform: "openai", Type: value.AccountType}, value.Model, value.Tier)
+		return map[string]string{"action": action, "message": message}, nil
+	}
 	if input.Operation == "codex_metadata" {
 		var value struct {
 			Model       string                  `json:"model"`

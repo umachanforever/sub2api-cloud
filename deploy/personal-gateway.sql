@@ -151,11 +151,10 @@ REVOKE ALL ON FUNCTION s2a_private.group_routing_accounts(jsonb,boolean,text) FR
 
 CREATE OR REPLACE FUNCTION s2a_private.fast_policy_context(p_user bigint,p_force boolean) RETURNS jsonb
 LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path='' AS $$
-DECLARE raw text; settings jsonb;
+DECLARE raw text;
 BEGIN
  SELECT value INTO raw FROM public.settings WHERE key='openai_fast_policy_settings';
- BEGIN settings:=raw::jsonb; EXCEPTION WHEN invalid_text_representation THEN settings:=NULL; END;
- RETURN jsonb_build_object('user_id',p_user::text,'force_priority',coalesce(p_force,false),'settings',settings);
+ RETURN jsonb_build_object('user_id',p_user::text,'force_priority',coalesce(p_force,false),'settings_json',raw);
 END $$;
 ALTER FUNCTION s2a_private.fast_policy_context(bigint,boolean) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.fast_policy_context(bigint,boolean) FROM PUBLIC,anon,authenticated,service_role;

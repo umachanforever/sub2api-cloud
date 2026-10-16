@@ -7,7 +7,7 @@ import {gzipSync,gunzipSync} from 'node:zlib';
 const root=new URL('../',import.meta.url),backend=new URL('backend/',root),target=new URL('supabase/functions/sub2api/compat/',root),go=process.env.GO_BINARY??'go';
 const scratch=await mkdtemp(join(tmpdir(),'sub2api-compat-'));
 try{
-  for(const [command,file] of [['export-gemini-compat','gemini_generated.go'],['export-codex-metadata','codex_metadata_generated.go']]){
+  for(const [command,file] of [['export-gemini-compat','gemini_generated.go'],['export-codex-metadata','codex_metadata_generated.go'],['export-fast-policy','fast_policy_generated.go']]){
     const extracted=spawnSync(go,['run','./cmd/'+command],{cwd:backend,encoding:'utf8'});
     if(extracted.status!==0)throw Error('Original source extraction failed: '+(extracted.stderr||extracted.error?.message));
     const generated=new URL('cmd/compat-wasm/'+file,backend);

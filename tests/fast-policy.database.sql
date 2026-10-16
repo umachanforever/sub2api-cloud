@@ -13,8 +13,8 @@ BEGIN
  INSERT INTO public.accounts(name,platform,type,credentials) VALUES('Fast policy account','openai','apikey','{"api_key":"synthetic"}') RETURNING id INTO a;
  INSERT INTO public.account_groups(account_id,group_id) VALUES(a,g);
  decision:=public.s2a_personal_acquire(h,'gpt-6-sol',gen_random_uuid(),p_billing_context=>'{"inbound_endpoint":"/v1/responses","count_only":true}');
- IF decision->'fast_policy'->>'user_id' IS DISTINCT FROM u::text OR decision->'fast_policy'->>'force_priority' IS DISTINCT FROM 'true' OR decision->'fast_policy'->'settings'->'rules'->0->>'action' IS DISTINCT FROM 'block' THEN RAISE EXCEPTION 'trusted policy snapshot missing'; END IF;
+ IF decision->'fast_policy'->>'user_id' IS DISTINCT FROM u::text OR decision->'fast_policy'->>'force_priority' IS DISTINCT FROM 'true' OR jsonb_typeof(decision->'fast_policy'->'settings_json') IS DISTINCT FROM 'string' OR (decision->'fast_policy'->>'settings_json')::jsonb->'rules'->0->>'action' IS DISTINCT FROM 'block' THEN RAISE EXCEPTION 'trusted policy snapshot missing'; END IF;
  UPDATE public.settings SET value='not-json' WHERE key='openai_fast_policy_settings';
- IF s2a_private.fast_policy_context(u,false)->'settings' IS DISTINCT FROM 'null'::jsonb THEN RAISE EXCEPTION 'corrupt settings did not use original fallback'; END IF;
+ IF s2a_private.fast_policy_context(u,false)->>'settings_json' IS DISTINCT FROM 'not-json' THEN RAISE EXCEPTION 'raw settings did not reach original parser'; END IF;
 END $$;
 ROLLBACK;

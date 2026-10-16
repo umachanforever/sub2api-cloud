@@ -113,7 +113,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   const next=reservation.account.platform==='openai'?defaultSolModel(mapped)??mapped:mapped;if(upstreamModel&&next!==upstreamModel)throw new HttpError(409,'model_change_requires_reconnect');upstreamModel=next;
   let body:Record<string,unknown>={...payload,model:next};delete body.type;delete body.stream;
   if(reservation.account.type==='oauth'&&reservation.account.platform==='openai'){const input=body.input,empty=input===undefined||Array.isArray(input)&&!input.length;body=normalizeBody({...body,input:empty?[{role:'user',content:''}]:input});if(empty){if(input===undefined)delete body.input;else body.input=[];}delete body.stream;}
-  policySnapshot??=reservation.fast_policy;applyFastPolicy(body,policySnapshot,reservation.account,next);
+  policySnapshot??=reservation.fast_policy;await applyFastPolicy(body,policySnapshot,reservation.account,next);
   const mode=responsesWebSocketMode(reservation.account);
   if(mode==='off')throw new HttpError(403,'websocket_disabled_for_account');
   if(sessionMode&&mode!==sessionMode)throw new HttpError(409,'websocket_mode_changed');sessionMode??=mode;

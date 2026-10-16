@@ -78,6 +78,7 @@ export async function originalChatBridge(body:Item,scope:string):Promise<Origina
 export async function originalAnthropicBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'anthropic');}
 export async function originalGeminiBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'gemini');}
 export async function originalGeminiRestBody(body:Item):Promise<Item>{return (await converter())('gemini_rest',body);}
+export async function originalFastPolicy(body:Item):Promise<{action:string;message:string}>{return (await converter())('fast_policy',body);}
 export async function originalCodexMetadata(body:Item):Promise<Item>{return (await converter())('codex_metadata',body);}
 export async function originalMessagesToResponses(body:Item):Promise<Item>{
   const tools=Array.isArray(body.tools)?body.tools.filter((tool:Item)=>!/^web_search(?:_|$)/.test(String(tool?.type??''))):body.tools;
