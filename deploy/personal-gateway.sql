@@ -324,6 +324,7 @@ BEGIN
             WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END)
         || CASE WHEN p_model='__models__' THEN jsonb_build_object('model_metadata',a.extra->'upstream_model_metadata') ELSE '{}'::jsonb END,
         'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
+        || CASE WHEN p_model='__models__' AND g.platform='openai' AND g.codex_models_manifest_config->'enabled' IS DISTINCT FROM 'true'::jsonb THEN jsonb_build_object('configured_model_sources',s2a_private.composite_catalog_sources(g.id)) ELSE '{}'::jsonb END
         || CASE WHEN gemini_sources IS NOT NULL THEN jsonb_build_object('gemini_catalog_sources',gemini_sources) ELSE '{}'::jsonb END
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
 END $$;

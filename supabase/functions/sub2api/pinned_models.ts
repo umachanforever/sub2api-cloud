@@ -1,4 +1,5 @@
 import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
+import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {completePinnedMetadata} from './pinned_model_metadata.ts';
 import {type Account,credentialsFor} from './accounts.ts';
 import {accountFetch} from './account_proxy.ts';
@@ -14,7 +15,7 @@ import {codexManifestResponse} from './model_catalog_response.ts';
 import {json} from './http.ts';
 type Entry=Record<string,any>;
 type PinnedAccount=Account & {type:'oauth'|'apikey';platform:'openai';model_passthrough?:boolean;model_metadata?:unknown};
-export type PinnedModelCatalog={accounts:PinnedAccount[];fallback_to_scheduler?:boolean;model_allowlist?:ModelAllowlist;error?:string;status?:number};
+export type PinnedModelCatalog={accounts:PinnedAccount[];fallback_to_scheduler?:boolean;model_allowlist?:ModelAllowlist;configured_model_sources?:ConfiguredModelSources;error?:string;status?:number};
 
 async function catalogBody(response:Response):Promise<Entry>{
  if(!response.ok){await response.body?.cancel();throw new HttpError(502,'pinned_model_upstream_failed');}
@@ -108,7 +109,7 @@ export async function pinnedModelCatalog(db:Database,catalog:PinnedModelCatalog,
  const field=manifest&&!modelId?'models':'data',key=field==='models'?'slug':'id',seen=new Set<string>(),merged:Entry[]=[];
  for(const body of bodies)for(const entry of entries(body,field,key)){const id=entry[key].trim();if(!seen.has(id)){seen.add(id);merged.push(entry);}}
  const combined={...bodies[0],[field]:merged};
- const value=field==='models'?applyCodexCatalogPolicy(combined,catalog.model_allowlist,ordered):filterModelCatalog(catalog.model_allowlist,combined);
+ const value=field==='models'?(ordered?applyCodexCatalogPolicy(combined,catalog.model_allowlist,true):configuredCodexCatalog(combined,catalog.configured_model_sources,catalog.model_allowlist)):filterModelCatalog(catalog.model_allowlist,combined);
  if(modelId){const model=value.data.find((entry:Entry)=>entry.id===modelId);if(!model)throw new HttpError(404,'model_not_found');return json(200,model);}
  return codexManifestResponse(value,request);
 }

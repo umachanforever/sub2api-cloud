@@ -1,4 +1,5 @@
 import {HttpError} from './db.ts';
+import {codexCatalogDescriptor} from './codex_catalog.ts';
 export function modelMapping(value:unknown):Record<string,string> {
  if(!value || typeof value!=='object' || Array.isArray(value) || Object.keys(value).length>500)throw new HttpError(400,'invalid_model_mapping');
  const entries=Object.entries(value).map(([pattern,target])=>{
@@ -36,7 +37,7 @@ export function mappedCatalog(value:Record<string,any>,sources:ModelSources|unde
  const original=value[field] as Record<string,any>[],entries=sources.include_upstream?[...original]:[];
  for(const [alias,target] of Object.entries(sources.mapping)) {
   if(entries.some(entry=>id(entry)===alias))continue;
-  const metadata=original.find(entry=>id(entry)===target.replace(/^models\//,''));
+  const metadata=original.find(entry=>id(entry)===target.replace(/^models\//,''))??(idField==='slug'?codexCatalogDescriptor(alias):undefined);
   if(idField==='slug' && alias.endsWith('*'))continue;
   entries.push({...metadata,...(field==='data'?{object:'model',created:metadata?.created??0,owned_by:metadata?.owned_by??platform}:{}),[idField]:idField==='name'?`models/${alias}`:alias});
  }

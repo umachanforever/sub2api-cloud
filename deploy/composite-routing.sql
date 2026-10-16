@@ -100,7 +100,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
    ) ORDER BY a.platform,a.priority,a.id)
    FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id
    JOIN public.groups g ON g.id=ag.group_id
-   WHERE ag.group_id=p_group AND g.platform='composite' AND g.deleted_at IS NULL
+   WHERE ag.group_id=p_group AND g.platform IN ('composite','openai') AND g.deleted_at IS NULL
     AND a.deleted_at IS NULL AND a.status='active' AND a.schedulable
     AND NOT coalesce(a.auto_pause_on_expired AND a.expires_at<=now(),false)
     AND coalesce(a.overload_until,'-infinity')<=now()

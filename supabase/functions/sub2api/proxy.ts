@@ -1,4 +1,4 @@
-import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
+import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
 import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
@@ -423,7 +423,7 @@ async function proxyWithIdentity(
         providerDispatched=true;
         let result:Response|null;
         try{
-          result=await pinnedModelCatalog(db,{accounts:[account as PinnedModelCatalog['accounts'][number]],model_allowlist},request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels,pinnedFallback);
+          result=await pinnedModelCatalog(db,{accounts:[account as PinnedModelCatalog['accounts'][number]],model_allowlist,configured_model_sources:(reservation as {configured_model_sources?:ConfiguredModelSources}).configured_model_sources},request,signal,modelId?decodeURIComponent(modelId):undefined,clientVersion!==null||codexModels,pinnedFallback);
         }catch(error){
           if(error instanceof HttpError&&error.code==='pinned_model_upstream_failed'&&attempt<2){
             await finish(502,{input:null,output:null,cacheCreation:null,cacheRead:null,outcome:'failed'});
@@ -778,7 +778,7 @@ async function proxyWithIdentity(
       }
       if (models) {
         const rawManifest = await upstream.json();
-        const manifest = applyCodexCatalogPolicy(mappedCatalog(rawManifest,model_sources,"openai"),model_allowlist);
+        const manifest = configuredCodexCatalog(mappedCatalog(rawManifest,model_sources,"openai"),(reservation as {configured_model_sources?:ConfiguredModelSources}).configured_model_sources,model_allowlist);
         const catalog = filterModelCatalog(model_allowlist,mappedCatalog(modelListFromManifest(rawManifest),model_sources,"openai"));
         const model = modelId
           ? catalog.data.find((entry: {id:string}) =>
