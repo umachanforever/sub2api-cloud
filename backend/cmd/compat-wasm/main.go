@@ -4,6 +4,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -32,6 +33,71 @@ var anthropicStates = map[string]*anthropicState{}
 var serial uint64
 
 func handle(input request) (any, error) {
+	if input.Operation == "codex_metadata" {
+		var value struct {
+			Model       string                  `json:"model"`
+			Candidates  []UpstreamModelMetadata `json:"candidates"`
+			Descriptor  json.RawMessage         `json:"descriptor"`
+			Missing     bool                    `json:"missing"`
+			Conflict    bool                    `json:"conflict"`
+			PublicAlias bool                    `json:"public_alias"`
+		}
+		if err := json.Unmarshal(input.Body, &value); err != nil {
+			return nil, err
+		}
+		if len(value.Candidates) == 0 || len(value.Candidates) > 10000 {
+			return nil, fmt.Errorf("invalid metadata candidates")
+		}
+		metadata := intersectUpstreamModelMetadata(value.Model, value.Candidates)
+		if value.Missing {
+			metadata = codexModelMetadataOverride{UpstreamModelMetadata: UpstreamModelMetadata{CodexToolCapabilities: metadata.CodexToolCapabilities}}
+		}
+		if value.Conflict {
+			metadata = codexModelMetadataOverride{reasoningConflict: true, inputModalitiesConflict: true}
+		}
+		if value.PublicAlias {
+			metadata.DisplayName = value.Model
+			metadata.Description = "Custom model routed through sub2api-cloud."
+		}
+		var descriptor configuredCodexModelDescriptor
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(value.Descriptor, &descriptor); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(value.Descriptor, &fields); err != nil {
+			return nil, err
+		}
+		if fields == nil {
+			return nil, fmt.Errorf("invalid metadata descriptor")
+		}
+		before, err := json.Marshal(descriptor)
+		if err != nil {
+			return nil, err
+		}
+		applyUpstreamModelMetadataToCodexDescriptor(&descriptor, metadata)
+		after, err := json.Marshal(descriptor)
+		if err != nil {
+			return nil, err
+		}
+		var previous, updated map[string]json.RawMessage
+		if err := json.Unmarshal(before, &previous); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(after, &updated); err != nil {
+			return nil, err
+		}
+		for _, field := range []string{"display_name", "description", "default_reasoning_level", "supported_reasoning_levels", "input_modalities", "context_window", "max_context_window"} {
+			if !bytes.Equal(previous[field], updated[field]) {
+				value := updated[field]
+				if len(value) == 0 {
+					value = json.RawMessage("null")
+				}
+				fields[field] = value
+			}
+		}
+		applyCodexToolCapabilities(fields, metadata.CodexToolCapabilities, true)
+		return fields, nil
+	}
 	if input.Operation == "messages_request" {
 		var body apicompat.AnthropicRequest
 		if err := json.Unmarshal(input.Body, &body); err != nil {

@@ -1,7 +1,7 @@
 import {DEFAULT_PROVIDER_CATALOGS} from './provider_models.ts';
 import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
-import {compositeCodexCatalog,type CompositeCapabilitySource} from './composite_catalog.ts';
+import {compositeCodexCatalog,completeCompositeCodexCatalog,type CompositeCapabilitySource} from './composite_catalog.ts';
 
 // Standard Anthropic discovery uses group mappings, not provider credentials.
 export function anthropicModelCatalog(available:string[],allowlist?:ModelAllowlist,model?:string):Record<string,unknown> {
@@ -20,4 +20,9 @@ export function anthropicCodexCatalog(available:string[],allowlist?:ModelAllowli
   const catalog=anthropicModelCatalog(available,allowlist) as {data:{id:string}[]};
   if(!catalog.data.length)return {models:[]};
   return compositeCodexCatalog({sources:[{platform:'anthropic',passthrough:false,mapping:Object.fromEntries(catalog.data.map(entry=>[entry.id,entry.id]))}],routes:[],capability_sources:capabilities},allowlist);
+}
+export async function completeAnthropicCodexCatalog(available:string[],allowlist?:ModelAllowlist,capabilities:CompositeCapabilitySource[]=[],model_routing?:Record<string,(string|number)[]>){
+ const catalog=anthropicModelCatalog(available,allowlist) as {data:{id:string}[]};
+ if(!catalog.data.length)return {models:[]};
+ return completeCompositeCodexCatalog({sources:[{platform:'anthropic',passthrough:false,mapping:Object.fromEntries(catalog.data.map(entry=>[entry.id,entry.id]))}],routes:[],capability_sources:capabilities,model_routing},allowlist);
 }

@@ -26,7 +26,11 @@ BEGIN
  acquired:=public.s2a_personal_acquire(h,'__models__',gen_random_uuid(),p_client_ip=>'198.51.100.1',p_billing_context=>'{"inbound_endpoint":"/v1/models"}');
  IF acquired->>'error' IS DISTINCT FROM 'ip_forbidden' THEN RAISE EXCEPTION 'Composite catalog bypassed IP policy'; END IF;
  UPDATE public.api_keys SET ip_whitelist='[]'::jsonb WHERE s2a_key_hash=h;
+ UPDATE s2a_private.accounts SET extra=coalesce(extra,'{}')||'{"upstream_model_metadata":{"models":{"gpt-6-sol":{"id":"gpt-6-sol","context_window":12345}}}}'::jsonb WHERE id=a;
+ UPDATE public.groups SET model_routing_enabled=true,model_routing=jsonb_build_object('public-openai',jsonb_build_array(a)) WHERE id=g;
  catalog:=s2a_private.composite_catalog_sources(g);
+ IF NOT EXISTS(SELECT FROM jsonb_array_elements(catalog->'capability_sources') item WHERE item->>'id'=a::text AND item->'metadata'->'models'->'gpt-6-sol'->>'context_window'='12345') THEN RAISE EXCEPTION 'private group metadata snapshot missing'; END IF;
+ IF catalog->'model_routing'->'public-openai' IS DISTINCT FROM jsonb_build_array(a) THEN RAISE EXCEPTION 'explicit metadata routing missing'; END IF;
  IF jsonb_array_length(catalog->'capability_sources')<>2 THEN RAISE EXCEPTION 'Composite capability sources missing'; END IF;
  IF has_function_privilege('service_role','s2a_private.composite_capability_sources(bigint)','EXECUTE') THEN RAISE EXCEPTION 'private capability sources exposed'; END IF;
  UPDATE s2a_private.accounts SET overload_until=now()+interval '1 minute' WHERE id=b;
@@ -35,7 +39,7 @@ BEGIN
  IF jsonb_array_length(catalog->'sources')<>2 OR jsonb_array_length(catalog->'routes')<>4 THEN RAISE EXCEPTION 'Composite catalog sources missing'; END IF;
  IF catalog::text LIKE '%synthetic%' OR catalog::text LIKE '%api_key%' OR catalog::text LIKE '%credential%' THEN RAISE EXCEPTION 'Composite catalog leaked provider credentials'; END IF;
  IF has_function_privilege('service_role','s2a_private.composite_catalog_sources(bigint)','EXECUTE') OR has_function_privilege('authenticated','s2a_private.composite_catalog_sources(bigint)','EXECUTE') THEN RAISE EXCEPTION 'private catalog exposed'; END IF;
- IF s2a_private.composite_catalog_sources(-1) IS DISTINCT FROM '{"sources":[],"routes":[],"capability_sources":[]}'::jsonb THEN RAISE EXCEPTION 'Composite catalog group isolation failed'; END IF;
+ IF s2a_private.composite_catalog_sources(-1) IS DISTINCT FROM '{"sources":[],"routes":[],"capability_sources":[],"model_routing":{}}'::jsonb THEN RAISE EXCEPTION 'Composite catalog group isolation failed'; END IF;
  UPDATE s2a_private.accounts SET schedulable=false WHERE id=b;
  IF jsonb_array_length(s2a_private.composite_catalog_sources(g)->'sources')<>1 THEN RAISE EXCEPTION 'disabled account included in catalog'; END IF;
  UPDATE s2a_private.accounts SET schedulable=true WHERE id=b;

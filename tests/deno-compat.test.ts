@@ -1,4 +1,4 @@
-import {originalGeminiBridge,originalChatBridgeCount} from '../supabase/functions/sub2api/original_chat_bridge.ts';
+import {originalGeminiBridge,originalChatBridgeCount,originalCodexMetadata} from '../supabase/functions/sub2api/original_chat_bridge.ts';
 
 Deno.test('Deno loads compressed original converters with scoped file permission',async()=>{
  const bridge=await originalGeminiBridge({model:'gemini-test',input:'hello'},'deno-runtime');
@@ -10,4 +10,9 @@ Deno.test('Deno loads compressed original converters with scoped file permission
   if(terminal?.response.output[0]?.content[0]?.text!=='hello from Gemini'||terminal.response.usage.input_tokens!==3)throw Error('Stream conversion failed');
  }finally{bridge.close();}
  if(await originalChatBridgeCount()!==0)throw Error('Converter state leaked');
+});
+Deno.test('Deno executes original Go catalog metadata intersections',async()=>{
+ const model=await originalCodexMetadata({model:'public',descriptor:{context_window:9999},candidates:[{context_window:1000,max_context_window:2000,codex_tool_capabilities:{supports_search_tool:true}},{context_window:500,max_context_window:1000,codex_tool_capabilities:{supports_search_tool:false}}]});
+ if(model.context_window!==500||model.max_context_window!==1000||model.supports_search_tool!==false)throw Error('Metadata intersection failed');
+ if(await originalChatBridgeCount()!==0)throw Error('Metadata conversion allocated stream state');
 });

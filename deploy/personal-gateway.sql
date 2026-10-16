@@ -199,7 +199,7 @@ BEGIN
     END IF;
     IF native_gemini_catalog AND g.platform IN ('gemini','composite') THEN gemini_sources:=s2a_private.gemini_catalog_sources(g.id); END IF;
     IF p_model='__models__' AND g.platform='anthropic' AND coalesce(p_billing_context->>'inbound_endpoint','') ~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$' THEN
-        RETURN jsonb_build_object('anthropic_catalog',s2a_private.anthropic_catalog_models(g.id),'model_allowlist',g.model_allowlist,'anthropic_capabilities',s2a_private.composite_capability_sources(g.id));
+        RETURN jsonb_build_object('anthropic_catalog',s2a_private.anthropic_catalog_models(g.id),'model_allowlist',g.model_allowlist,'anthropic_capabilities',s2a_private.composite_capability_sources(g.id),'anthropic_model_routing',CASE WHEN g.model_routing_enabled THEN g.model_routing ELSE '{}'::jsonb END);
     END IF;
     IF p_model='__models__' AND g.platform='composite' AND NOT native_gemini_catalog THEN
         IF coalesce(p_billing_context->>'inbound_endpoint','') !~ '^(/v1/models(/[^/]+)?|/backend-api/codex/models)$'

@@ -1,7 +1,7 @@
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
-import {compositeModelCatalog,compositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
+import {compositeModelCatalog,completeCompositeCodexCatalog,type CompositeCatalogSources,type CompositeCapabilitySource} from './composite_catalog.ts';
 import {multiProtocolProvider,providerProtocol,openCodeSession} from './provider_routing.ts';
 import {originalChatBridge,originalAnthropicBridge,originalGeminiBridge,originalGeminiRestBody,originalMessagesToResponses,type OriginalChatBridge} from './original_chat_bridge.ts';
 import {invalidateVertexTokenContext} from './vertex_auth.ts';
@@ -10,7 +10,7 @@ import {fallbackGeminiCatalog,antigravityGeminiModels,antigravityOnlyCatalog,mer
 import {vertexGeminiCatalog} from './vertex_catalog.ts';
 import {vertexGeminiRequest} from './vertex_gemini.ts';
 import {vertexAnthropicRequest} from './vertex_anthropic.ts';
-import {anthropicModelCatalog,anthropicCodexCatalog} from './anthropic_catalog.ts';
+import {anthropicModelCatalog,completeAnthropicCodexCatalog} from './anthropic_catalog.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
@@ -76,7 +76,7 @@ type ProviderAccount = Account & ({type:'service_account'}|{type?:'oauth'|'apike
 };
 type Reservation =
   | {pinned_catalog:PinnedModelCatalog;error?:never}
-  | {anthropic_catalog:string[];anthropic_capabilities?:CompositeCapabilitySource[];model_allowlist?:ModelAllowlist;error?:never}
+  | {anthropic_catalog:string[];anthropic_capabilities?:CompositeCapabilitySource[];anthropic_model_routing?:Record<string,(string|number)[]>;model_allowlist?:ModelAllowlist;error?:never}
   | {composite_catalog:CompositeCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | {gemini_catalog_only:true;gemini_catalog_sources:GeminiCatalogSources;model_allowlist?:ModelAllowlist;error?:never}
   | { lease_id: string; account: ProviderAccount; model_allowlist?:ModelAllowlist; upstream_model?:string; model_sources?:ModelSources;gemini_catalog_sources?:GeminiCatalogSources; error?: never }
@@ -329,7 +329,7 @@ async function proxyWithIdentity(
     }
     if('anthropic_catalog' in reservation){
       if(!models||nativeGeminiModels)throw new HttpError(503,'invalid_anthropic_catalog');
-      if(!modelId&&(codexModels||!!clientVersion))return codexManifestResponse(anthropicCodexCatalog(reservation.anthropic_catalog,reservation.model_allowlist,reservation.anthropic_capabilities),request);
+      if(!modelId&&(codexModels||!!clientVersion))return codexManifestResponse(await completeAnthropicCodexCatalog(reservation.anthropic_catalog,reservation.model_allowlist,reservation.anthropic_capabilities,reservation.anthropic_model_routing),request);
       return json(200,anthropicModelCatalog(reservation.anthropic_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));
     }
     if('gemini_catalog_only' in reservation){
@@ -341,7 +341,7 @@ async function proxyWithIdentity(
     if('composite_catalog' in reservation){
       if(!models||nativeGeminiModels)throw new HttpError(503,'composite_manifest_unavailable');
       if(!modelId&&(codexModels||clientVersion!==null)){
-        const manifest=compositeCodexCatalog(reservation.composite_catalog,reservation.model_allowlist);
+        const manifest=await completeCompositeCodexCatalog(reservation.composite_catalog,reservation.model_allowlist);
         return codexManifestResponse(manifest,request);
       }
       return json(200,compositeModelCatalog(reservation.composite_catalog,reservation.model_allowlist,modelId?decodeURIComponent(modelId):undefined));

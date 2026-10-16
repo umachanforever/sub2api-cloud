@@ -1,5 +1,7 @@
 import {applyCodexCatalogPolicy} from './codex_catalog_policy.ts';
-import {astraCodexModel} from './api_key_codex_capabilities.ts';
+import {apiKeyCodexCapabilities,astraCodexModel} from './api_key_codex_capabilities.ts';
+import {originalCodexMetadata} from './original_chat_bridge.ts';
+import {modelMetadata} from './model_capabilities.ts';
 import {codexCatalogDescriptor} from './codex_catalog.ts';
 import {mappedTarget} from './model_mapping.ts';
 import {defaultSolModel,modernCodexModel} from './codex_models.ts';
@@ -7,8 +9,8 @@ import {DEFAULT_PROVIDER_CATALOGS} from './provider_models.ts';
 import {COMPOSITE_DEFAULT_IDS} from './composite_defaults.ts';
 import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
-export type CompositeCapabilitySource={platform:string;type:string;passthrough:boolean;official:boolean;mapping:Record<string,string>;modalities:Record<string,unknown>};
-export type CompositeCatalogSources={capability_sources?:CompositeCapabilitySource[];sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
+export type CompositeCapabilitySource={id?:string;metadata?:{models?:Record<string,Record<string,any>>};platform:string;type:string;passthrough:boolean;official:boolean;mapping:Record<string,string>;modalities:Record<string,unknown>};
+export type CompositeCatalogSources={model_routing?:Record<string,(string|number)[]>;capability_sources?:CompositeCapabilitySource[];sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
 const precedence=['anthropic','gemini','openai','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go','typesafe','command_code','cline'];
 function defaults(platform:string):string[]{return DEFAULT_PROVIDER_CATALOGS[platform]?.map(entry=>String(entry.id))??COMPOSITE_DEFAULT_IDS[platform]??[];}
 // A standard catalog is aggregated from every eligible platform, without acquiring
@@ -92,4 +94,45 @@ export function compositeCodexCatalog(input:CompositeCatalogSources,allowlist?:M
   models.push(descriptor);
  }
  return applyCodexCatalogPolicy({models},allowlist);
+}
+
+// Keep candidate selection outside WASM; the original Go functions calculate
+// metadata intersections and descriptor updates without database dependencies.
+export async function completeCompositeCodexCatalog(input:CompositeCatalogSources,allowlist?:ModelAllowlist){
+ const body=compositeCodexCatalog(input,allowlist);
+ const fields=['display_name','description','default_reasoning_level','supported_reasoning_levels','input_modalities','context_window','max_context_window'];
+ for(const descriptor of body.models){
+  const id=descriptor.slug,route=selectedRoute(input,id),requested=route?.upstream_model||id;
+  const all=input.capability_sources??[];
+  const owners=new Set(all.filter(source=>Object.hasOwn(source.mapping,requested)&&source.mapping[requested]?.trim()).map(source=>source.platform));
+  const platform=route?.platform??(owners.size===1?[...owners][0]:owners.size>1?undefined:detectedPlatform(requested));
+  const rules=input.model_routing??{},routed=rules[id]?.length?rules[id]:Object.entries(rules).find(([pattern,ids])=>pattern.endsWith('*')&&id.startsWith(pattern.slice(0,-1))&&ids.length)?.[1];
+  const accounts=all.filter(source=>source.platform===platform&&(!routed?.length||routed.map(String).includes(String(source.id))));
+  const explicit=requested===id&&accounts.some(source=>Object.hasOwn(source.mapping,id)&&source.mapping[id]?.trim());
+  const eligible=accounts.filter(source=>explicit?Object.hasOwn(source.mapping,id)&&source.mapping[id]?.trim():sourceSupports(source,requested));
+  const targets=new Set(eligible.map(source=>mappedTarget(source.mapping,requested,source.platform)??requested));
+  const candidates:Record<string,any>[]=[];let missing=false,alias=requested!==id;
+  for(const source of eligible){
+   const target=mappedTarget(source.mapping,requested,source.platform)??requested;
+   alias||=target!==id;
+   const raw=source.metadata?.models?.[target];
+   const valid=raw&&typeof raw==='object'&&!Array.isArray(raw)?raw:undefined;
+   if(!valid)missing=true;
+   const metadata=valid?modelMetadata(target,{...valid.codex_tool_capabilities,...valid}):{};
+   const defaults=source.platform==='openai'&&source.official?apiKeyCodexCapabilities(target):{};
+   if(source.type==='oauth'){
+    delete defaults.service_tiers;
+    if(Object.keys(defaults).length){defaults.tool_mode='code_mode_only';defaults.use_responses_lite=true;}
+   }else if(source.type!=='apikey')for(const key of Object.keys(defaults))delete defaults[key];
+   const caps={...defaults,...('codex_tool_capabilities' in metadata?metadata.codex_tool_capabilities as Record<string,unknown>:{})};
+   if(source.platform==='openai'&&source.type==='apikey'&&(astraCodexModel(target)||['gpt-6.1-sol','gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna'].includes(target))&&caps.use_responses_lite===true)caps.use_responses_lite=false;
+   candidates.push({...metadata,codex_tool_capabilities:caps});
+  }
+  const conflict=!routed?.length&&(platform===undefined&&owners.size>1||explicit&&targets.size>1&&missing);
+  if(!candidates.length&&!conflict)continue;
+  const patch=await originalCodexMetadata({model:id,candidates:candidates.length?candidates:[{}],descriptor:Object.fromEntries(fields.map(field=>[field,descriptor[field]])),missing:missing||conflict,conflict,public_alias:alias&&!conflict});
+  Object.assign(descriptor,patch);
+  if(imageInput(input,platform,requested))descriptor.input_modalities=['text','image'];
+ }
+ return body;
 }

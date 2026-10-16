@@ -62,7 +62,7 @@ END $$;
 CREATE OR REPLACE FUNCTION s2a_private.composite_capability_sources(p_group bigint) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT coalesce(jsonb_agg(jsonb_build_object(
-  'platform',a.platform,'type',a.type,
+  'id',a.id::text,'platform',a.platform,'type',a.type,'metadata',a.extra->'upstream_model_metadata',
   'passthrough',a.platform='openai' AND CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END,
   'official',CASE WHEN a.platform='openai' AND a.type='oauth' THEN true
    WHEN a.platform='openai' THEN coalesce(nullif(btrim(c.value->>'base_url'),''),'https://api.openai.com') ~* '^https?://api[.]openai[.]com[.]?(:[0-9]+)?(/|$)'
@@ -85,11 +85,12 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
 $$;
 ALTER FUNCTION s2a_private.composite_capability_sources(bigint) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.composite_capability_sources(bigint) FROM PUBLIC,anon,authenticated,service_role;
--- Public catalog inputs exclude provider credentials and account identifiers.
+-- Catalog inputs exclude provider credentials; account identifiers stay private.
 CREATE OR REPLACE FUNCTION s2a_private.composite_catalog_sources(p_group bigint) RETURNS jsonb
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  SELECT jsonb_build_object(
   'capability_sources',s2a_private.composite_capability_sources(p_group),
+  'model_routing',coalesce((SELECT CASE WHEN g.model_routing_enabled THEN g.model_routing ELSE '{}'::jsonb END FROM public.groups g WHERE g.id=p_group AND g.deleted_at IS NULL),'{}'::jsonb),
   'sources',coalesce((SELECT jsonb_agg(jsonb_build_object(
    'platform',a.platform,
    'passthrough',a.platform='openai' AND CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END,

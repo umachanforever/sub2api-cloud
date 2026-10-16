@@ -7,12 +7,14 @@ import {gzipSync,gunzipSync} from 'node:zlib';
 const root=new URL('../',import.meta.url),backend=new URL('backend/',root),target=new URL('supabase/functions/sub2api/compat/',root),go=process.env.GO_BINARY??'go';
 const scratch=await mkdtemp(join(tmpdir(),'sub2api-compat-'));
 try{
-  const extracted=spawnSync(go,['run','./cmd/export-gemini-compat'],{cwd:backend,encoding:'utf8'});
-  if(extracted.status!==0)throw Error('Original Gemini extraction failed: '+(extracted.stderr||extracted.error?.message));
-  const generated=new URL('cmd/compat-wasm/gemini_generated.go',backend);
-  if(process.argv.includes('--check')){
-    if(!(await readFile(generated)).equals(Buffer.from(extracted.stdout)))throw Error('Original Gemini converter source differs');
-  }else await writeFile(generated,extracted.stdout);
+  for(const [command,file] of [['export-gemini-compat','gemini_generated.go'],['export-codex-metadata','codex_metadata_generated.go']]){
+    const extracted=spawnSync(go,['run','./cmd/'+command],{cwd:backend,encoding:'utf8'});
+    if(extracted.status!==0)throw Error('Original source extraction failed: '+(extracted.stderr||extracted.error?.message));
+    const generated=new URL('cmd/compat-wasm/'+file,backend);
+    if(process.argv.includes('--check')){
+      if(!(await readFile(generated)).equals(Buffer.from(extracted.stdout)))throw Error('Original source differs: '+file);
+    }else await writeFile(generated,extracted.stdout);
+  }
   const build=spawnSync(go,['build','-trimpath','-buildvcs=false','-ldflags=-s -w -buildid=','-o',join(scratch,'compat.wasm'),'./cmd/compat-wasm'],{cwd:backend,encoding:'utf8',env:{...process.env,GOOS:'js',GOARCH:'wasm',CGO_ENABLED:'0'}});
   if(build.status!==0)throw Error('Original protocol WASM build failed: '+(build.stderr||build.error?.message));
   const info=spawnSync(go,['env','GOROOT'],{cwd:backend,encoding:'utf8'});
