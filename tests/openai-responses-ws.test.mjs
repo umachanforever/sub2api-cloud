@@ -147,3 +147,13 @@ test('Responses WebSocket policy blocks release the acquired lease without provi
  for(let attempt=0;!f.finishes.length&&attempt<50;attempt++)await new Promise(resolve=>setTimeout(resolve,5));
  assert.equal(connected,false);assert.equal(f.finishes.length,1);assert.equal(f.finishes[0].p_status,403);f.client.onclose();
 });
+
+test('Responses WebSocket records each turn effective tier without carrying it to the next turn',async t=>{
+ const f=await setup(t);let turn=0;
+ f.server.on('connection',socket=>socket.on('message',()=>{turn++;socket.send(JSON.stringify({type:'response.completed',response:{id:'resp_tiers_'+turn,status:'completed',usage:{input_tokens:1,output_tokens:1}}}));}));
+ for(const service_tier of ['flex',undefined]){
+  const done=waitFor(f.client,event=>event.type==='response.completed');
+  f.client.onmessage({data:JSON.stringify({type:'response.create',model:'gpt-6.1',input:'hello',service_tier})});await done;
+ }
+ assert.deepEqual(f.finishes.map(item=>item.p_service_tier),['flex',null]);f.client.onclose();
+});

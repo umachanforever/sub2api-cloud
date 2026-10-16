@@ -65,3 +65,16 @@ test('original raw settings preserve int64 user identifiers beyond JavaScript pr
  await applyFastPolicy(body,{user_id:'9007199254740993',force_priority:false,settings_json:'{"rules":[{"service_tier":"all","action":"block"},{"service_tier":"all","user_ids":[9007199254740993],"action":"filter"}]}'},account,'model');
  assert.deepEqual(body,{});
 });
+
+for(const action of ['filter','force_priority'])for(const type of ['oauth','apikey'])test('Messages '+type+' preserves '+action+' through the Responses bridge and usage finish',async()=>{
+ let forwarded;const finishes=[];
+ const handler=createHandler({url:'https://db.invalid',serviceKey:'service',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
+  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',fast_policy:context([rule(action)]),account:{id:'1',platform:'openai',type,credential_storage:'vault',credentials:type==='oauth'?{access_token:'synthetic'}:{api_key:'synthetic'},credential_version:1,codex_settings:{auto_sync:'false'}}});
+  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json(null);}
+  forwarded=JSON.parse(init.body);
+  return new Response('data: '+JSON.stringify({type:'response.completed',response:{id:'resp',status:'completed',output:[],usage:{input_tokens:1,output_tokens:1}}})+'\n\n',{headers:{'content-type':'text/event-stream'}});
+ });
+ const response=await handler(new Request('https://gateway/v1/messages',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json'},body:JSON.stringify({model:'gpt-6',messages:[{role:'user',content:'hello'}],max_tokens:8,service_tier:'flex'})}));
+ assert.equal(response.status,200);await response.text();
+ assert.equal(forwarded.service_tier,action==='filter'?undefined:'priority');assert.equal(finishes.at(-1).p_service_tier,action==='filter'?null:'priority');
+});

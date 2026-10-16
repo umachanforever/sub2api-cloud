@@ -4,7 +4,7 @@ const fixture=await new Response(Deno.stdin.readable).json();
 assert.match(fixture.container,/^s2a-go-pg-[0-9a-f]+$/);
 const signatures={
  s2a_personal_acquire:{p_key_hash:'text',p_model:'text',p_request_id:'uuid',p_excluded:'bigint[]',p_count_request:'boolean',p_client_ip:'text',p_billing_context:'jsonb'},
- s2a_personal_finish:{p_lease_id:'uuid',p_status:'integer',p_outcome:'text',p_input_tokens:'bigint',p_output_tokens:'bigint',p_cache_creation_tokens:'bigint',p_cache_read_tokens:'bigint',p_cooldown_seconds:'integer',p_credential_version:'bigint',p_first_token_ms:'integer',p_upstream_model:'text',p_duration_ms:'integer',p_upstream_endpoint:'text'},
+ s2a_personal_finish:{p_lease_id:'uuid',p_status:'integer',p_outcome:'text',p_input_tokens:'bigint',p_output_tokens:'bigint',p_cache_creation_tokens:'bigint',p_cache_read_tokens:'bigint',p_cooldown_seconds:'integer',p_credential_version:'bigint',p_first_token_ms:'integer',p_upstream_model:'text',p_duration_ms:'integer',p_upstream_endpoint:'text',p_service_tier:'text'},
 };
 let dispatched=0;
 const db={

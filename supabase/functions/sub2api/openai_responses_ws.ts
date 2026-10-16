@@ -1,5 +1,5 @@
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
-import {normalizeServiceTier} from './service_tier.ts';
+import {normalizeServiceTier,serviceTierForUsage} from './service_tier.ts';
 import {usageEndpoint} from './usage_endpoint.ts';
 import {responsesWebSocketMode} from './responses_ws_mode.ts';
 import {bridgeInput,bridgeResponses,type BridgeHistory} from './responses_http_bridge.ts';
@@ -31,7 +31,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
  let history:BridgeHistory|undefined,sessionMode:string|undefined,policySnapshot:FastPolicyContext|undefined;
  let eventBytes=0,eventCount=0;
  let pending=0,pendingBytes=0,sequence=Promise.resolve(),events=Promise.resolve();
- let active:{reservation:Reservation;started:number;usage:Usage;settled?:Promise<void>;resolve:()=>void;done:Promise<void>}|undefined;
+ let active:{reservation:Reservation;started:number;usage:Usage;serviceTier?:string|null;settled?:Promise<void>;resolve:()=>void;done:Promise<void>}|undefined;
  let resolveLifetime!:()=>void;const lifetime=new Promise<void>(resolve=>{resolveLifetime=resolve;});
  let upstreamEndpoint:string|null=null;
  const finish=(status:number,outcome:Usage['outcome']):Promise<void>=>{
@@ -41,7 +41,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
    try{
     let saved=false;const durationMs=Math.min(2147483647,Math.max(0,Date.now()-turn.started));
     for(let attempt=0;attempt<2;attempt++){
-     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
+     try{const result=await db.rpc<{error?:string}>('s2a_personal_finish',{p_lease_id:turn.reservation.lease_id,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint,p_service_tier:turn.serviceTier??null,p_status:status,p_outcome:outcome==='incomplete'?'interrupted':outcome,p_input_tokens:turn.usage.input,p_output_tokens:turn.usage.output,p_cache_creation_tokens:turn.usage.cacheCreation,p_cache_read_tokens:turn.usage.cacheRead,p_cooldown_seconds:0,...(turn.usage.firstTokenMs===undefined?{}:{p_first_token_ms:turn.usage.firstTokenMs}),p_credential_version:turn.reservation.account.credential_version,p_upstream_model:upstreamModel??model});if(result?.error)throw Error('usage_write_failed');saved=true;break;}catch{if(attempt===0)await new Promise(resolve=>setTimeout(resolve,250));}
     }
     if(!saved)throw new HttpError(503,'usage_persistence_failed');
    }finally{if(active===turn)active=undefined;turn.resolve();}
@@ -114,6 +114,7 @@ export async function openAIResponsesWebSocket(request:Request,token:string,db:D
   let body:Record<string,unknown>={...payload,model:next};delete body.type;delete body.stream;
   if(reservation.account.type==='oauth'&&reservation.account.platform==='openai'){const input=body.input,empty=input===undefined||Array.isArray(input)&&!input.length;body=normalizeBody({...body,input:empty?[{role:'user',content:''}]:input});if(empty){if(input===undefined)delete body.input;else body.input=[];}delete body.stream;}
   policySnapshot??=reservation.fast_policy;await applyFastPolicy(body,policySnapshot,reservation.account,next);
+  active.serviceTier=serviceTierForUsage(body.service_tier,reservation.account.platform);
   const mode=responsesWebSocketMode(reservation.account);
   if(mode==='off')throw new HttpError(403,'websocket_disabled_for_account');
   if(sessionMode&&mode!==sessionMode)throw new HttpError(409,'websocket_mode_changed');sessionMode??=mode;

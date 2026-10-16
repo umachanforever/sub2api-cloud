@@ -10,7 +10,7 @@ BEGIN
         OR NOT has_function_privilege('service_role','public.s2a_personal_key_policy(text,text)','EXECUTE')
         OR has_function_privilege('anon','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
         OR has_function_privilege('authenticated','public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb)','EXECUTE')
-        OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text)','EXECUTE')
+        OR NOT has_function_privilege('service_role','public.s2a_personal_finish(uuid,integer,text,bigint,bigint,bigint,bigint,integer,bigint,integer,text,integer,text,text)','EXECUTE')
         OR has_table_privilege('service_role','s2a_private.personal_gateway_leases','SELECT') THEN RAISE EXCEPTION 'personal gateway ACL mismatch'; END IF;
     IF u IS NULL THEN INSERT INTO public.users(email,password_hash) VALUES('gateway-fixture-'||gen_random_uuid()::text||'@example.invalid','!fixture') RETURNING id INTO u; END IF;
     IF k IS NULL THEN INSERT INTO public.api_keys(user_id,key,name) VALUES(u,'synthetic-gateway-'||gen_random_uuid()::text,'Gateway fixture') RETURNING id INTO k; END IF;

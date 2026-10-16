@@ -1,5 +1,5 @@
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
-import {normalizeServiceTier} from './service_tier.ts';
+import {normalizeServiceTier,serviceTierForUsage} from './service_tier.ts';
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
 import {codexManifestResponse} from './model_catalog_response.ts';
 import {pinnedModelCatalog,type PinnedModelCatalog} from './pinned_models.ts';
@@ -359,6 +359,7 @@ async function proxyWithIdentity(
     const mappedModel=voice||systemOne?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
+    let effectiveServiceTier:string|null=null;
     let upstreamEndpoint:string|null=null;
     let forwardedBody:Record<string,any>|undefined=body?{...body,...(gemini?{}:{model:upstreamModel})}:undefined;
     if(geminiTokens&&forwardedBody?.generateContentRequest?.model)forwardedBody.generateContentRequest={...forwardedBody.generateContentRequest,model:'models/'+upstreamModel.replace(/^models\//,'')};
@@ -392,7 +393,7 @@ async function proxyWithIdentity(
         for (let retry = 0; retry < 2; retry++) {
           try {
             const saved = await db.rpc<{error?:string;status?:number} | null>(db.config.dataModel === "native" ? "s2a_personal_finish" : "s2a_finish", {
-              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint} : {}),
+              ...(db.config.dataModel === "native" ? {p_upstream_model:models ? null : dispatchedModel,p_duration_ms:durationMs,p_upstream_endpoint:upstreamEndpoint,p_service_tier:effectiveServiceTier} : {}),
               p_lease_id: lease_id,
               p_status: status,
               p_outcome: db.config.dataModel === "native" && usage.outcome === "incomplete" ? "interrupted" : usage.outcome,
@@ -422,6 +423,7 @@ async function proxyWithIdentity(
     let chatBridge:OriginalChatBridge|undefined;
     try {
       if(forwardedBody&&!inputTokens&&!messageTokens&&(chat||messages||protocol==='responses'))await applyFastPolicy(forwardedBody,(reservation as {fast_policy?:FastPolicyContext}).fast_policy,account,upstreamModel);
+      effectiveServiceTier=serviceTierForUsage(forwardedBody?.service_tier,account.platform);
       if (requiredPlatform && account.platform !== requiredPlatform) throw new HttpError(400, "provider_route_mismatch");
       if(models&&!nativeGeminiModels&&(pinnedFallback||db.config.dataModel==='native'&&account.platform==='openai'&&account.type==='apikey'&&(codexModels||clientVersion!==null))){
         providerDispatched=true;
@@ -563,6 +565,10 @@ async function proxyWithIdentity(
           chatBridge=await originalAnthropicBridge(source,keyHash);outgoingBody=chatBridge.body;
         }
         if(nativeGeminiBridge)outgoingBody=await originalGeminiRestBody(outgoingBody!);
+        if(platform==='openai'&&!bridgeAnthropic&&outgoingBody&&!(outgoingBody instanceof FormData)&&(chat||messages||protocol==='responses')){
+          if(effectiveServiceTier!==null)outgoingBody.service_tier=effectiveServiceTier;else delete outgoingBody.service_tier;
+        }
+        if(outgoingBody&&!(outgoingBody instanceof FormData))effectiveServiceTier=serviceTierForUsage(outgoingBody.service_tier,platform);
         native = apiKeyRequest(
           platform,
           credentials,
@@ -678,6 +684,7 @@ async function proxyWithIdentity(
             );
           }
         }
+        if(normalized){if(effectiveServiceTier!==null)normalized.service_tier=effectiveServiceTier;else delete normalized.service_tier;}
         let credentials = await credentialsFor(db, account);
         const identity = await currentCodexIdentity(db, account, credentials);
         const forward = () => {
