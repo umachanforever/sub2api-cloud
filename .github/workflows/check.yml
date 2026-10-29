@@ -66,6 +66,9 @@ jobs:
       - name: Verify original Antigravity mapping rules
         working-directory: ${{ github.workspace }}
         run: node scripts/generate-antigravity-mapping.mjs --check
+      - name: Verify provider catalogs
+        working-directory: ${{ github.workspace }}
+        run: node scripts/generate-provider-catalogs.mjs --check
       - name: Verify provider profiles
         working-directory: ${{ github.workspace }}
         run: node scripts/generate-provider-profiles.mjs --check

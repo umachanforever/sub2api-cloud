@@ -1,3 +1,4 @@
+import {publishChatMedia} from './chat_media.ts';
 import {enableChatImages,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
@@ -430,7 +431,7 @@ async function proxyWithIdentity(
     };
     let chatBridge:OriginalChatBridge|undefined;
     let imageChat = false;
-    const structuredChat = chat && ["json_object","json_schema"].includes(body?.response_format?.type);
+    const structuredChat = chat && ["json_object","json_schema"].includes((body?.response_format as {type?:string}|undefined)?.type ?? "");
     try {
       if(forwardedBody&&!inputTokens&&!messageTokens&&(chat||messages||protocol==='responses'))await applyFastPolicy(forwardedBody,(reservation as {fast_policy?:FastPolicyContext}).fast_policy,account,upstreamModel);
       effectiveServiceTier=serviceTierForUsage(forwardedBody?.service_tier,account.platform);
@@ -623,7 +624,9 @@ async function proxyWithIdentity(
             }
             native = outgoing;
             upstreamEndpoint=usageEndpoint(outgoing.url);
-            return await forwardAntigravity(db, account, outgoing, forwardedPath, request);
+            return await forwardAntigravity(db, account, outgoing, forwardedPath, request,
+              (chat||messages||protocol==='responses')&&!structuredChat&&!['json_object','json_schema'].includes((body?.text as {format?:{type?:string}}|undefined)?.format?.type??'')&&!(body?.output_config as {format?:unknown}|undefined)?.format
+                ? {db,leaseId:lease_id,images:(reservation as {allow_image_generation?:boolean}).allow_image_generation===true,signal} : undefined);
           }
           const googleBody=nativeGeminiBridge&&(!(credentials as {project_id?:string}).project_id||(credentials as {oauth_type?:string}).oauth_type==='ai_studio')?await originalGeminiRestBody(geminiBody!):geminiBody;
           const outgoing = platform === "grok"
@@ -834,8 +837,9 @@ async function proxyWithIdentity(
         await upstream.body?.cancel();
         throw new HttpError(502, "invalid_upstream_stream");
       }
+      if(imageChat)upstream=publishChatMedia(db,upstream,lease_id,signal);
       const tracked = trackedStream(
-        upstream.body,
+        upstream.body!,
         signal,
         (usage) => finish(upstream.status, usage),
         new UsageObserver(errorContext.started, imageChat ? IMAGE_CHAT_FRAME_LIMIT : 1_048_576),

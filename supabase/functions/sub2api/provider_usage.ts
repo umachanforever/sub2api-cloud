@@ -1,3 +1,4 @@
+import {antigravityUserAgent} from './antigravity_identity.ts';
 import { accountFetch } from './account_proxy.ts';
 import { catalogJSON } from './account_models.ts';
 import { credentialsFor } from './accounts.ts';
@@ -74,7 +75,7 @@ export async function queryProviderUsage(request: Request, account: QuotaAccount
         if (typeof project !== 'string' || !project.trim() || project.length > 512) throw new HttpError(422, 'quota_project_required');
         url = 'https://cloudcode-pa.googleapis.com/v1internal:' + (account.platform === 'antigravity' ? 'fetchAvailableModels' : 'retrieveUserQuota');
         body = JSON.stringify({ project });
-        headers.set('user-agent', account.platform === 'antigravity' ? 'antigravity/2.9.1 windows/amd64' : 'google-cloud-sdk');
+        headers.set('user-agent', account.platform === 'antigravity' ? antigravityUserAgent : 'google-cloud-sdk');
         break;
       }
       case 'grok':

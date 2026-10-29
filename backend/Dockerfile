@@ -1,4 +1,4 @@
-ARG GO_IMAGE=golang:1.27.2-alpine
+ARG GO_IMAGE=golang:1.27.3-alpine
 ARG RUNTIME_IMAGE=postgres:18-alpine
 FROM ${GO_IMAGE} AS build
 WORKDIR /build

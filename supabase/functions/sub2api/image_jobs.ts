@@ -1,3 +1,4 @@
+import {cleanupChatMedia} from './chat_media.ts';
 import {Database,HttpError} from './db.ts';
 import {getArtifact,imageArtifactPath,deleteArtifacts,listTaskArtifacts} from './artifact_storage.ts';
 import {imageBytesHash} from './image_task_submit.ts';
@@ -83,14 +84,14 @@ export async function cleanupImageJobs(db:Database):Promise<number>{
  return finished;
 }
 async function dispatchImages(db:Database):Promise<unknown>{
- return await Promise.all([runImageJobs(db),cleanupImageJobs(db)]);
+ return await Promise.all([runImageJobs(db),cleanupImageJobs(db),cleanupChatMedia(db)]);
 }
 export async function imageJobs(request:Request,db:Database):Promise<Response>{
  await authorizeJob(request,db,'images');
  if(db.config.dataModel!=='native')throw new HttpError(501,'native_data_model_required');
  const runtime=(globalThis as typeof globalThis&{EdgeRuntime?:{waitUntil(promise:Promise<unknown>):void}}).EdgeRuntime;
  if(runtime){runtime.waitUntil(dispatchImages(db).catch(()=>console.warn('image_job_dispatch_failed')));return json(202,{accepted:true});}
- const [work,cleaned]=await Promise.all([runImageJobs(db),cleanupImageJobs(db)]);return json(200,{...work,cleaned});
+ const [work,cleaned]=await Promise.all([runImageJobs(db),cleanupImageJobs(db),cleanupChatMedia(db)]);return json(200,{...work,cleaned});
 }
 export function kickImageJobs(db:Database):void{
  const runtime=(globalThis as typeof globalThis&{EdgeRuntime?:{waitUntil(promise:Promise<unknown>):void}}).EdgeRuntime;

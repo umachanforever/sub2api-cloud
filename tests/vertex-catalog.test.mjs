@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {GEMINI_FALLBACK_IDS} from '../supabase/functions/sub2api/gemini_catalog.ts';
 import assert from 'node:assert/strict';
 import {vertexCatalogLocation,vertexGeminiCatalog} from '../supabase/functions/sub2api/vertex_catalog.ts';
 import {createBackendHandler} from './handler.mjs';
@@ -33,7 +34,7 @@ test('Vertex details use per-model regions and missing models remain 404',async(
 });
 test('Vertex API Key catalogs use the original fallback without token exchange',async()=>{
  const fetcher=async()=>{assert.fail('static catalog performed provider I/O');};
- const listed=await vertexGeminiCatalog({auth_mode:' apikey '},'/v1beta/models',fetcher,signal());assert.equal((await listed.json()).models.length,10);
+ const listed=await vertexGeminiCatalog({auth_mode:' apikey '},'/v1beta/models',fetcher,signal());assert.equal((await listed.json()).models.length,GEMINI_FALLBACK_IDS.length);
  const detail=await vertexGeminiCatalog({auth_mode:'apikey'},'/v1beta/models/gemini-future',fetcher,signal());assert.equal((await detail.json()).name,'models/gemini-future');
 });
 test('Vertex catalog enforces pagination and rejects malformed or empty provider responses',async()=>{

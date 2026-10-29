@@ -13,6 +13,42 @@ export const ANTIGRAVITY_MODELS = [
     "created_at": "2026-06-09T00:00:00Z"
   },
   {
+    "id": "claude-opus-5-5-high",
+    "type": "model",
+    "display_name": "Claude Opus 5.5 (High)",
+    "created_at": "2026-09-22T00:00:00Z"
+  },
+  {
+    "id": "claude-opus-5-5-medium",
+    "type": "model",
+    "display_name": "Claude Opus 5.5 (Medium)",
+    "created_at": "2026-09-22T00:00:00Z"
+  },
+  {
+    "id": "claude-opus-5-5-low",
+    "type": "model",
+    "display_name": "Claude Opus 5.5 (Low)",
+    "created_at": "2026-09-22T00:00:00Z"
+  },
+  {
+    "id": "claude-sonnet-5-5-high",
+    "type": "model",
+    "display_name": "Claude Sonnet 5.5 (High)",
+    "created_at": "2026-09-28T00:00:00Z"
+  },
+  {
+    "id": "claude-sonnet-5-5-medium",
+    "type": "model",
+    "display_name": "Claude Sonnet 5.5 (Medium)",
+    "created_at": "2026-09-28T00:00:00Z"
+  },
+  {
+    "id": "claude-sonnet-5-5-low",
+    "type": "model",
+    "display_name": "Claude Sonnet 5.5 (Low)",
+    "created_at": "2026-09-28T00:00:00Z"
+  },
+  {
     "id": "claude-opus-4-5-thinking",
     "type": "model",
     "display_name": "Claude Opus 4.5 Thinking",
@@ -221,6 +257,24 @@ export const ANTIGRAVITY_MODELS = [
     "type": "model",
     "display_name": "Gemini 3.8 Flash",
     "created_at": "2026-09-02T00:00:00Z"
+  },
+  {
+    "id": "gemini-4-argon-high",
+    "type": "model",
+    "display_name": "Gemini 4 Argon (High)",
+    "created_at": "2026-10-13T00:00:00Z"
+  },
+  {
+    "id": "gemini-4-argon-low",
+    "type": "model",
+    "display_name": "Gemini 4 Argon (Low)",
+    "created_at": "2026-10-13T00:00:00Z"
+  },
+  {
+    "id": "gemini-4-argon-medium",
+    "type": "model",
+    "display_name": "Gemini 4 Argon (Medium)",
+    "created_at": "2026-10-13T00:00:00Z"
   },
   {
     "id": "gemini-3-pro-preview",

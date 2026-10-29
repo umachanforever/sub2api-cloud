@@ -39,7 +39,7 @@ async function fixture({ stream = false, expired = false, reject = false, fallba
       calls.push(url);
       const headers = new Headers(init.headers), body = JSON.parse(init.body);
       assert.equal(headers.get('authorization'), 'Bearer ' + credentials.access_token);
-      assert.equal(headers.get('user-agent'), 'antigravity/2.9.1 windows/amd64');
+      assert.equal(headers.get('user-agent'), 'antigravity/hub/2.28.1 windows/amd64');
       assert.equal(headers.get('x-goog-api-key'), null); assert.equal(init.redirect, 'error');
       assert.equal(body.project, 'private-project');
       if (reject && calls.length === 1) return new Response('private-error', { status: 401 });

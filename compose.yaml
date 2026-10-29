@@ -31,7 +31,7 @@ services:
     build:
       context: ./backend
       args:
-        GO_IMAGE: ${GO_IMAGE:-golang:1.27.2-alpine}
+        GO_IMAGE: ${GO_IMAGE:-golang:1.27.3-alpine}
         RUNTIME_IMAGE: ${RUNTIME_IMAGE:-postgres:18-alpine}
     image: sub2api-cloud-management:latest
     container_name: sub2api-cloud-management

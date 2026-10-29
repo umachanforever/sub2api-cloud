@@ -54,7 +54,7 @@ Keep `.env.local` and `.local/` private. Preserve them when moving the local man
 
 ## Image configuration
 
-`GO_IMAGE` and `RUNTIME_IMAGE` select the management build and runtime images. Their defaults are `golang:1.27.2-alpine` and `postgres:18-alpine`. A reachable container registry mirror may be configured without changing the source.
+`GO_IMAGE` and `RUNTIME_IMAGE` select the management build and runtime images. Their defaults are `golang:1.27.3-alpine` and `postgres:18-alpine`. A reachable container registry mirror may be configured without changing the source.
 
 ## Cloud verification
 

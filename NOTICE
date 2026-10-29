@@ -1,7 +1,7 @@
 sub2api-cloud / Supabase integration
 
 Upstream: https://github.com/Wei-Shaw/sub2api
-Reference revision: 9c2cca9e627291bc719bada3d57de23b625a4180
+Reference revision: dece26153621959ccd7635814f4b2d08304e681a (v0.2.19)
 Upstream copyright: Copyright (c) 2026 Wesley Liddick
 Upstream license: GNU Lesser General Public License version 3 or later (LGPL-3.0-or-later).
 See LICENSE and COPYING.

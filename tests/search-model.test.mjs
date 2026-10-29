@@ -45,3 +45,9 @@ test('stream restores completed items and emits each citation once',async()=>{
   assert.equal(chunks.map(c=>c.choices?.[0]?.delta?.content??'').join(''),'Source');
  }
 });
+test('empty client tool catalogs do not disable server-hosted tools',()=>{
+ for(const tools of [undefined,[]]){
+  const body={tools,tool_choice:'none'};enableNativeSearch(body);assert.equal(body.tool_choice,'auto');assert.equal(body.tools[0].type,'web_search');
+ }
+ const explicit={tools:[{type:'function',name:'local'}],tool_choice:'none'};enableNativeSearch(explicit);assert.equal(explicit.tool_choice,'none');
+});

@@ -16,6 +16,7 @@ export function claudeToAntigravity(body: Item): Item {
   if (!Array.isArray(body.messages) || !body.messages.length || typeof body.model !== 'string') fail();
   const names = new Map<string, string>(), system: Item[] = [], contents: Item[] = [];
   const gemini = body.model.startsWith('gemini-');
+  const argon = /^gemini-4-argon(?:-|$)/.test(body.model);
   let stripped = false;
   const textParts = (value: unknown): Item[] => {
     if (typeof value === 'string') return value ? [{ text: value }] : [];
@@ -61,11 +62,11 @@ export function claudeToAntigravity(body: Item): Item {
   }
   for (const [from, to] of [['temperature', 'temperature'], ['top_p', 'topP'], ['top_k', 'topK']]) if (body[from] !== undefined) {
     if (typeof body[from] !== 'number' || !Number.isFinite(body[from])) throw new HttpError(400, 'invalid_generation_config');
-    generationConfig[to] = body[from];
+    if (!argon) generationConfig[to] = body[from];
   }
   if (body.stop_sequences !== undefined) {
     if (!Array.isArray(body.stop_sequences) || body.stop_sequences.some((s: unknown) => typeof s !== 'string')) fail();
-    generationConfig.stopSequences = body.stop_sequences;
+    if (!argon) generationConfig.stopSequences = body.stop_sequences;
   }
   if (!stripped && ['enabled', 'adaptive'].includes(body.thinking?.type)) {
     let budget = body.thinking.budget_tokens ?? -1;
@@ -132,7 +133,7 @@ function content(parts: Item[]): Item[] {
   }
   return merged;
 }
-function groundingText(grounding: Item | undefined): string {
+export function groundingText(grounding: Item | undefined): string {
   if (!grounding) return '';
   const queries = Array.isArray(grounding.webSearchQueries) ? grounding.webSearchQueries.filter((q: unknown) => typeof q === 'string') : [];
   const links: string[] = [];

@@ -45,7 +45,7 @@ test('storage failures and configured size limits return stable errors',async()=
  await assert.rejects(putArtifact(fixture(async()=>new Response('private-error',{status:413})),path,new Uint8Array([1]),'image/png'),error=>error.status===413&&error.code==='artifact_too_large');
  await assert.rejects(getArtifact(fixture(async()=>new Response('private-error',{status:404})),path,new AbortController().signal),error=>error.status===404&&error.code==='artifact_not_found');
  await assert.rejects(getArtifact(fixture(async()=>new Response('x',{headers:{'content-length':String(256*1024*1024+1)}})),path,new AbortController().signal),/artifact_too_large/);
- await assert.rejects(signArtifact(fixture(()=>assert.fail('Invalid expiry dispatched')),path,3601),/invalid_artifact_expiry/);
+ await assert.rejects(signArtifact(fixture(()=>assert.fail('Invalid expiry dispatched')),path,604801),/invalid_artifact_expiry/);
 });
 
 test('Supabase Storage HTTP 400 not-found envelopes remain a distinct missing object result',async()=>{

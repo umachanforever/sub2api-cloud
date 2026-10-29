@@ -1,3 +1,4 @@
+import {enableAntigravityTools,antigravityHostedResponse,type AntigravityToolContext} from './antigravity_tools.ts';
 import { accountFetch } from './account_proxy.ts';
 import { catalogJSON } from './account_models.ts';
 import { apiKeyRequest, type NativeProtocol } from './api_key_provider.ts';
@@ -6,7 +7,7 @@ import { Database, HttpError } from './db.ts';
 import { normalizeCodeAssist, type GoogleCredentials } from './google_oauth.ts';
 import { cleanAntigravityTools } from './antigravity_schema.ts';
 import { claudeToAntigravity, antigravityToClaude, antigravitySearchOnly } from './antigravity_claude.ts';
-import { antigravityIdentity } from './antigravity_identity.ts';
+import { antigravityIdentity,antigravityUserAgent } from './antigravity_identity.ts';
 
 const PROD = 'https://cloudcode-pa.googleapis.com';
 const DAILY = 'https://daily-cloudcode-pa.googleapis.com';
@@ -26,7 +27,7 @@ export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol
   const validated = apiKeyRequest('gemini', { api_key: credentials.access_token }, protocol, path, body, request, signal);
   const project = typeof credentials.project_id === 'string' ? credentials.project_id.trim() : undefined;
   if (!project || project.length > 512 || /[\x00-\x1f\x7f]/.test(project)) throw new HttpError(400, 'antigravity_project_required');
-  const headers = new Headers({ 'content-type': 'application/json', authorization: `Bearer ${credentials.access_token}`, 'user-agent': 'antigravity/2.9.1 windows/amd64' });
+  const headers = new Headers({ 'content-type': 'application/json', authorization: `Bearer ${credentials.access_token}`, 'user-agent': antigravityUserAgent });
   if (protocol === 'models') return {
     url: PROD + '/v1internal:fetchAvailableModels', fallbackURL: DAILY + '/v1internal:fetchAvailableModels', catalog: true, streaming: false,
     init: { method: 'POST', headers, body: JSON.stringify({ project }), redirect: 'error', signal },
@@ -75,9 +76,9 @@ async function modelCatalog(response: Response, path: string, request: Request):
   return Response.json({ models: models.slice(offset, end), ...(end < models.length ? { nextPageToken: String(end) } : {}) });
 }
 
-export async function forwardAntigravity(db: Database, account: Account, outgoing: Outgoing, path: string, request: Request): Promise<Response> {
+export async function forwardAntigravity(db: Database, account: Account, outgoing: Outgoing, path: string, request: Request, hosted?:AntigravityToolContext): Promise<Response> {
   if (outgoing.claudeModel) {
-    const envelope = JSON.parse(String(outgoing.init.body));
+    const envelope = JSON.parse(String(outgoing.init.body ?? '{}'));
     if (!envelope.request.sessionId) {
       const text = envelope.request.contents.find((content: { role: string; parts: { text?: string }[] }) => content.role === 'user' && content.parts[0]?.text)?.parts[0].text;
       const bytes = text ? new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))) : crypto.getRandomValues(new Uint8Array(8));
@@ -85,20 +86,27 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
       outgoing.init = { ...outgoing.init, body: JSON.stringify(envelope) };
     }
   }
-  for (const [index, url] of [outgoing.url, outgoing.fallbackURL].entries()) {
-    let response: Response;
-    try { response = await accountFetch(db, account, url, outgoing.init); }
-    catch (error) {
-      if (outgoing.init.signal?.aborted) throw new HttpError(504, 'upstream_timeout');
-      if (error instanceof HttpError) throw error;
-      if (index === 0) continue;
-      throw new HttpError(502, 'upstream_request_failed');
+  const envelope = JSON.parse(String(outgoing.init.body ?? '{}'));
+  const names = hosted && !outgoing.catalog ? enableAntigravityTools(envelope, hosted.images) : new Set<string>();
+  const send = async (body:Record<string,any>,signal:AbortSignal):Promise<Response> => {
+    for (const [index, url] of [outgoing.url, outgoing.fallbackURL].entries()) {
+      let response: Response;
+      try { response = await accountFetch(db, account, url, {...outgoing.init,body:JSON.stringify(body),signal}); }
+      catch (error) {
+        if (signal.aborted) throw new HttpError(504, 'upstream_timeout');
+        if (error instanceof HttpError) throw error;
+        if (index === 0) continue;
+        throw new HttpError(502, 'upstream_request_failed');
+      }
+      if (index === 0 && ([404, 408, 429].includes(response.status) || response.status >= 500)) { await response.body?.cancel(); continue; }
+      return response;
     }
-    if (index === 0 && ([404, 408, 429].includes(response.status) || response.status >= 500)) { await response.body?.cancel(); continue; }
-    if (!response.ok) return response;
-    if (outgoing.catalog) return modelCatalog(response, path, request);
-    const normalized = await normalizeCodeAssist(response, outgoing.streaming);
-    return outgoing.claudeModel ? antigravityToClaude(normalized, outgoing.streaming, outgoing.claudeModel) : normalized;
-  }
-  throw new HttpError(502, 'upstream_request_failed');
+    throw new HttpError(502, 'upstream_request_failed');
+  };
+  let response = await send(envelope, outgoing.init.signal!);
+  if (!response.ok) return response;
+  if (outgoing.catalog) return modelCatalog(response, path, request);
+  if (hosted) response=antigravityHostedResponse(response,envelope,names,send,hosted);
+  const normalized = await normalizeCodeAssist(response, outgoing.streaming);
+  return outgoing.claudeModel ? antigravityToClaude(normalized, outgoing.streaming, outgoing.claudeModel) : normalized;
 }

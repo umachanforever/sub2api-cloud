@@ -641,6 +641,23 @@ describe('user KeysView column settings', () => {
       expect(wrapper.findAll<HTMLInputElement>('input[name="key-provider"]').every((input) => input.element.disabled)).toBe(true)
     })
 
+    it('reloads groups when opening create so newly configured Antigravity is selectable', async () => {
+      getAvailableGroups.mockResolvedValueOnce([availableGroups[1]])
+      getAvailableGroups.mockResolvedValue([availableGroups[1], availableGroups[8]])
+      const wrapper = await openCreate()
+      await flushPromises()
+
+      expect(wrapper.get<HTMLInputElement>('input[value="other"]').element.disabled).toBe(false)
+      await chooseProvider(wrapper, 'other')
+      expect(optionIds(wrapper)).toEqual([9])
+      await groupSelect(wrapper).vm.$emit('update:modelValue', 9)
+      await wrapper.get('[data-tour="key-form-name"]').setValue('Antigravity key')
+      vi.mocked(keysAPI.create).mockResolvedValue({ ...createApiKey(), group_id: 9 })
+      await wrapper.get('#key-form').trigger('submit')
+      await flushPromises()
+      expect(vi.mocked(keysAPI.create).mock.calls[0].slice(0, 2)).toEqual(['Antigravity key', 9])
+    })
+
     it('selects an available provider when groups arrive after opening', async () => {
       let resolveGroups!: (value: typeof availableGroups) => void
       getAvailableGroups.mockReturnValue(new Promise((resolve) => { resolveGroups = resolve }))

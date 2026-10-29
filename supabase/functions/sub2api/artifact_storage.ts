@@ -47,7 +47,7 @@ export async function getArtifact(db:Database,path:string,signal:AbortSignal):Pr
 }
 export async function signArtifact(db:Database,path:string,seconds=600):Promise<string>{
  const encoded=encodedPath(path);
- if(!Number.isSafeInteger(seconds)||seconds<1||seconds>3600)throw new HttpError(400,'invalid_artifact_expiry');
+ if(!Number.isSafeInteger(seconds)||seconds<1||seconds>604800)throw new HttpError(400,'invalid_artifact_expiry');
  const headers=auth(db);headers.set('content-type','application/json');
  const response=await db.fetchImpl(storageURL(db,'object/sign/'+bucket+'/'+encoded),{method:'POST',headers,body:JSON.stringify({expiresIn:seconds}),signal:AbortSignal.timeout(10000),redirect:'error'});
  if(!response.ok){await response.body?.cancel();throw new HttpError(503,'artifact_storage_unavailable');}

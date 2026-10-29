@@ -17,7 +17,7 @@ export function enableChatImages(body: Item): boolean {
     const images: Item[] = [];
     const content = item.content.map((part: Item) => {
       if (part.type !== 'output_text' || typeof part.text !== 'string') return part;
-      const text = part.text.replace(/!\[Generated image\]\((data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2})\)/g, (_match: string, url: string) => {
+      const text = part.text.replace(/!\[Generated image\]\((data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/]+={0,2}|https:\/\/[^\s()]+\/storage\/v1\/object\/sign\/sub2api-artifacts\/images\/imgtask_[a-f0-9]{32}\/image-1\.(?:png|jpg|webp)\?token=[^\s()]+)\)/g, (_match: string, url: string) => {
         images.push({type: 'input_image', image_url: url});
         return '[Previously generated image]';
       });
@@ -28,10 +28,16 @@ export function enableChatImages(body: Item): boolean {
   return true;
 }
 
-// Inline image data keeps chat history self-contained without public uploads or expiring URLs.
+// Hosted chat uses signed links; inline data remains supported for existing history.
 export function chatImageMarkdown(item: Item): string {
   if (item.type !== 'image_generation_call') return '';
-  if (item.error || item.failure || item.status && item.status !== 'completed' || typeof item.result !== 'string' || !item.result) throw new Error('image_generation_failed');
+  if (item.error || item.failure || item.status && item.status !== 'completed') throw new Error('image_generation_failed');
+  if(typeof item.chat_image_url === 'string'){
+    const url=new URL(item.chat_image_url);
+    if(url.protocol!=='https:'||url.username||url.password||!/^\/storage\/v1\/object\/sign\/sub2api-artifacts\/images\/imgtask_[a-f0-9]{32}\/image-1\.(png|jpg|webp)$/.test(url.pathname))throw new Error('Invalid generated image URL');
+    return `\n\n![Generated image](${url.href})\n\n`;
+  }
+  if(typeof item.result !== 'string' || !item.result) throw new Error('image_generation_failed');
   if (item.result.length > IMAGE_CHAT_FRAME_LIMIT || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.result)) throw new Error('Invalid generated image');
   const format = item.output_format;
   const mime = format === 'jpeg' || format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';

@@ -26,7 +26,7 @@ async function fixture(options={}){
    if(name==='s2a_personal_image_task_ready')return Response.json(view());
    if(name==='s2a_personal_image_task_read')return Response.json(!task?{error:'image_task_not_found',status:404}:args.p_key_hash!==keyHash?{error:'image_task_forbidden',status:403}:view());
    if(name==='s2a_personal_image_jobs_claim')return Response.json(job?[job]:[]);
-   if(name==='s2a_personal_image_cleanup_claim')return Response.json([]);
+   if(name==='s2a_personal_image_cleanup_claim'||name==='s2a_chat_media_expired')return Response.json([]);
    if(name==='s2a_personal_image_job_start'){
     startCalls++;if(options.startLost)throw Error('response lost');return Response.json({started:true});
    }
@@ -143,6 +143,6 @@ test('image job tickets use the derived signing key, exact scope and ninety-seco
   assert.equal((await handler(new Request('https://gateway/internal/jobs/images',{method:'POST',headers:{'x-s2a-images-job-token':value}}))).status,401);
  }
  assert.equal(claims,0);
- assert.equal((await handler(new Request('https://gateway/internal/jobs/images',{method:'POST',headers:{'x-s2a-images-job-token':ticket(now+60)}}))).status,200);assert.equal(claims,2);
+ assert.equal((await handler(new Request('https://gateway/internal/jobs/images',{method:'POST',headers:{'x-s2a-images-job-token':ticket(now+60)}}))).status,200);assert.equal(claims,3);
  assert.equal((await handler(new Request('https://gateway/v1/images/tasks/imgtask_'+'a'.repeat(32),{headers:{'x-s2a-images-job-token':ticket(now+60)}}))).status,401);
 });

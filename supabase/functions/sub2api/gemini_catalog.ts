@@ -26,9 +26,23 @@ export function antigravityOnlyCatalog(sources:GeminiCatalogSources,allowlist?:M
 }
 // Pinned to backend/internal/pkg/gemini/models.go.
 export const GEMINI_FALLBACK_IDS = [
-  'gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-flash-image', 'gemini-2.5-pro',
-  'gemini-3.5-flash', 'gemini-3-flash-preview', 'gemini-3-pro-preview',
-  'gemini-3.1-pro-preview', 'gemini-3.1-pro-preview-customtools', 'gemini-3.1-flash-image',
+  'gemini-3.1-flash-image',
+  'gemini-3.1-flash-image-preview',
+  'gemini-3.1-flash-lite-image',
+  'gemini-3-pro-image',
+  'gemini-3-pro-image-preview',
+  'gemini-3-flash',
+  'gemini-3-flash-preview',
+  'gemini-3.1-pro-preview',
+  'gemini-3.1-pro-preview-customtools',
+  'gemini-3.1-flash-lite',
+  'gemini-3.1-flash-lite-preview',
+  'gemini-3.5-flash',
+  'gemini-3.5-flash-lite',
+  'gemini-3.6-flash',
+  'gemini-3.7-flash',
+  'gemini-3.8-flash',
+  'gemini-4-argon',
 ];
 export function geminiFallbackModel(id: string): Model {
   return { name: id.startsWith('models/') ? id : 'models/' + (id || 'unknown'),

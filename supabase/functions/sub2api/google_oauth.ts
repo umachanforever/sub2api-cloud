@@ -69,10 +69,9 @@ export function googleOAuthRequest(credentials: GoogleCredentials, protocol: Nat
 }
 
 // Unwrap Code Assist events before the shared Gemini usage and response handling.
-export async function normalizeCodeAssist(upstream: Response, streaming: boolean): Promise<Response> {
-  if (!upstream.ok) return upstream;
+export function codeAssistFrames(upstream: Response, maxFrame = 1_048_576): ReadableStream<Record<string, any>> {
   if (!upstream.body || !upstream.headers.get('content-type')?.includes('text/event-stream')) throw new HttpError(502, 'invalid_upstream_stream');
-  const decoder = new TextDecoder(), encoder = new TextEncoder();
+  const decoder = new TextDecoder();
   let pending = '';
   const unwrap = (frame: string): Record<string, any> | undefined => {
     const data = frame.split(/\r?\n/).filter(line => line.startsWith('data:')).map(line => line.slice(5).trimStart()).join('\n');
@@ -83,23 +82,28 @@ export async function normalizeCodeAssist(upstream: Response, streaming: boolean
     if (wrapper.error || !value || typeof value !== 'object' || Array.isArray(value) || value.error) throw new HttpError(502, 'invalid_upstream_response');
     return value;
   };
-  const frames = upstream.body.pipeThrough(new TransformStream<Uint8Array, Record<string, any>>({
+  return upstream.body.pipeThrough(new TransformStream<Uint8Array, Record<string, any>>({
     transform(bytes, controller) {
       pending += decoder.decode(bytes, { stream: true });
       let boundary;
       while ((boundary = /\r?\n\r?\n/.exec(pending))) {
-        if (boundary.index > 1_048_576) throw new HttpError(502, 'upstream_event_too_large');
+        if (boundary.index > maxFrame) throw new HttpError(502, 'upstream_event_too_large');
         const value = unwrap(pending.slice(0, boundary.index));
         pending = pending.slice(boundary.index + boundary[0].length);
         if (value) controller.enqueue(value);
       }
-      if (pending.length > 1_048_576) throw new HttpError(502, 'upstream_event_too_large');
+      if (pending.length > maxFrame) throw new HttpError(502, 'upstream_event_too_large');
     },
     flush(controller) {
       pending += decoder.decode();
       if (pending.trim()) { const value = unwrap(pending); if (value) controller.enqueue(value); }
     },
   }));
+}
+
+export async function normalizeCodeAssist(upstream: Response, streaming: boolean, maxFrame = 1_048_576): Promise<Response> {
+  if (!upstream.ok) return upstream;
+  const frames = codeAssistFrames(upstream, maxFrame), encoder = new TextEncoder();
   if (streaming) return new Response(frames.pipeThrough(new TransformStream({
     transform(value, controller) { controller.enqueue(encoder.encode('data: ' + JSON.stringify(value) + '\n\n')); },
   })), { status: upstream.status, headers: { 'content-type': 'text/event-stream' } });
@@ -111,7 +115,7 @@ export async function normalizeCodeAssist(upstream: Response, streaming: boolean
       const chunk = await reader.read(); if (chunk.done) break;
       const value = chunk.value;
       bytes += encoder.encode(JSON.stringify(value)).byteLength;
-      if (bytes > 16_777_216) throw new HttpError(502, 'upstream_response_too_large');
+      if (bytes > Math.max(16_777_216, maxFrame * 2)) throw new HttpError(502, 'upstream_response_too_large');
       const { candidates: incoming, ...metadata } = value;
       result = { ...result, ...metadata };
       for (const candidate of incoming ?? []) {

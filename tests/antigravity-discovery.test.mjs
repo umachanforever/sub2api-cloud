@@ -9,7 +9,7 @@ test('Antigravity discovery preserves the pinned upstream catalog including meta
  const source=await readFile(new URL('../backend/internal/pkg/antigravity/claude_types.go',import.meta.url),'utf8');
  const section=source.slice(source.indexOf('var claudeModels'),source.indexOf('// ========== Claude API'));
  const expected=[...section.matchAll(/ID: "([^"]+)", DisplayName: "([^"]+)", CreatedAt: "([^"]+)"/g)].map(([,id,display_name,created_at])=>({id,type:'model',display_name,created_at}));
- assert.equal(expected.length,39);assert.deepEqual(ANTIGRAVITY_MODELS,expected);
+ assert.equal(expected.length,48);assert.deepEqual(ANTIGRAVITY_MODELS,expected);
 });
 test('static discovery enforces native key policy without account admission or provider credentials',async()=>{
  let lookups=0;const handler=createBackendHandler(config,async(url,init)=>{
@@ -32,6 +32,6 @@ test('Antigravity static discovery accepts native keys and rejects conflicting c
   if(String(url).endsWith('/s2a_personal_key_policy')){calls++;return Response.json({model_allowlist:{enabled:false,models:[]}});}
   return Response.json(null);
  });
- const response=await handler(new Request('https://gateway/antigravity/models',{headers:{'x-api-key':'sk-native'}}));assert.equal(response.status,200);assert.equal((await response.json()).data.length,39);
+ const response=await handler(new Request('https://gateway/antigravity/models',{headers:{'x-api-key':'sk-native'}}));assert.equal(response.status,200);assert.equal((await response.json()).data.length,48);
  const conflict=await handler(new Request('https://gateway/antigravity/models',{headers:{'x-api-key':'sk-native',authorization:'Bearer sk-other'}}));assert.equal(conflict.status,400);assert.equal(calls,1);
 });

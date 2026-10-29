@@ -35,12 +35,15 @@ test('chat proxy offers image tools only with explicit group permission',async()
   const handler=createHandler({url:'https://db.invalid',serviceKey:'service',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
    if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',allow_image_generation:allowed!==false,account:{id:'1',type:'oauth',platform:'openai',credential_version:1,credential_storage:'vault',codex_settings:{auto_sync:'false'},credentials:{access_token:'private',chatgpt_account_id:'account'}}});
    if(String(url).endsWith('/s2a_personal_finish'))return Response.json(null);
+   if(String(url).endsWith('/s2a_chat_media_register'))return Response.json(true);
+   if(String(url).includes('/storage/v1/object/sign/'))return Response.json({signedURL:new URL(url).pathname.replace('/storage/v1','')+'?token=signed'});
+   if(String(url).includes('/storage/v1/object/'))return Response.json({});
    assert.ok(String(url).includes('/responses'));const payload=JSON.parse(init.body);dispatched=true;
    assert.equal(payload.tools.some(t=>t.type==='image_generation'),allowed===true);assert.ok(payload.tools.some(t=>t.type==='web_search'));
    return new Response(source([{type:'response.completed',response:{status:'completed',output:allowed===true?[image]:[{type:'message',content:[{type:'output_text',text:'OK'}]}],usage:{input_tokens:1,output_tokens:2}}}]),{headers:{'content-type':'text/event-stream'}});
   });
   const response=await handler(new Request('https://edge/v1/chat/completions',{method:'POST',headers:{authorization:'Bearer client','content-type':'application/json'},body:JSON.stringify({model:'gpt-6.1-sol',messages:[{role:'user',content:'Draw an image'}],...(allowed==='json_object'?{response_format:{type:'json_object'}}:{}),stream:false})}));
-  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.ok(dispatched);assert.equal(result.choices[0].message.content.includes('data:image/webp'),allowed===true);
+  const result=await response.json();assert.equal(response.status,200,JSON.stringify(result));assert.ok(dispatched);assert.equal(result.choices[0].message.content.includes('https://db.invalid/storage/v1/object/sign/'),allowed===true);
  }
 });
 test('generated image history becomes visual input for follow-up edits',()=>{
@@ -74,4 +77,10 @@ test('unexpected upstream image output cannot corrupt structured JSON',async()=>
  assert.throws(()=>responseToChat({output:[image]},'id',true));
  const result=await new Response(streamChat(source([{type:'response.completed',response:{status:'completed',output:[image]}}]),'id','gpt-6.1-sol',false,IMAGE_CHAT_FRAME_LIMIT,true)).text();
  assert.ok(result.includes('upstream_error'));assert.ok(!result.includes('data:image/'));
+});
+
+test('signed generated image history becomes visual input for follow-up edits',()=>{
+ const url='https://project.supabase.co/storage/v1/object/sign/sub2api-artifacts/images/imgtask_'+'a'.repeat(32)+'/image-1.png?token=signed';
+ const body={input:[{role:'assistant',content:[{type:'output_text',text:'![Generated image]('+url+')'}]}]};
+ enableChatImages(body);assert.equal(body.input.length,2);assert.equal(body.input[1].content[1].image_url,url);assert.equal(body.input[0].content[0].text,'[Previously generated image]');
 });
