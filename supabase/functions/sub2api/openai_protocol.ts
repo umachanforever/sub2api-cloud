@@ -1,3 +1,4 @@
+import {chatImageMarkdown} from './chat_images.ts';
 // OpenAI Chat Completions ↔ Responses protocol conversion.
 type Item = Record<string, any>;
 
@@ -345,10 +346,11 @@ export async function* responseEvents(
 
 export async function completedResponse(
   body: ReadableStream<Uint8Array>,
+  maxFrame = 1_048_576,
 ): Promise<Item> {
   let completed: Item | undefined, failed = false;
   const outputItems = new Map<number, Item>();
-  for await (const event of responseEvents(body.getReader())) {
+  for await (const event of responseEvents(body.getReader(), maxFrame)) {
     if (["response.failed", "error"].includes(event.type)) failed = true;
     if (event.type === "response.output_item.done" && Number.isInteger(event.output_index) && event.output_index >= 0 && event.item && typeof event.item === "object" && !Array.isArray(event.item)) {
       outputItems.set(event.output_index, event.item);
@@ -370,11 +372,9 @@ export async function completedResponse(
 
 export function responseToChat(response: Item, id: string): Item {
   const output = response.output ?? [];
-  const text = output.filter((item: Item) => item.type === "message")
-    .flatMap((item: Item) => item.content ?? []).filter((part: Item) =>
-      part.type === "output_text"
-    )
-    .map((part: Item) => part.text).join("");
+  const text = output.map((item: Item) => item.type === 'image_generation_call'
+    ? chatImageMarkdown(item)
+    : item.type === 'message' ? (item.content ?? []).filter((part: Item) => part.type === 'output_text').map((part: Item) => part.text).join('') : '').join('');
   const refusal = output.filter((item: Item) => item.type === "message")
     .flatMap((item: Item) => item.content ?? [])
     .filter((part: Item) => part.type === "refusal").map((part: Item) =>
@@ -437,14 +437,16 @@ export function streamChat(
   id: string,
   model: string,
   includeUsage = false,
+  maxFrame = 1_048_576,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader(),
-    events = responseEvents(reader),
+    events = responseEvents(reader, maxFrame),
     encoder = new TextEncoder();
   const created = Math.floor(Date.now() / 1000),
     calls = new Map<number, number>(),
     outputItems = new Map<number, Item>(),
-    sentCitations = new Set<string>();
+    sentCitations = new Set<string>(),
+    sentImages = new Set<string>();
   let cancelled = false,
     terminal = false,
     failed = false,
@@ -463,6 +465,14 @@ export function streamChat(
         model,
         choices: [{ index: 0, delta, finish_reason: finish }],
       });
+      const sendImage = (item: Item, index: number) => {
+        const key = item.id ?? String(index);
+        if (sentImages.has(key)) return;
+        const markdown = chatImageMarkdown(item);
+        if (!markdown) return;
+        sentImages.add(key);
+        send(chunk({content: markdown}));
+      };
       try {
         while (!cancelled) {
           const { value: event, done } = await events.next();
@@ -494,6 +504,7 @@ export function streamChat(
           }
           if (event.type === "response.output_item.done" && Number.isInteger(event.output_index) && event.item) {
             outputItems.set(event.output_index, event.item);
+            if(event.item.type === "image_generation_call") {sendImage(event.item, event.output_index); return;}
           }
           if (event.type === "response.created") {
             model = event.response?.model ?? model;
@@ -550,7 +561,10 @@ export function streamChat(
             if (!event.response?.output?.length && outputItems.size) {
               event.response = {...event.response, output: [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item)};
             }
-            const completed = responseToChat(event.response, id);
+            for (const [index, item] of (event.response.output ?? []).entries()) {
+              if (item.type === 'image_generation_call') sendImage(item, index);
+            }
+            const completed = responseToChat({...event.response, output: (event.response.output ?? []).filter((item: Item) => item.type !== 'image_generation_call')}, id);
             const message = completed.choices[0].message;
             if(message.annotations?.length)sendCitations(message.annotations);
             if (!textSent && message.content) {

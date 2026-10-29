@@ -1,3 +1,4 @@
+import {enableChatImages,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
@@ -428,6 +429,7 @@ async function proxyWithIdentity(
       return finishing;
     };
     let chatBridge:OriginalChatBridge|undefined;
+    let imageChat = false;
     try {
       if(forwardedBody&&!inputTokens&&!messageTokens&&(chat||messages||protocol==='responses'))await applyFastPolicy(forwardedBody,(reservation as {fast_policy?:FastPolicyContext}).fast_policy,account,upstreamModel);
       effectiveServiceTier=serviceTierForUsage(forwardedBody?.service_tier,account.platform);
@@ -696,6 +698,8 @@ async function proxyWithIdentity(
           }
         }
         if(normalized&&autoSearch)enableNativeSearch(normalized);
+        imageChat = chat && autoSearch && (reservation as {allow_image_generation?:boolean}).allow_image_generation === true;
+        if(normalized && imageChat)enableChatImages(normalized);
         if(normalized){if(effectiveServiceTier!==null)normalized.service_tier=effectiveServiceTier;else delete normalized.service_tier;}
         let credentials = await credentialsFor(db, account);
         const identity = await currentCodexIdentity(db, account, credentials);
@@ -833,10 +837,10 @@ async function proxyWithIdentity(
         upstream.body,
         signal,
         (usage) => finish(upstream.status, usage),
-        new UsageObserver(errorContext.started),
+        new UsageObserver(errorContext.started, imageChat ? IMAGE_CHAT_FRAME_LIMIT : 1_048_576),
       );
       if (!stream) {
-        const completed = await completedResponse(tracked);
+        const completed = await completedResponse(tracked, imageChat ? IMAGE_CHAT_FRAME_LIMIT : 1_048_576);
         return json(
           200,
           chat
@@ -854,6 +858,7 @@ async function proxyWithIdentity(
             `chatcmpl-${requestId}`,
             body!.model as string,
             includeUsage,
+            imageChat ? IMAGE_CHAT_FRAME_LIMIT : 1_048_576,
           )
           : messages
           ? streamMessages(tracked, `msg_${requestId}`, body!.model as string)

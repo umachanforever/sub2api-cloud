@@ -34,7 +34,8 @@ export class UsageObserver {
   private line = "";
   private skipping = false;
   private started: number;
-  constructor(started = Date.now()) { this.started = started; }
+  private maxLine: number;
+  constructor(started = Date.now(), maxLine = 1_048_576) { this.started = started; this.maxLine = maxLine; }
 
   push(bytes: Uint8Array) {
     this.consume(this.decoder.decode(bytes, { stream: true }));
@@ -45,7 +46,7 @@ export class UsageObserver {
   private consume(text: string) {
     for (const part of text.split(/(?<=\n)/)) {
       if (!this.skipping) this.line += part;
-      if (this.line.length > 1_048_576) {
+      if (this.line.length > this.maxLine) {
         this.line = "";
         this.skipping = true;
       }
