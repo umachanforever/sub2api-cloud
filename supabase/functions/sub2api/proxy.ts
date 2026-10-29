@@ -1,3 +1,4 @@
+import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
 import {normalizeServiceTier,serviceTierForUsage} from './service_tier.ts';
@@ -292,10 +293,12 @@ async function proxyWithIdentity(
   const imageIntent=!models&&!inputTokens&&!messageTokens&&!geminiTokens?{image_generation:imageGenerationIntent(path,policyModel,body),grok_image_generation:imageGenerationIntent(path,policyModel,body,'grok')}:undefined;
   const excluded: string[] = [];
   let pinnedFallback = false;
-  // One timeout covers all retries and the stream; the database lease lasts longer.
+  // One deadline covers retries and streaming; active database leases are renewed.
+  const leaseFailure = new AbortController();
   const signal = AbortSignal.any([
     request.signal,
-    AbortSignal.timeout(120_000),
+    AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    leaseFailure.signal,
   ]);
   for (let attempt = 0; attempt < 3; attempt++) {
     let reservation: Reservation;
@@ -387,7 +390,9 @@ async function proxyWithIdentity(
     let usageWriteFailed = false;
     let finishing: Promise<void> | undefined;
     let quotaSnapshot:Promise<unknown>|undefined;
+    const stopLease = db.config.dataModel === "native" ? keepRequestLease(db, lease_id, signal, leaseFailure) : () => {};
     const finish = (status: number, usage: Usage, cooldown = 0): Promise<void> => {
+      stopLease();
       if (finishing) return finishing;
       finishing = (async () => {
         await quotaSnapshot;

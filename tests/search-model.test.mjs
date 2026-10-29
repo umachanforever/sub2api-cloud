@@ -15,3 +15,33 @@ test('chat output retains native source citations',()=>{
  const result=responseToChat({output:[{type:'message',content:[{type:'output_text',text:'Source',annotations:[{type:'url_citation',url:'https://openai.com',title:'OpenAI',start_index:0,end_index:6}]}]}]},'id');
  assert.equal(result.choices[0].message.annotations[0].url_citation.url,'https://openai.com');
 });
+
+test('instructions use real paragraph breaks',()=>{
+ const body={instructions:'original'};enableNativeSearch(body);
+ assert.ok(body.instructions.includes('original\n\nUse web search'));
+});
+test('stream citations survive annotation events and sparse terminal envelopes',async()=>{
+ const {streamChat}=await import('../supabase/functions/sub2api/openai_protocol.ts');
+ const annotation={type:'url_citation',url:'https://example.com',title:'Source',start_index:0,end_index:6};
+ const events=[{type:'response.created',response:{model:'gpt-6.1-sol'}},{type:'response.output_text.delta',delta:'Source'},
+  {type:'response.output_text.annotation.added',output_index:0,content_index:0,annotation_index:0,annotation},
+  {type:'response.completed',response:{status:'completed',output:[]}}];
+ const source=new Response(events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')).body;
+ const result=await new Response(streamChat(source,'id','gpt-6.1-sol',false)).text();
+ assert.ok(result.includes('url_citation'));assert.ok(result.includes('https://example.com'));assert.ok(result.includes('[DONE]'));
+});
+
+test('stream restores completed items and emits each citation once',async()=>{
+ const {streamChat}=await import('../supabase/functions/sub2api/openai_protocol.ts');
+ const annotation={type:'url_citation',url:'https://example.com',title:'Source',start_index:0,end_index:6};
+ for(const incremental of [false,true]){
+  const events=[...(incremental?[{type:'response.output_text.annotation.added',annotation}]:[]),
+   {type:'response.output_item.done',output_index:0,item:{type:'message',content:[{type:'output_text',text:'Source',annotations:[annotation]}]}},
+   {type:'response.completed',response:{status:'completed',output:[]}}];
+  const source=new Response(events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join('')).body;
+  const text=await new Response(streamChat(source,'id','gpt-6.1-sol',false)).text();
+  const chunks=text.split('\n').filter(l=>l.startsWith('data: {')).map(l=>JSON.parse(l.slice(6)));
+  assert.equal(chunks.flatMap(c=>c.choices?.[0]?.delta?.annotations??[]).length,1);
+  assert.equal(chunks.map(c=>c.choices?.[0]?.delta?.content??'').join(''),'Source');
+ }
+});

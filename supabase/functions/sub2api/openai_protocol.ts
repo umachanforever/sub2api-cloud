@@ -442,7 +442,9 @@ export function streamChat(
     events = responseEvents(reader),
     encoder = new TextEncoder();
   const created = Math.floor(Date.now() / 1000),
-    calls = new Map<number, number>();
+    calls = new Map<number, number>(),
+    outputItems = new Map<number, Item>(),
+    sentCitations = new Set<string>();
   let cancelled = false,
     terminal = false,
     failed = false,
@@ -477,6 +479,22 @@ export function streamChat(
             continue;
           }
           if (failed) continue;
+          const sendCitations = (annotations: Item[]) => {
+            const fresh = annotations.filter(annotation => {
+              const key = JSON.stringify(annotation);
+              if (sentCitations.has(key)) return false;
+              sentCitations.add(key); return true;
+            });
+            if (fresh.length) send(chunk({annotations: fresh}));
+          };
+          if (event.type === "response.output_text.annotation.added" && event.annotation?.type === "url_citation") {
+            const {url, title, start_index, end_index} = event.annotation;
+            sendCitations([{type: "url_citation", url_citation: {url, title, start_index, end_index}}]);
+            return;
+          }
+          if (event.type === "response.output_item.done" && Number.isInteger(event.output_index) && event.item) {
+            outputItems.set(event.output_index, event.item);
+          }
           if (event.type === "response.created") {
             model = event.response?.model ?? model;
             send(chunk({ role: "assistant", content: "" }));
@@ -529,9 +547,12 @@ export function streamChat(
             ["response.completed", "response.incomplete"].includes(event.type)
           ) {
             model = event.response?.model ?? model;
+            if (!event.response?.output?.length && outputItems.size) {
+              event.response = {...event.response, output: [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item)};
+            }
             const completed = responseToChat(event.response, id);
             const message = completed.choices[0].message;
-            if(message.annotations?.length)send(chunk({annotations:message.annotations}));
+            if(message.annotations?.length)sendCitations(message.annotations);
             if (!textSent && message.content) {
               send(chunk({ content: message.content }));
             }
