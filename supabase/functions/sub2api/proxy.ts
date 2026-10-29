@@ -1,3 +1,4 @@
+import {enableNativeSearch} from './search_model.ts';
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
 import {normalizeServiceTier,serviceTierForUsage} from './service_tier.ts';
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
@@ -485,6 +486,7 @@ async function proxyWithIdentity(
       if(grokSearch&&(account.platform??'openai')!=='grok')throw new HttpError(400,'grok_search_requires_grok_group');
       const apiKey = account.type === "apikey";
       const platform = account.platform ?? "openai";
+      const autoSearch = !apiKey && platform === "openai" && /^gpt-/i.test(upstreamModel) && !models && !inputTokens && (chat || messages || protocol === "responses");
       if(systemOne&&(platform!=='typesafe'||!apiKey)||platform==='typesafe'&&!systemOne&&!models)throw new HttpError(400,'systemone_requires_typesafe_account');
       if(platform==='typesafe'&&models){
         if(clientVersion!==null)throw new HttpError(400,'codex_manifest_requires_oauth');
@@ -688,6 +690,7 @@ async function proxyWithIdentity(
             );
           }
         }
+        if(normalized&&autoSearch)enableNativeSearch(normalized);
         if(normalized){if(effectiveServiceTier!==null)normalized.service_tier=effectiveServiceTier;else delete normalized.service_tier;}
         let credentials = await credentialsFor(db, account);
         const identity = await currentCodexIdentity(db, account, credentials);

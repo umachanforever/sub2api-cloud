@@ -386,6 +386,14 @@ export function responseToChat(response: Item, id: string): Item {
       type: "function",
       function: { name: item.name, arguments: item.arguments },
     }));
+  const annotations = output.filter((item: Item) => item.type === "message")
+    .flatMap((item: Item) => item.content ?? [])
+    .flatMap((part: Item) => part.annotations ?? [])
+    .filter((item: Item) => item.type === "url_citation")
+    .map((item: Item) => ({
+      type: "url_citation",
+      url_citation: {url: item.url, title: item.title, start_index: item.start_index, end_index: item.end_index},
+    }));
   const usage = response.usage ?? {};
   return {
     id,
@@ -397,6 +405,7 @@ export function responseToChat(response: Item, id: string): Item {
       message: {
         role: "assistant",
         content: text || null,
+        ...(annotations.length ? {annotations} : {}),
         ...(refusal ? { refusal } : {}),
         ...(calls.length ? { tool_calls: calls } : {}),
       },
@@ -522,6 +531,7 @@ export function streamChat(
             model = event.response?.model ?? model;
             const completed = responseToChat(event.response, id);
             const message = completed.choices[0].message;
+            if(message.annotations?.length)send(chunk({annotations:message.annotations}));
             if (!textSent && message.content) {
               send(chunk({ content: message.content }));
             }
