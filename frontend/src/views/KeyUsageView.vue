@@ -154,6 +154,16 @@
 
         <!-- Result Content -->
         <div v-else-if="resultData" class="space-y-6">
+          <template v-if="resultData.object === 'subscription.usage'">
+            <section v-for="account in resultData.accounts" :key="account.account_id" class="rounded-2xl border border-gray-200 bg-white p-6 dark:border-dark-700 dark:bg-dark-900">
+              <h2 class="font-semibold">{{ account.account_name }}</h2>
+              <div v-for="window in account.windows" :key="`${window.id}:${window.model || ''}`" class="mt-4 flex flex-wrap items-center justify-between gap-2">
+                <span>{{ window.model || window.id }} · {{ window.used_percent }}%</span>
+                <span class="text-sm text-gray-500">{{ locale === 'zh' ? '重置时间' : 'Resets' }} · <LocalTime :value="window.reset_at" /></span>
+              </div>
+              <p class="mt-4 text-xs text-gray-500">{{ locale === 'zh' ? '更新时间' : 'Updated' }} · <LocalTime :value="account.fetched_at" /></p>
+            </section>
+          </template>
           <!-- Status Badge -->
           <div v-if="statusInfo" class="fade-up flex items-center justify-center mb-2">
             <div class="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-gray-200 bg-white/90 shadow-sm backdrop-blur-sm dark:border-dark-700 dark:bg-dark-900/90">
@@ -416,6 +426,7 @@ import { useI18n } from 'vue-i18n'
 import { useAppStore } from '@/stores'
 import { FeatureFlags, resolveFeatureFlag } from '@/utils/featureFlags'
 import LocaleSwitcher from '@/components/common/LocaleSwitcher.vue'
+import LocalTime from '@/components/common/LocalTime.vue'
 import Icon from '@/components/icons/Icon.vue'
 import { buildGatewayUrl } from '@/api/client'
 import { formatDateLocalInput } from '@/utils/format'
@@ -580,6 +591,7 @@ function triggerRingAnimation(items: RingItem[]) {
 const statusInfo = computed(() => {
   const data = resultData.value
   if (!data) return null
+  if (data.object === 'subscription.usage') return null
 
   if (data.mode === 'quota_limited') {
     const isValid = data.isValid !== false

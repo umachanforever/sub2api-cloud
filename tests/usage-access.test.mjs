@@ -34,6 +34,14 @@ test('usage reads validate the supplied key on every request and project cached 
     const response = await app(request('', { 'x-forwarded-for': '203.0.113.4, 10.0.0.1' }));
     assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store');
     const body = await response.json(), value = body.accounts[0];
+    assert.equal(body.timezone, 'Asia/Shanghai');
+    for (const row of [value.five_hour, value.seven_day, ...value.windows]) {
+      assert.ok(row.reset_at.endsWith('+08:00'));
+      const source = row.window_seconds === 18000 ? snapshot().codex_5h_reset_at : snapshot().codex_7d_reset_at;
+      assert.equal(Date.parse(row.reset_at), Date.parse(source));
+    }
+    assert.ok(value.fetched_at.endsWith('+08:00'));
+    assert.equal(Date.parse(value.fetched_at), Date.parse(snapshot().codex_usage_updated_at));
     assert.equal(value.five_hour.used_percent, 12); assert.equal(value.seven_day.used_percent, 34);
     assert.equal(value.five_hour.remaining_percent, 88); assert.equal(value.five_hour.window_seconds, 18000);
     assert.equal(value.cached, true); assert.equal(value.stale, false);

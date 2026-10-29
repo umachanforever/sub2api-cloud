@@ -1,0 +1,5 @@
+/*
+  Referrer-Policy: no-referrer
+  Cache-Control: no-store
+  X-Content-Type-Options: nosniff
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'

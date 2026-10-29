@@ -9,6 +9,27 @@ type Snapshot = Record<string, unknown>;
 type UsageAccount = QuotaAccount & { name?: string; status?: string; quota_snapshot?: Snapshot; usage_snapshot?: { fetched_at?: number; windows?: unknown } };
 const TTL_SECONDS = 60;
 
+// Apply the public display timezone only; persisted snapshots retain provider timestamps.
+function usageTime(value: unknown): unknown {
+  if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))) return value;
+  return new Date(Date.parse(value) + 8 * 3600_000).toISOString().replace('Z', '+08:00');
+}
+
+function publicAccount(account: Record<string, unknown>) {
+  const formatWindow = (value: unknown) => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+    const row = value as Record<string, unknown>;
+    return { ...row, reset_at: usageTime(row.reset_at) };
+  };
+  return {
+    ...account,
+    fetched_at: usageTime(account.fetched_at),
+    windows: Array.isArray(account.windows) ? account.windows.map(formatWindow) : account.windows,
+    five_hour: formatWindow(account.five_hour),
+    seven_day: formatWindow(account.seven_day),
+  };
+}
+
 function window(snapshot: Snapshot, period: '5h' | '7d', now: number) {
   const used = snapshot[`codex_${period}_used_percent`];
   if (typeof used !== 'number' || !Number.isFinite(used) || used < 0) return null;
@@ -80,7 +101,7 @@ export async function usageAccess(request: Request, token: string, db: Database)
       };
     })));
   }
-  const response = json(200, { object: 'subscription.usage', cache_ttl_seconds: TTL_SECONDS, accounts });
+  const response = json(200, { object: 'subscription.usage', timezone: 'Asia/Shanghai', cache_ttl_seconds: TTL_SECONDS, accounts: accounts.map(publicAccount) });
   response.headers.set('referrer-policy', 'no-referrer');
   return response;
 }
