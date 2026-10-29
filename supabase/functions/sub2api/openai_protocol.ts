@@ -344,6 +344,23 @@ export async function* responseEvents(
   }
 }
 
+// Merge sparse terminal output with authoritative item-done events. Final items
+// win by ID; omitted items retain their upstream order without being duplicated.
+function mergeCompletedOutput(response: Item, items: Map<number, Item>): Item {
+  if (!items.size) return response;
+  const final: Item[] = Array.isArray(response.output) ? response.output : [];
+  const used = new Set<number>();
+  const output = [...items].sort(([a], [b]) => a - b).map(([index, item]) => {
+    const found = final.findIndex((candidate, position) => !used.has(position) && (
+      typeof item.id === 'string' && candidate.id === item.id ||
+      !item.id && !candidate.id && position === index && candidate.type === item.type
+    ));
+    if (found < 0) return item;
+    used.add(found); return final[found];
+  });
+  return {...response, output: [...output, ...final.filter((_, index) => !used.has(index))]};
+}
+
 export async function completedResponse(
   body: ReadableStream<Uint8Array>,
   maxFrame = 1_048_576,
@@ -363,15 +380,12 @@ export async function completedResponse(
   if (!completed || typeof completed !== "object") {
     throw new Error("Upstream ended without completion");
   }
-  // Some providers omit completed items from the terminal response envelope.
-  if ((!Array.isArray(completed.output) || completed.output.length === 0) && outputItems.size) {
-    completed = { ...completed, output: [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item) };
-  }
-  return completed;
+  return mergeCompletedOutput(completed, outputItems);
 }
 
-export function responseToChat(response: Item, id: string): Item {
+export function responseToChat(response: Item, id: string, structuredOutput = false): Item {
   const output = response.output ?? [];
+  if(structuredOutput && output.some((item: Item) => item.type === "image_generation_call"))throw new Error("image_generation_structured_output");
   const text = output.map((item: Item) => item.type === 'image_generation_call'
     ? chatImageMarkdown(item)
     : item.type === 'message' ? (item.content ?? []).filter((part: Item) => part.type === 'output_text').map((part: Item) => part.text).join('') : '').join('');
@@ -438,6 +452,7 @@ export function streamChat(
   model: string,
   includeUsage = false,
   maxFrame = 1_048_576,
+  structuredOutput = false,
 ): ReadableStream<Uint8Array> {
   const reader = body.getReader(),
     events = responseEvents(reader, maxFrame),
@@ -466,6 +481,7 @@ export function streamChat(
         choices: [{ index: 0, delta, finish_reason: finish }],
       });
       const sendImage = (item: Item, index: number) => {
+        if(structuredOutput && item.type === "image_generation_call")throw new Error("image_generation_structured_output");
         const key = item.id ?? String(index);
         if (sentImages.has(key)) return;
         const markdown = chatImageMarkdown(item);
@@ -558,9 +574,7 @@ export function streamChat(
             ["response.completed", "response.incomplete"].includes(event.type)
           ) {
             model = event.response?.model ?? model;
-            if (!event.response?.output?.length && outputItems.size) {
-              event.response = {...event.response, output: [...outputItems].sort(([a], [b]) => a - b).map(([, item]) => item)};
-            }
+            event.response = mergeCompletedOutput(event.response, outputItems);
             for (const [index, item] of (event.response.output ?? []).entries()) {
               if (item.type === 'image_generation_call') sendImage(item, index);
             }

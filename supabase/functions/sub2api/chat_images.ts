@@ -1,7 +1,9 @@
 type Item = Record<string, any>;
 export const IMAGE_CHAT_FRAME_LIMIT = 32 * 1024 * 1024;
 
-export function enableChatImages(body: Item): void {
+export function enableChatImages(body: Item): boolean {
+  const format = body.text?.format?.type ?? body.response_format?.type;
+  if (format === 'json_object' || format === 'json_schema') return false;
   if (!(body.tools ?? []).some((tool: Item) => tool.type === 'image_generation')) {
     body.tools = [...(body.tools ?? []), {type: 'image_generation', model: 'gpt-image-2'}];
   }
@@ -23,11 +25,13 @@ export function enableChatImages(body: Item): void {
     });
     return images.length ? [{...item, content}, {type: 'message', role: 'user', content: [{type: 'input_text', text: 'Previously generated image, provided for visual reference:'}, ...images]}] : [item];
   });
+  return true;
 }
 
 // Inline image data keeps chat history self-contained without public uploads or expiring URLs.
 export function chatImageMarkdown(item: Item): string {
-  if (item.type !== 'image_generation_call' || typeof item.result !== 'string' || !item.result) return '';
+  if (item.type !== 'image_generation_call') return '';
+  if (item.error || item.failure || item.status && item.status !== 'completed' || typeof item.result !== 'string' || !item.result) throw new Error('image_generation_failed');
   if (item.result.length > IMAGE_CHAT_FRAME_LIMIT || !/^[A-Za-z0-9+/]+={0,2}$/.test(item.result)) throw new Error('Invalid generated image');
   const format = item.output_format;
   const mime = format === 'jpeg' || format === 'jpg' ? 'image/jpeg' : format === 'webp' ? 'image/webp' : 'image/png';

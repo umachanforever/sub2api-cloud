@@ -430,6 +430,7 @@ async function proxyWithIdentity(
     };
     let chatBridge:OriginalChatBridge|undefined;
     let imageChat = false;
+    const structuredChat = chat && ["json_object","json_schema"].includes(body?.response_format?.type);
     try {
       if(forwardedBody&&!inputTokens&&!messageTokens&&(chat||messages||protocol==='responses'))await applyFastPolicy(forwardedBody,(reservation as {fast_policy?:FastPolicyContext}).fast_policy,account,upstreamModel);
       effectiveServiceTier=serviceTierForUsage(forwardedBody?.service_tier,account.platform);
@@ -699,7 +700,7 @@ async function proxyWithIdentity(
         }
         if(normalized&&autoSearch)enableNativeSearch(normalized);
         imageChat = chat && autoSearch && (reservation as {allow_image_generation?:boolean}).allow_image_generation === true;
-        if(normalized && imageChat)enableChatImages(normalized);
+        if(normalized && imageChat)imageChat=enableChatImages(normalized);
         if(normalized){if(effectiveServiceTier!==null)normalized.service_tier=effectiveServiceTier;else delete normalized.service_tier;}
         let credentials = await credentialsFor(db, account);
         const identity = await currentCodexIdentity(db, account, credentials);
@@ -844,7 +845,7 @@ async function proxyWithIdentity(
         return json(
           200,
           chat
-            ? responseToChat(completed, `chatcmpl-${requestId}`)
+            ? responseToChat(completed, `chatcmpl-${requestId}`, structuredChat)
             : messages
             ? responseToMessages(completed, `msg_${requestId}`)
             : completed,
@@ -859,6 +860,7 @@ async function proxyWithIdentity(
             body!.model as string,
             includeUsage,
             imageChat ? IMAGE_CHAT_FRAME_LIMIT : 1_048_576,
+            structuredChat,
           )
           : messages
           ? streamMessages(tracked, `msg_${requestId}`, body!.model as string)
