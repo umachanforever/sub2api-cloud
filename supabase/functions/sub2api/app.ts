@@ -21,10 +21,13 @@ import { type SMTPTransport } from "./smtp.ts";
 import { privacyJobs } from "./privacy_jobs.ts";
 import { autoResetJobs } from "./openai_auto_reset.ts";
 import { usageAccess } from "./usage_access.ts";
+import { corsPreflight, corsResponse } from './cors.ts';
 
 export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, smtp?: SMTPTransport) {
   const db = new Database(config, fetchImpl);
   return async (request: Request): Promise<Response> => {
+    const preflight = corsPreflight(request);
+    if (preflight) return preflight;
     const started = Date.now(), requestId = crypto.randomUUID();
     const errorContext: ErrorContext = { requestId, started };
     let errorCode = "gateway_error", gatewayRequest = false;
@@ -123,6 +126,6 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       gatewayRequest && response.status >= 400 ? recordOpsError(db, errorContext, response.status, request.signal.aborted ? "context_canceled" : errorCode) : Promise.resolve()]);
     const runtime = (globalThis as typeof globalThis & { EdgeRuntime?: { waitUntil(promise: Promise<unknown>): void } }).EdgeRuntime;
     if (runtime) runtime.waitUntil(logging); else await logging;
-    return response;
+    return corsResponse(response);
   };
 }
