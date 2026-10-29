@@ -26,6 +26,7 @@ async function fixture({ stream = false, expired = false, reject = false, fallba
       if (name === 's2a_gateway_account_snapshot') return { id: '1', credentials, credential_version: version };
       if (name === 's2a_gateway_refresh_save') { saved.push(body); credentials = body.p_credentials; version++; return true; }
       if (name === 's2a_gateway_refresh_release' || name === 's2a_personal_ops_error_record') return;
+      if (name === 's2a_personal_models_save') { assert.deepEqual(body.p_models, ['gemini-test']); assert.equal(body.p_version,version); return {alias:'gemini-test','gemini-test':'gemini-test'}; }
       if (name === 's2a_personal_finish') { finished.push(body); return; }
       assert.fail('Unexpected RPC ' + name);
     },
@@ -105,4 +106,10 @@ test('Antigravity private client configuration is paired and installed by the de
 
 for(const protocol of ['responses','chat/completions'])for(const stream of [false,true])test(`Antigravity ${protocol} bridge stream=${stream} retains alias, envelope and usage`,async()=>{
  const result=await fixture({protocol,stream});assert.equal(result.response.status,200);assert.match(result.text,/你好/);assert.match(result.text,/世界/);assert.doesNotMatch(result.text,/private-project|private-trace|provider-token/);if(!stream)JSON.parse(result.text);assert.equal(result.finished[0].p_input_tokens,7);assert.equal(result.finished[0].p_output_tokens,5);assert.equal(result.finished[0].p_cache_read_tokens,4);
+});
+
+test('Antigravity catalog saves against the refreshed credential version', async()=>{
+ const result=await fixture({models:true,expired:true});
+ assert.equal(result.response.status,200);
+ assert.equal(result.refreshes,1);
 });

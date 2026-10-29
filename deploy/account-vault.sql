@@ -233,4 +233,25 @@ END $$;
 ALTER FUNCTION public.s2a_gateway_codex_version_save(text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_gateway_codex_version_save(text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_gateway_codex_version_save(text) TO service_role;
+-- Live Antigravity IDs replace identity snapshots without overwriting custom aliases.
+CREATE OR REPLACE FUNCTION s2a_private.account_model_mapping(platform text,extra jsonb,mapping jsonb)
+RETURNS jsonb LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
+DECLARE result jsonb; id text;
+BEGIN
+ IF jsonb_typeof(mapping) IS DISTINCT FROM 'object' THEN mapping:='{}'::jsonb; END IF;
+ IF platform IS DISTINCT FROM 'antigravity' OR jsonb_typeof(extra->'upstream_model_ids') IS DISTINCT FROM 'array' THEN RETURN mapping; END IF;
+ IF jsonb_array_length(extra->'upstream_model_ids') NOT BETWEEN 1 AND 1000 THEN RETURN mapping; END IF;
+ IF EXISTS(SELECT FROM jsonb_array_elements(extra->'upstream_model_ids') m
+  WHERE jsonb_typeof(m)<>'string' OR length(m#>>'{}')>200 OR m#>>'{}' !~ '^[a-zA-Z0-9._-]+$') THEN RETURN mapping; END IF;
+ SELECT coalesce(jsonb_object_agg(key,value),'{}'::jsonb) INTO result FROM jsonb_each(mapping)
+ WHERE jsonb_typeof(value)='string' AND (key<>value#>>'{}' OR position('*' IN key)>0);
+ FOR id IN SELECT jsonb_array_elements_text(extra->'upstream_model_ids') LOOP
+  IF NOT EXISTS(SELECT FROM jsonb_each(result) WHERE key=id OR (right(key,1)='*' AND starts_with(id,left(key,-1)))) THEN
+   result:=result||jsonb_build_object(id,id);
+  END IF;
+ END LOOP;
+ RETURN result;
+END $$;
+ALTER FUNCTION s2a_private.account_model_mapping(text,jsonb,jsonb) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.account_model_mapping(text,jsonb,jsonb) FROM PUBLIC,anon,authenticated,service_role;
 COMMIT;

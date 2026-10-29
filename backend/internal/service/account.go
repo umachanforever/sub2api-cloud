@@ -642,12 +642,12 @@ func (a *Account) GetModelMapping() map[string]string {
 		a.modelMappingCacheRawLen == rawLen &&
 		a.modelMappingCacheRuntimeVersion == runtimeVersion {
 		if a.modelMappingCacheShared {
-			return a.modelMappingCache
+			return a.withDiscoveredModelMapping(a.modelMappingCache)
 		}
 		rawSig = modelMappingSignature(rawMapping)
 		rawSigReady = true
 		if a.modelMappingCacheRawSig == rawSig {
-			return a.modelMappingCache
+			return a.withDiscoveredModelMapping(a.modelMappingCache)
 		}
 	}
 
@@ -664,7 +664,62 @@ func (a *Account) GetModelMapping() map[string]string {
 	a.modelMappingCacheRawSig = rawSig
 	a.modelMappingCacheRuntimeVersion = runtimeVersion
 	a.modelMappingCacheShared = false
-	return mapping
+	return a.withDiscoveredModelMapping(mapping)
+}
+
+// Discovery is authoritative for identity mappings; configured aliases still win.
+func (a *Account) withDiscoveredModelMapping(base map[string]string) map[string]string {
+	if a.Platform != domain.PlatformAntigravity {
+		return base
+	}
+	var ids []string
+	switch value := a.Extra["upstream_model_ids"].(type) {
+	case []string:
+		ids = value
+	case []any:
+		for _, item := range value {
+			id, ok := item.(string)
+			if !ok {
+				return base
+			}
+			ids = append(ids, id)
+		}
+	default:
+		return base
+	}
+	if !validDiscoveredModelIDs(ids) {
+		return base
+	}
+	result := make(map[string]string)
+	raw, _ := a.Credentials["model_mapping"].(map[string]any)
+	for from, value := range raw {
+		if to, ok := value.(string); ok && (from != to || strings.Contains(from, "*")) {
+			result[from] = to
+		}
+	}
+	for _, id := range ids {
+		if !mappingSupportsRequestedModel(result, id) {
+			result[id] = id
+		}
+	}
+	return result
+}
+
+func validDiscoveredModelIDs(ids []string) bool {
+	if len(ids) == 0 || len(ids) > 1000 {
+		return false
+	}
+	for _, id := range ids {
+		if len(id) == 0 || len(id) > 200 {
+			return false
+		}
+		for _, c := range id {
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.' || c == '_' || c == '-') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 // PrepareSharedSnapshot 预解析模型映射，并把账号标记为只读共享母本。

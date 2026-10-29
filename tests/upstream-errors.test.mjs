@@ -55,3 +55,28 @@ test('gateway returns classified model rejection and persists it without provide
   assert.ok(events.some(event=>event.p_event.code==='upstream_model_access_denied'));
   assert.equal(finished,1);
 });
+
+for (const exhausted of [true,false]) test(`upstream rate limit survives ${exhausted?'account exhaustion':'retry limit'}`,async()=>{
+ const {createHandler}=await import('../supabase/functions/sub2api/app.ts');
+ const {encryptCredentials}=await import('../supabase/functions/sub2api/credential_store.ts');
+ const actor='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
+ const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[actor]};
+ const encrypted=await encryptCredentials({access_token:'secret'},config.encryptionKey);
+ let acquisitions=0,finished=0;
+ const handler=createHandler(config,async(url)=>{
+  const path=new URL(url).pathname;
+  if(path.endsWith('/auth/v1/user'))return Response.json({id:actor});
+  if(path.endsWith('/s2a_acquire')){
+   acquisitions++;
+   return Response.json(exhausted&&acquisitions>1?{error:'no_available_account',status:503}:{lease_id:id,account:{id,...encrypted,type:'oauth',platform:'openai',credential_version:1}});
+  }
+  if(path.endsWith('/s2a_finish')){finished++;return Response.json(null);}
+  if(path.endsWith('/s2a_log_write')||path.endsWith('/s2a_ops_error_record'))return Response.json(null);
+  assert.equal(new URL(url).hostname,'chatgpt.com');
+  return Response.json({error:{message:'private@account.example quota exhausted'}},{status:429});
+ });
+ const response=await handler(new Request('https://gateway/v1/responses',{method:'POST',headers:{authorization:'Bearer session','x-s2a-frontend':'1'},body:JSON.stringify({model:'gpt-6.1-sol',input:'hello'})}));
+ assert.equal(response.status,429);
+ const body=await response.text();assert.equal(JSON.parse(body).error.type,'upstream_rejected_request');assert.equal(body.includes('private@'),false);
+ assert.equal(acquisitions,exhausted?2:3);assert.equal(finished,exhausted?1:3);
+});

@@ -932,6 +932,7 @@ export default {
       fromModel: '请求模型',
       toModel: '目标模型',
       selectAllowedModels: '选择允许的模型。留空则支持所有模型。',
+      antigravityAutoMappingHint: '获取模型后自动建立同名映射，后续获取时更新。自定义别名和通配符优先，访问权限仍由分组限制。',
       mapRequestModels: '将请求模型映射到实际模型。左边是请求的模型，右边是发送到 API 的实际模型。',
       selectedModels: '已选择 {count} 个模型',
       supportsAllModels: '（支持所有模型）',

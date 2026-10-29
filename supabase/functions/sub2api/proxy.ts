@@ -294,6 +294,7 @@ async function proxyWithIdentity(
   Object.assign(errorContext, { keyHash, model: policyModel, ...(models ? { stream: false } : {}) });
   const imageIntent=!models&&!inputTokens&&!messageTokens&&!geminiTokens?{image_generation:imageGenerationIntent(path,policyModel,body),grok_image_generation:imageGenerationIntent(path,policyModel,body,'grok')}:undefined;
   const excluded: string[] = [];
+  let lastUpstreamError: HttpError | undefined;
   let pinnedFallback = false;
   // One deadline covers retries and streaming; active database leases are renewed.
   const leaseFailure = new AbortController();
@@ -326,6 +327,7 @@ async function proxyWithIdentity(
       },
     });
     if (reservation.error) {
+      if (reservation.error === "no_available_account" && lastUpstreamError) throw lastUpstreamError;
       throw new HttpError(reservation.status, reservation.error);
     }
     if('pinned_catalog' in reservation){
@@ -771,15 +773,14 @@ async function proxyWithIdentity(
             ? 15
             : 0,
         );
+        // Provider errors can contain account details; retain only the stable category.
+        const failure = new HttpError(status >= 400 && status < 500 ? status : 502, rejection);
         if (!imageJob && !customVoiceMethod && ([401, 403, 429].includes(status) || status >= 500)) {
+          lastUpstreamError = failure;
           excluded.push(account.id);
           continue;
         }
-        // Provider errors can contain account details; return a stable error only.
-        throw new HttpError(
-          status >= 400 && status < 500 ? status : 502,
-          rejection,
-        );
+        throw failure;
       }
       if(chatBridge){upstream=chatBridge.response(upstream);native=undefined;}
       responseAccepted = native ? native.streaming : stream;
@@ -805,6 +806,15 @@ async function proxyWithIdentity(
           aliasCatalog?decodeURIComponent(modelId!):undefined,
           errorContext.started,
           grokSearch ? (value)=>grokSearchOutput(value,grokSearchOptions!) : images && platform === "openai" && !apiKey ? (value,streaming)=>oauthImageOutput(value,body!,imageEdit,streaming) : undefined,
+          db.config.dataModel === 'native' && platform === 'antigravity' && models && !modelId &&
+            !['pageToken','page_token','after','before','after_id','before_id'].some(key=>new URL(request.url).searchParams.has(key))
+            ? async value=>{
+              const ids=(value.data??value.models??[]).map((row:Record<string,unknown>)=>typeof row.id==='string'?row.id:typeof row.name==='string'?row.name.replace(/^models\//,''):'');
+              if(!ids.length||ids.length>1000||ids.some((id:string)=>! /^[a-zA-Z0-9._-]{1,200}$/.test(id)))throw new HttpError(502,'invalid_upstream_model_catalog');
+              const mapping=await db.rpc<Record<string,string>|null>('s2a_personal_models_save',{p_lease_id:lease_id,p_version:account.credential_version,p_models:ids});
+              if(!mapping)throw new HttpError(502,'model_catalog_save_failed');
+              if(model_sources)model_sources.mapping=mapping;
+            } : undefined,
         );
       }
       if (models) {
@@ -901,5 +911,5 @@ async function proxyWithIdentity(
       );
     }
   }
-  throw new HttpError(503, "no_available_account");
+  throw lastUpstreamError ?? new HttpError(503, "no_available_account");
 }

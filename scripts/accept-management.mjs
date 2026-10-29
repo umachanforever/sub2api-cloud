@@ -713,6 +713,48 @@ try {
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/tests/pinned-models.database.sql", "utf8"));
     sql(readFileSync(root + "/tests/configured-models.database.sql", "utf8"));
+    sql(`BEGIN; SET LOCAL ROLE s2a_management;
+      CREATE TEMP TABLE argon_backfill_fixture AS SELECT id,name,credentials,updated_at FROM public.accounts WHERE false;
+      WITH created AS (
+        INSERT INTO public.accounts(name,platform,type,credentials,updated_at) VALUES
+        ('Argon legacy fixture','antigravity','oauth','{"access_token":"synthetic-token","model_mapping":{"gemini-3-flash":"gemini-3-flash"}}','2020-01-01'),
+        ('Argon override fixture','antigravity','oauth','{"access_token":"synthetic-token","model_mapping":{"gemini-4-argon":"custom","gemini-4-argon-low":"custom-low"}}','2020-01-01'),
+        ('Argon wildcard fixture','antigravity','oauth','{"access_token":"synthetic-token","model_mapping":{"gemini-4-*":"custom"}}','2020-01-01'),
+        ('Argon empty fixture','antigravity','oauth','{"access_token":"synthetic-token","model_mapping":{}}','2020-01-01'),
+        ('Argon unmapped fixture','antigravity','oauth','{"access_token":"synthetic-token"}','2020-01-01'),
+        ('Argon other fixture','openai','oauth','{"access_token":"synthetic-token","model_mapping":{"gpt-6.1":"gpt-6.1"}}','2020-01-01')
+        RETURNING id,name,credentials,updated_at
+      ) INSERT INTO argon_backfill_fixture SELECT * FROM created;`
+      + readFileSync(root + "/backend/migrations/249_antigravity_argon_model_mapping.sql", "utf8")
+      + `CREATE TEMP TABLE argon_backfill_once AS SELECT a.id,a.credentials,a.updated_at,a.s2a_credential_version FROM public.accounts a JOIN argon_backfill_fixture f USING(id);`
+      + readFileSync(root + "/backend/migrations/249_antigravity_argon_model_mapping.sql", "utf8")
+      + `DO $$ DECLARE f record; actual jsonb; model text; BEGIN
+        FOR f IN SELECT * FROM argon_backfill_fixture LOOP
+          SELECT credentials INTO actual FROM public.accounts WHERE id=f.id;
+          IF actual-'model_mapping' IS DISTINCT FROM f.credentials-'model_mapping' THEN
+            RAISE EXCEPTION 'Argon migration changed unrelated credentials'; END IF;
+          IF f.name='Argon legacy fixture' THEN
+            FOREACH model IN ARRAY ARRAY['gemini-4-argon','gemini-4-argon-low','gemini-4-argon-medium','gemini-4-argon-high'] LOOP
+              IF actual->'model_mapping'->>model IS DISTINCT FROM (CASE WHEN model='gemini-4-argon' THEN 'gemini-4-argon-high' ELSE model END)
+                OR NOT s2a_private.account_mapping_accepts('antigravity','oauth','{}',actual->'model_mapping',model)
+                THEN RAISE EXCEPTION 'Legacy Argon mapping still blocks %',model; END IF;
+            END LOOP;
+            IF actual->'model_mapping'->>'gemini-3-flash' IS DISTINCT FROM 'gemini-3-flash' THEN
+              RAISE EXCEPTION 'Argon migration changed existing model mapping'; END IF;
+          ELSIF f.name='Argon override fixture' THEN
+            IF actual->'model_mapping'->>'gemini-4-argon' IS DISTINCT FROM 'custom'
+              OR actual->'model_mapping'->>'gemini-4-argon-low' IS DISTINCT FROM 'custom-low'
+              OR actual->'model_mapping'->>'gemini-4-argon-high' IS DISTINCT FROM 'gemini-4-argon-high'
+              THEN RAISE EXCEPTION 'Argon migration overwrote explicit mapping'; END IF;
+          ELSIF actual IS DISTINCT FROM f.credentials THEN
+            RAISE EXCEPTION 'Argon migration changed wildcard, empty or another provider mapping';
+          END IF;
+        END LOOP;
+        IF EXISTS(SELECT FROM public.accounts a JOIN argon_backfill_once previous USING(id)
+          WHERE a.credentials IS DISTINCT FROM previous.credentials OR a.updated_at IS DISTINCT FROM previous.updated_at OR a.s2a_credential_version<>previous.s2a_credential_version) THEN
+          RAISE EXCEPTION 'Argon migration is not idempotent'; END IF;
+      END $$; ROLLBACK;`);
+
     sql(readFileSync(root + "/deploy/gateway-maintenance.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));

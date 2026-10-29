@@ -61,8 +61,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
    AND coalesce(a.temp_unschedulable_until,'-infinity')<=now()
  ) SELECT jsonb_build_object('has_antigravity',EXISTS(SELECT 1 FROM eligible),
   'sources',coalesce((SELECT jsonb_agg(coalesce((SELECT jsonb_object_agg(m.key,m.value)
-   FROM jsonb_each(CASE WHEN jsonb_typeof(s2a_private.account_credentials(e.id)->'model_mapping')='object'
-    THEN s2a_private.account_credentials(e.id)->'model_mapping' ELSE '{}'::jsonb END) m
+   FROM jsonb_each(s2a_private.account_model_mapping('antigravity',e.extra,s2a_private.account_credentials(e.id)->'model_mapping')) m
    WHERE jsonb_typeof(m.value)='string'),'{}'::jsonb) ORDER BY e.id)
    FROM eligible e WHERE e.extra->'mixed_scheduling'='true'::jsonb),'[]'::jsonb));
 $$;
@@ -95,7 +94,7 @@ BEGIN
      WHEN jsonb_typeof(extra->'openai_passthrough')='boolean' THEN (extra->>'openai_passthrough')::boolean
      WHEN jsonb_typeof(extra->'openai_oauth_passthrough')='boolean' THEN (extra->>'openai_oauth_passthrough')::boolean
      ELSE false END) THEN RETURN true; END IF;
- IF jsonb_typeof(mapping) IS DISTINCT FROM 'object' THEN mapping:='{}'::jsonb; END IF;
+ mapping:=s2a_private.account_model_mapping(platform,extra,mapping);
  IF NOT EXISTS(SELECT 1 FROM jsonb_each(mapping) WHERE jsonb_typeof(value)='string') THEN
   IF platform='openai' AND account_type='oauth' THEN
    normalized:=lower(btrim(regexp_replace(btrim(model),'^.*/','')));
@@ -350,7 +349,7 @@ BEGIN
     IF (account->>'credential_version')::bigint<>lease.credential_version THEN RETURN jsonb_build_object('error','account_credentials_changed','status',409); END IF;
     SELECT * INTO a FROM s2a_private.accounts WHERE id=lease.account_id;
     IF route IS NOT NULL THEN
-        route_mapping:=account->'credentials'->'model_mapping';
+        route_mapping:=s2a_private.account_model_mapping(a.platform,a.extra,account->'credentials'->'model_mapping');
         normalized_model:=btrim(routed_model);
         IF a.platform IN ('gemini','antigravity') AND normalized_model='gemini-3.1-pro-preview-customtools'
             THEN normalized_model:='gemini-3.1-pro-preview'; END IF;
@@ -365,7 +364,7 @@ BEGIN
         CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean
             WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END)
         || CASE WHEN p_model='__models__' THEN jsonb_build_object('model_metadata',a.extra->'upstream_model_metadata') ELSE '{}'::jsonb END,
-        'fast_policy',s2a_private.fast_policy_context(k.user_id,g.force_openai_fast AND g.platform IN ('openai','composite')),'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog THEN '{}'::jsonb ELSE coalesce(account->'credentials'->'model_mapping','{}') END,'include_upstream',true))
+        'fast_policy',s2a_private.fast_policy_context(k.user_id,g.force_openai_fast AND g.platform IN ('openai','composite')),'allow_image_generation',g.allow_image_generation,'model_allowlist',g.model_allowlist,'model_sources',jsonb_build_object('mapping',CASE WHEN native_gemini_catalog AND a.platform<>'antigravity' THEN '{}'::jsonb ELSE s2a_private.account_model_mapping(a.platform,a.extra,account->'credentials'->'model_mapping') END,'include_upstream',true))
         || CASE WHEN p_model='__models__' AND g.platform='openai' AND g.codex_models_manifest_config->'enabled' IS DISTINCT FROM 'true'::jsonb THEN jsonb_build_object('configured_model_sources',s2a_private.composite_catalog_sources(g.id)) ELSE '{}'::jsonb END
         || CASE WHEN gemini_sources IS NOT NULL THEN jsonb_build_object('gemini_catalog_sources',gemini_sources) ELSE '{}'::jsonb END
         || CASE WHEN video_binding IS NOT NULL THEN jsonb_build_object('upstream_model',video_binding->>'upstream_model') WHEN route IS NOT NULL THEN jsonb_build_object('upstream_model',coalesce(route_target,routed_model),'composite_route',route) ELSE '{}'::jsonb END;
@@ -373,6 +372,28 @@ END $$;
 ALTER FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.s2a_personal_acquire(text,text,uuid,bigint[],boolean,text,jsonb) TO service_role;
+-- Only an active discovery lease can publish the raw, complete upstream catalog.
+CREATE OR REPLACE FUNCTION public.s2a_personal_models_save(p_lease_id uuid,p_version bigint,p_models jsonb)
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE lease s2a_private.personal_gateway_leases%ROWTYPE; ids jsonb;
+BEGIN
+ IF jsonb_typeof(p_models) IS DISTINCT FROM 'array' THEN RETURN NULL; END IF;
+ IF jsonb_array_length(p_models) NOT BETWEEN 1 AND 1000 THEN RETURN NULL; END IF;
+ IF EXISTS(SELECT FROM jsonb_array_elements(p_models) m WHERE jsonb_typeof(m)<>'string'
+  OR length(m#>>'{}')>200 OR m#>>'{}' !~ '^[a-zA-Z0-9._-]+$') THEN RETURN NULL; END IF;
+ SELECT * INTO lease FROM s2a_private.personal_gateway_leases
+ WHERE id=p_lease_id AND credential_version<=p_version AND model='__models__' AND finished_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE;
+ IF NOT FOUND THEN RETURN NULL; END IF;
+ SELECT jsonb_agg(id ORDER BY id COLLATE "C") INTO ids FROM (SELECT DISTINCT jsonb_array_elements_text(p_models) AS id) m;
+ UPDATE s2a_private.accounts SET extra=coalesce(extra,'{}'::jsonb)||jsonb_build_object('upstream_model_ids',ids)
+ WHERE id=lease.account_id AND s2a_credential_version=p_version AND platform='antigravity'
+  AND deleted_at IS NULL AND status='active';
+ IF NOT FOUND THEN RETURN NULL; END IF;
+ RETURN s2a_private.account_model_mapping('antigravity',jsonb_build_object('upstream_model_ids',ids),s2a_private.account_credentials(lease.account_id)->'model_mapping');
+END $$;
+ALTER FUNCTION public.s2a_personal_models_save(uuid,bigint,jsonb) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_models_save(uuid,bigint,jsonb) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_models_save(uuid,bigint,jsonb) TO service_role;
 -- Keep provider token counts above the PostgreSQL integer range exact.
 ALTER TABLE public.usage_logs
  ALTER COLUMN input_tokens TYPE bigint,

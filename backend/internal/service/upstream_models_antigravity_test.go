@@ -95,6 +95,8 @@ func TestSyncUpstreamModelCatalogAntigravityPreservesDirectCapabilities(t *testi
 	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
 	require.NoError(t, err)
 	require.Equal(t, []string{"gemini-3.8-flash-high"}, catalog.Models)
+	require.Equal(t, catalog.Models, account.Extra["upstream_model_ids"])
+	require.True(t, account.IsModelSupported("gemini-3.8-flash-high"))
 	require.Contains(t, catalog.Metadata, "gemini-3.8-flash-high")
 	metadata := catalog.Metadata["gemini-3.8-flash-high"]
 	require.Equal(t, "Gemini 3.8 Flash High", metadata.DisplayName)
@@ -242,4 +244,38 @@ func TestConfiguredUpstreamModelsForCapabilitySyncSkipsInjectedAntigravityPassth
 	// 空映射走默认目录，其中的同名条目不是运行时补齐。
 	empty := &Account{Platform: PlatformAntigravity, Credentials: map[string]any{}}
 	require.Contains(t, configuredUpstreamModelsForCapabilitySync(empty), "gemini-3.8-flash-low")
+}
+
+func TestSyncUpstreamModelCatalogAntigravityIDsWithoutCapabilitiesAndFailure(t *testing.T) {
+	t.Setenv(antigravityForwardBaseURLEnv, "")
+	reject := false
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if reject {
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		_, _ = io.WriteString(w, `{"models":{"gemini-new":{},"claude-new":{},"gemini-4-argon-disabled":{}}}`)
+	}))
+	defer server.Close()
+	withAntigravityModelSyncEndpoints(t, server.URL, server.URL)
+	account := antigravityModelSyncAccount("Ultra")
+	account.Credentials["model_mapping"] = map[string]any{"stale": "stale", "alias": "gemini-new"}
+	repo := &upstreamModelMetadataRepoStub{}
+	svc := antigravityModelSyncService()
+	svc.accountRepo = repo
+	svc.httpUpstream = &httpUpstreamRecorder{resp: &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader(`{}`))}}
+	catalog, err := svc.SyncUpstreamModelCatalog(context.Background(), account)
+	require.NoError(t, err)
+	require.Equal(t, catalog.Models, repo.updates["upstream_model_ids"])
+	require.True(t, account.IsModelSupported("claude-new"))
+	require.True(t, account.IsModelSupported("gemini-4-argon-disabled"))
+	require.False(t, account.IsModelSupported("gemini-4-argon"))
+	require.False(t, account.IsModelSupported("stale"))
+	require.Equal(t, "gemini-new", account.GetMappedModel("alias"))
+	reject = true
+	repo.updates = nil
+	_, err = svc.SyncUpstreamModelCatalog(context.Background(), account)
+	require.Error(t, err)
+	require.Nil(t, repo.updates)
+	require.Equal(t, catalog.Models, account.Extra["upstream_model_ids"])
 }

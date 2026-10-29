@@ -604,6 +604,15 @@ export function splitModelMappingObject(
   return { allowedModels, modelMappings }
 }
 
+export function discoveredAntigravityMappings(rows: ModelMappingEntry[], ids: unknown): ModelMappingEntry[] {
+  if (!Array.isArray(ids) || !ids.length || ids.length > 1000 || ids.some(id => typeof id !== 'string' || !/^[a-zA-Z0-9._-]{1,200}$/.test(id))) return rows
+  const result = rows.filter(row => row.from !== row.to || row.from.includes('*'))
+  for (const id of ids as string[]) {
+    if (!result.some(row => row.from === id || row.from.endsWith('*') && id.startsWith(row.from.slice(0, -1)))) result.push({ from: id, to: id })
+  }
+  return result
+}
+
 export function buildModelMappingObject(
   mode: ModelRestrictionMode,
   allowedModels: string[],

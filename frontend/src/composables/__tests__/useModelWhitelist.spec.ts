@@ -4,7 +4,7 @@ vi.mock('@/api/admin/accounts', () => ({
   getAntigravityDefaultModelMapping: vi.fn()
 }))
 
-import { buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
+import { discoveredAntigravityMappings, buildModelMappingObject, getModelsByPlatform, getPresetMappingsByPlatform, splitModelMappingObject } from '../useModelWhitelist'
 import { BUILTIN_PLATFORM_CATALOG, resetPlatformCatalog, setPlatformCatalog } from '@/constants/platformCatalog'
 
 describe('useModelWhitelist', () => {
@@ -265,4 +265,10 @@ describe('useModelWhitelist', () => {
       modelMappings: [{ from: 'gpt-latest', to: 'gpt-5.4' }]
     })
   })
+})
+
+it('refreshes discovered Antigravity IDs while preserving custom routes', () => {
+  expect(discoveredAntigravityMappings([{from:'stale',to:'stale'},{from:'alias',to:'fresh'},{from:'gemini-*',to:'custom'}], ['fresh','gemini-new','gemini-4-argon-disabled'])).toEqual([{from:'alias',to:'fresh'},{from:'gemini-*',to:'custom'},{from:'fresh',to:'fresh'}])
+  const rows = [{from:'stale',to:'stale'}]
+  expect(discoveredAntigravityMappings(rows, ['bad*'])).toBe(rows)
 })

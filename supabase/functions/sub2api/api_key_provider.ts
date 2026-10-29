@@ -420,6 +420,7 @@ export async function nativeResponse(
   aliasModel?:string,
   started = Date.now(),
   transformValue?: (value:Item,streaming:boolean)=>Item,
+  onCatalog?: (value:Item)=>Promise<void>,
 ): Promise<Response> {
   if (!upstream.body) throw new HttpError(502, "invalid_upstream_response");
   if(protocol==='systemone'){
@@ -445,7 +446,10 @@ export async function nativeResponse(
         !value.promptFeedback)
     ) throw new HttpError(502, "invalid_upstream_response");
     if (protocol === "models") {
-      value = filterModelCatalog(allowlist,mappedCatalog(modelCatalog(platform, path, value),modelSources,platform),/\/models\/[^/]+$/.test(path));
+      const completeCatalog = !value.nextPageToken && !value.has_more;
+      value = modelCatalog(platform, path, value);
+      if(onCatalog && !/\/models\/[^/]+$/.test(path) && completeCatalog) await onCatalog(value);
+      value = filterModelCatalog(allowlist,mappedCatalog(value,modelSources,platform),/\/models\/[^/]+$/.test(path));
       if(aliasModel) {const entries=value.data??value.models;value=entries.find((entry:Item)=>(entry.id??entry.name?.replace(/^models\//,''))===aliasModel);if(!value)throw new HttpError(404,"model_not_found");}
     }
     const usage = protocol === "models"

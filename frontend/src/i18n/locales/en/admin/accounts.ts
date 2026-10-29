@@ -824,6 +824,7 @@ export default {
       fromModel: 'Request model',
       toModel: 'Target model',
       selectAllowedModels: 'Select allowed models. Leave empty to support all models.',
+      antigravityAutoMappingHint: 'Fetched models are mapped automatically by ID and updated on each refresh. Custom aliases and wildcard mappings take priority; group access restrictions still apply.',
       mapRequestModels:
         'Map request models to actual models. Left is the requested model, right is the actual model sent to API.',
       selectedModels: 'Selected {count} model(s)',

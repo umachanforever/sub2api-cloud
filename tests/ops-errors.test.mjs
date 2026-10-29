@@ -39,9 +39,9 @@ test('a recovered provider failure remains an upstream event without inventing a
 });
 test('exhausted account attempts produce one final request error linked to every provider failure',async()=>{
  const value=await gatewayFixture(()=>new Response('private-error',{status:500}));
- assert.equal((await value.request({model:'gpt-4.1',messages:[{role:'user',content:'private'}],stream:false})).status,503);
+ assert.equal((await value.request({model:'gpt-4.1',messages:[{role:'user',content:'private'}],stream:false})).status,502);
  assert.equal(value.events.filter(event=>event.kind==='upstream').length,2);
- const final=value.events.filter(event=>event.kind==='request');assert.equal(final.length,1);assert.equal(final[0].phase,'routing');assert.ok(value.events.every(event=>event.request_id===final[0].request_id));
+ const final=value.events.filter(event=>event.kind==='request');assert.equal(final.length,1);assert.equal(final[0].phase,'upstream');assert.ok(value.events.every(event=>event.request_id===final[0].request_id));
 });
 test('malformed requests retain a hashed key attribution without reading or storing their body',async()=>{
  const value=await gatewayFixture(()=>{throw Error('never');});
@@ -75,7 +75,7 @@ test('OAuth recovery and a subsequent provider failure retain two separate upstr
   assert.equal(new URL(url).hostname,'chatgpt.com');return new Response('private-body',{status:++providers===1?401:502});
  });
  const response=await handler(new Request('https://gateway/v1/responses',{method:'POST',headers:{authorization:'Bearer key','content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1',input:'hello',stream:false})}));
- assert.equal(response.status,503);assert.deepEqual(events.filter(event=>event.kind==='upstream').map(event=>event.status_code),[401,502]);assert.equal(events.filter(event=>event.kind==='request').length,1);
+ assert.equal(response.status,502);assert.deepEqual(events.filter(event=>event.kind==='upstream').map(event=>event.status_code),[401,502]);assert.equal(events.filter(event=>event.kind==='request').length,1);
  assert.equal(JSON.stringify(events).includes('private'),false);
 });
 

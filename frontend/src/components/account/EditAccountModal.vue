@@ -1573,7 +1573,7 @@
         <!-- Mapping Mode Only (no toggle for Antigravity) -->
         <div>
           <div class="mb-3 rounded-lg bg-purple-50 p-3 dark:bg-purple-900/20">
-            <p class="text-xs text-purple-700 dark:text-purple-400">{{ t('admin.accounts.mapRequestModels') }}</p>
+            <p class="text-xs text-purple-700 dark:text-purple-400">{{ t('admin.accounts.antigravityAutoMappingHint') }}</p>
           </div>
 
           <div class="mb-3 flex flex-wrap gap-2">
@@ -3488,6 +3488,7 @@ import {
   getPresetMappingsByPlatform,
   commonErrorCodes,
   buildModelMappingObject,
+  discoveredAntigravityMappings,
   splitModelMappingObject,
   isValidWildcardPattern
 } from '@/composables/useModelWhitelist'
@@ -4801,6 +4802,10 @@ const syncFormFromAccount = (newAccount: Account | null) => {
     antigravityModelMappings.value = []
   }
 
+  if (newAccount.platform === 'antigravity') {
+    antigravityModelMappings.value = discoveredAntigravityMappings(antigravityModelMappings.value, newAccount.extra?.upstream_model_ids)
+  }
+
   // Load quota control settings (Anthropic OAuth/SetupToken only)
   loadQuotaControlSettings(newAccount)
 
@@ -5102,14 +5107,9 @@ const syncAntigravityUpstreamModels = async () => {
       return
     }
 
-    let addedCount = 0
-    for (const model of upstreamModels) {
-      const exists = antigravityModelMappings.value.some((mapping) => mapping.from === model)
-      if (!exists) {
-        antigravityModelMappings.value.push({ from: model, to: model })
-        addedCount += 1
-      }
-    }
+    const previous = new Set(antigravityModelMappings.value.map(row => row.from))
+    antigravityModelMappings.value = discoveredAntigravityMappings(antigravityModelMappings.value, upstreamModels)
+    const addedCount = antigravityModelMappings.value.filter(row => !previous.has(row.from)).length
 
     const warnings = result.warnings ?? []
     const hasPartialMetadata = warnings.some(

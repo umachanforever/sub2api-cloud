@@ -34,6 +34,6 @@ test('OAuth response windows persist before settlement, including provider failu
    return new Response(status===200?'data: {"type":"response.completed","response":{"id":"response","output":[],"usage":{"input_tokens":1,"output_tokens":1}}}\n\n':'private-provider-error',{status,headers:{'content-type':status===200?'text/event-stream':'text/plain','x-codex-primary-used-percent':'99','x-codex-primary-window-minutes':'300','x-codex-primary-reset-after-seconds':'60'}});
   });
   const response=await handler(new Request('https://gateway/v1/responses',{method:'POST',headers:{authorization:'Bearer client-key','content-type':'application/json'},body:JSON.stringify({model:'gpt-4.1',input:'hello',stream:false})}));
-  assert.equal(response.status,status===200?200:503);assert.deepEqual(calls,['snapshot','finish']);assert.equal((await response.text()).includes('private'),false);
+  assert.equal(response.status,status);assert.deepEqual(calls,['snapshot','finish']);assert.equal((await response.text()).includes('private'),false);
  }
 });

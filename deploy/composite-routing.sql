@@ -50,8 +50,8 @@ BEGIN
  JOIN public.account_groups ag ON ag.account_id=a.id AND ag.group_id=p_group
  WHERE a.deleted_at IS NULL AND a.status='active' AND a.schedulable
   AND a.platform IN ('anthropic','openai','gemini','antigravity','grok','kimi','zhipu','deepseek','minimax','opencode_go','typesafe')
-  AND jsonb_typeof(s2a_private.account_credentials(a.id)->'model_mapping'->model)='string'
-  AND btrim(s2a_private.account_credentials(a.id)->'model_mapping'->>model)<>'';
+  AND jsonb_typeof(s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping')->model)='string'
+  AND btrim(s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping')->>model)<>'';
  IF cardinality(platforms)>1 THEN RETURN jsonb_build_object('error','composite_model_ambiguous','status',400); END IF;
  IF cardinality(platforms)=1 THEN RETURN jsonb_build_object('platform',platforms[1],'upstream_model',model,'source','account_model'); END IF;
  target:=s2a_private.composite_detect_platform(model);
@@ -69,7 +69,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
    WHEN a.platform='grok' THEN coalesce(nullif(btrim(c.value->>'base_url'),''),'https://api.x.ai') ~* '^https?://(([a-z0-9-]+[.])*api[.]x[.]ai|cli-chat-proxy[.]grok[.]com)[.]?(:[0-9]+)?(/|$)'
    ELSE false END,
   'mapping',coalesce((SELECT jsonb_object_agg(m.key,m.value) FROM jsonb_each(
-   CASE WHEN jsonb_typeof(c.value->'model_mapping')='object' THEN c.value->'model_mapping' ELSE '{}'::jsonb END) m
+   s2a_private.account_model_mapping(a.platform,a.extra,c.value->'model_mapping')) m
    WHERE jsonb_typeof(m.value)='string' AND btrim(m.value#>>'{}')<>''),'{}'::jsonb),
   'modalities',coalesce((SELECT jsonb_object_agg(m.key,m.value->'input_modalities') FROM jsonb_each(
    CASE WHEN jsonb_typeof(a.extra->'upstream_model_metadata'->'models')='object' THEN a.extra->'upstream_model_metadata'->'models' ELSE '{}'::jsonb END) m
@@ -95,8 +95,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
    'platform',a.platform,
    'passthrough',a.platform='openai' AND CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END,
    'mapping',coalesce((SELECT jsonb_object_agg(m.key,m.value) FROM jsonb_each(
-    CASE WHEN jsonb_typeof(s2a_private.account_credentials(a.id)->'model_mapping')='object'
-     THEN s2a_private.account_credentials(a.id)->'model_mapping' ELSE '{}'::jsonb END) m
+    s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping')) m
     WHERE jsonb_typeof(m.value)='string' AND btrim(m.value#>>'{}')<>''),'{}'::jsonb)
    ) ORDER BY a.platform,a.priority,a.id)
    FROM s2a_private.accounts a JOIN public.account_groups ag ON ag.account_id=a.id

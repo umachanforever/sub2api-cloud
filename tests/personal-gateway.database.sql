@@ -474,3 +474,45 @@ BEGIN
  IF s2a_private.prune_personal_gateway_leases()<>1000 OR s2a_private.prune_personal_gateway_leases()<>1 THEN RAISE EXCEPTION 'lease cleanup exceeded batch limit or lost remaining work'; END IF;
 END $$;
 ROLLBACK;
+
+BEGIN;
+SET LOCAL ROLE s2a_management;
+DO $$
+DECLARE a bigint; b bigint; lease uuid; version bigint; result jsonb;
+BEGIN
+ IF has_function_privilege('anon','public.s2a_personal_models_save(uuid,bigint,jsonb)','EXECUTE')
+  OR has_function_privilege('authenticated','public.s2a_personal_models_save(uuid,bigint,jsonb)','EXECUTE')
+  OR NOT has_function_privilege('service_role','public.s2a_personal_models_save(uuid,bigint,jsonb)','EXECUTE') THEN RAISE EXCEPTION 'model discovery ACL mismatch'; END IF;
+ IF s2a_private.account_model_mapping('antigravity','{"upstream_model_ids":["fresh","gemini-new","gemini-4-argon-disabled"]}',
+  '{"stale":"stale","alias":"fresh","gemini-*":"custom"}') IS DISTINCT FROM '{"fresh":"fresh","alias":"fresh","gemini-*":"custom"}'::jsonb
+  OR s2a_private.account_model_mapping('openai','{"upstream_model_ids":["fresh"]}','{"stale":"stale"}') IS DISTINCT FROM '{"stale":"stale"}'::jsonb
+  OR s2a_private.account_model_mapping('antigravity','{"upstream_model_ids":["bad*"]}','{"stale":"stale"}') IS DISTINCT FROM '{"stale":"stale"}'::jsonb
+  OR s2a_private.account_mapping_accepts('antigravity','oauth','{"upstream_model_ids":["fresh"]}','{"stale":"stale"}','stale')
+  OR NOT s2a_private.account_mapping_accepts('antigravity','oauth','{"upstream_model_ids":["fresh"]}','{"stale":"stale"}','fresh') THEN RAISE EXCEPTION 'automatic mapping mismatch'; END IF;
+ INSERT INTO public.accounts(name,platform,type,credentials,extra) VALUES('auto-map','antigravity','oauth','{"model_mapping":{"stale":"stale","alias":"fresh","gemini-*":"custom"}}','{"retained":true}') RETURNING id,s2a_credential_version INTO a,version;
+ INSERT INTO public.accounts(name,platform,type,credentials) VALUES('auto-map-other','antigravity','oauth','{}') RETURNING id INTO b;
+ INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at)
+ VALUES(gen_random_uuid(),0,0,0,a,version,'__models__',false,'auto-map',now()+interval '1 minute') RETURNING id INTO lease;
+ result:=public.s2a_personal_models_save(lease,version,'["fresh","fresh","gemini-new","gemini-4-argon-disabled"]');
+ IF result IS DISTINCT FROM '{"fresh":"fresh","alias":"fresh","gemini-*":"custom"}'::jsonb
+  OR (SELECT s2a_credential_version FROM public.accounts WHERE id=a)<>version
+  OR (SELECT extra->'retained' FROM public.accounts WHERE id=a) IS DISTINCT FROM 'true'::jsonb
+  OR (SELECT extra->'upstream_model_ids' FROM public.accounts WHERE id=b) IS NOT NULL THEN RAISE EXCEPTION 'discovery save changed credentials or unrelated account'; END IF;
+ UPDATE public.accounts SET credentials=credentials||'{"access_token":"refreshed"}'::jsonb WHERE id=a;
+ IF public.s2a_personal_models_save(lease,version,'["fresh"]') IS NOT NULL THEN RAISE EXCEPTION 'old credentials overwrote new catalog'; END IF;
+ SELECT s2a_credential_version INTO version FROM public.accounts WHERE id=a;
+ IF public.s2a_personal_models_save(lease,version,'["fresh"]') IS NULL THEN RAISE EXCEPTION 'OAuth refresh blocked model save'; END IF;
+ IF public.s2a_personal_models_save(lease,version,'[]') IS NOT NULL
+  OR public.s2a_personal_models_save(lease,version,'["bad*"]') IS NOT NULL
+  OR public.s2a_personal_models_save(lease,version,'[1]') IS NOT NULL
+  OR public.s2a_personal_models_save(gen_random_uuid(),version,'["fresh"]') IS NOT NULL THEN RAISE EXCEPTION 'invalid discovery accepted'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET credential_version=version+1 WHERE id=lease;
+ IF public.s2a_personal_models_save(lease,version,'["other"]') IS NOT NULL THEN RAISE EXCEPTION 'stale credential accepted'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET credential_version=version,model='fresh' WHERE id=lease;
+ IF public.s2a_personal_models_save(lease,version,'["other"]') IS NOT NULL THEN RAISE EXCEPTION 'inference lease accepted'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET model='__models__',expires_at=now()-interval '1 second' WHERE id=lease;
+ IF public.s2a_personal_models_save(lease,version,'["other"]') IS NOT NULL THEN RAISE EXCEPTION 'expired discovery accepted'; END IF;
+ UPDATE s2a_private.personal_gateway_leases SET expires_at=now()+interval '1 minute',finished_at=now() WHERE id=lease;
+ IF public.s2a_personal_models_save(lease,version,'["other"]') IS NOT NULL THEN RAISE EXCEPTION 'finished discovery accepted'; END IF;
+END $$;
+ROLLBACK;
