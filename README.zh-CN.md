@@ -64,6 +64,8 @@ curl "$OPENAI_BASE_URL/models" \
 
 `gpt-6`、`gpt-6.1` 等别名默认选择对应的 `-sol` 版本，账号模型映射优先。实际可用模型取决于订阅账号。
 
+聊天生成的图片在 JSON 和 SSE 响应中使用内嵌 Markdown data URL，与 `codex-agent-bridge` 保持一致。OpenAI OAuth 与 Antigravity 聊天出图不再依赖额外下载 Storage 签名链接；客户端需支持内嵌图片，分组图片权限仍然生效。独立图片任务的存储功能与旧签名链接历史记录保持兼容。
+
 ## 详细文档
 
 [部署说明](docs/DEPLOYMENT.md) · [架构说明](docs/ARCHITECTURE.md) · [参与贡献](CONTRIBUTING.md)

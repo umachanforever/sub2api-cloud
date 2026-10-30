@@ -1,4 +1,3 @@
-import {publishChatMedia} from './chat_media.ts';
 import {enableChatImages,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
@@ -518,6 +517,7 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
+      imageChat=chat&&platform==='antigravity'&&!apiKey&&!structuredChat&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===true;
       const nativeAnthropicBridge=(platform==='anthropic'||platform==='antigravity')&&!apiKey&&(chat||protocol==='responses');
       const vertexCache={scope:db,identity:JSON.stringify([account.id,account.credential_version,account.proxy_id??null])};
       const nativeGeminiBridge=platform==='gemini'&&(chat||messages||protocol==='responses');
@@ -530,7 +530,7 @@ async function proxyWithIdentity(
       let anthropicBody=forwardedBody;
       if(nativeAnthropicBridge){
         let source;try{source=chat?chatToAPIResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
-        chatBridge=await originalAnthropicBridge(source,keyHash);anthropicBody=chatBridge.body;
+        chatBridge=await originalAnthropicBridge(source,keyHash,imageChat?IMAGE_CHAT_FRAME_LIMIT:1_048_576);anthropicBody=chatBridge.body;
       }
       if(account.type==='service_account'&&platform==='anthropic'&&(messages||nativeAnthropicBridge)){
         const credentials=await decryptSecret(account,db.config.encryptionKey);
@@ -847,7 +847,8 @@ async function proxyWithIdentity(
         await upstream.body?.cancel();
         throw new HttpError(502, "invalid_upstream_stream");
       }
-      if(imageChat)upstream=publishChatMedia(db,upstream,lease_id,signal);
+      // Keep inline image bytes in Chat Completions, matching codex-agent-bridge.
+      // Desktop clients can consume them without a second storage URL fetch.
       const tracked = trackedStream(
         upstream.body!,
         signal,

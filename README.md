@@ -64,6 +64,8 @@ Open usage directly in a browser: `https://<project-ref>.supabase.co/functions/v
 
 Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless an account mapping overrides them. Available models depend on your subscription account.
 
+Chat-generated images use inline Markdown data URLs in JSON and SSE responses, matching `codex-agent-bridge`. OpenAI OAuth and Antigravity chat output no longer requires a separate signed Storage URL download. Clients must support inline images; image permissions still apply. Independent image-task storage and existing signed-link history remain supported.
+
 ## Documentation
 
 [Deployment](docs/DEPLOYMENT.md) · [Architecture](docs/ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md)

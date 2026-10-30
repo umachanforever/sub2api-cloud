@@ -50,7 +50,7 @@ function rememberReasoning(scope:string,event:Item){
   }
 }
 
-async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>,protocol='chat'):AsyncGenerator<Item>{
+async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>,protocol='chat',maxFrame=1_048_576):AsyncGenerator<Item>{
   const decoder=new TextDecoder();let pending='';
   const parse=(frame:string)=>{
     const data=frame.split(/\r?\n/).filter(line=>line.startsWith('data:')).map(line=>line.slice(5).trimStart()).join('\n');
@@ -64,18 +64,18 @@ async function* chatChunks(reader:ReadableStreamDefaultReader<Uint8Array>,protoc
     const {done,value}=await reader.read();pending+=decoder.decode(value,{stream:!done});
     let boundary:RegExpExecArray|null;
     while((boundary=/\r?\n\r?\n/.exec(pending))){
-      if(boundary.index>1_048_576)throw new HttpError(502,'upstream_event_too_large');
+      if(boundary.index>maxFrame)throw new HttpError(502,'upstream_event_too_large');
       const frame=parse(pending.slice(0,boundary.index));pending=pending.slice(boundary.index+boundary[0].length);
       if(frame?.done)return;if(frame?.value)yield frame.value;
     }
-    if(pending.length>1_048_576)throw new HttpError(502,'upstream_event_too_large');
+    if(pending.length>maxFrame)throw new HttpError(502,'upstream_event_too_large');
     if(done){const frame=parse(pending);if(frame?.value)yield frame.value;return;}
   }
 }
 
 export type OriginalChatBridge={body:Item;close():void;response(upstream:Response):Response};
 export async function originalChatBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'chat');}
-export async function originalAnthropicBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'anthropic');}
+export async function originalAnthropicBridge(body:Item,scope:string,maxFrame=1_048_576):Promise<OriginalChatBridge>{return originalBridge(body,scope,'anthropic',maxFrame);}
 export async function originalGeminiBridge(body:Item,scope:string):Promise<OriginalChatBridge>{return originalBridge(body,scope,'gemini');}
 export async function originalGeminiRestBody(body:Item):Promise<Item>{return (await converter())('gemini_rest',body);}
 export async function originalFastPolicy(body:Item):Promise<{action:string;message:string}>{return (await converter())('fast_policy',body);}
@@ -94,7 +94,7 @@ export async function originalMessagesToResponses(body:Item):Promise<Item>{
   if(body.thinking===undefined&&body.output_config?.effort===undefined&&!/^gpt-(?:5|6)/.test(String(body.model??''))){delete converted.reasoning;delete converted.include;}
   return converted;
 }
-async function originalBridge(body:Item,scope:string,protocol:string):Promise<OriginalChatBridge>{
+async function originalBridge(body:Item,scope:string,protocol:string,maxFrame=1_048_576):Promise<OriginalChatBridge>{
   if(Array.isArray(body.input))rememberReasoning(scope,{response:{output:body.input}});
   const call=await converter(),opened=call(`open_${protocol}`,body,undefined,rememberedReasoning(scope,body.input));
   let closed=false;
@@ -117,7 +117,7 @@ async function originalBridge(body:Item,scope:string,protocol:string):Promise<Or
           }else{
             const contentType=upstream.headers.get('content-type');
             if(contentType&&!contentType.includes('text/event-stream'))throw new HttpError(502,'invalid_upstream_stream');
-            for await(const chunk of chatChunks(reader,protocol))for(const event of call(`chunk_${protocol}`,chunk,opened.id)??[]){rememberReasoning(scope,event);yield event;}
+            for await(const chunk of chatChunks(reader,protocol,maxFrame))for(const event of call(`chunk_${protocol}`,chunk,opened.id)??[]){rememberReasoning(scope,event);yield event;}
             for(const event of call(`finish_${protocol}`,undefined,opened.id)??[]){rememberReasoning(scope,event);yield event;}
           }
         }catch{

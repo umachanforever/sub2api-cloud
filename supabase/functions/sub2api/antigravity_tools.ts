@@ -1,7 +1,6 @@
 import {Database,HttpError} from './db.ts';
 import {codeAssistFrames,normalizeCodeAssist} from './google_oauth.ts';
 import {groundingText} from './antigravity_claude.ts';
-import {publishChatImage} from './chat_media.ts';
 import {chatImageMarkdown,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 type Item=Record<string,any>;
 export type AntigravityToolContext={db:Database;leaseId:string;images:boolean;signal:AbortSignal};
@@ -32,7 +31,7 @@ export function enableAntigravityTools(envelope:Item,images:boolean):Set<string>
  if(!tools.length&&body.toolConfig?.functionCallingConfig?.mode==='NONE')body.toolConfig={...body.toolConfig,functionCallingConfig:{mode:'AUTO'}};
  const instructions=[
   names.has(searchName)?`Use ${searchName} for current news, time-sensitive facts and explicit web searches. Cite its source URLs. Do not claim to have searched without a successful tool result.`:'',
-  names.has(imageName)?`When asked to create or edit an image, call ${imageName}. Display the returned image Markdown exactly. Never claim image generation is unavailable when this tool is offered, or claim success when it fails.`:'',
+  names.has(imageName)?`When asked to create or edit an image, call ${imageName}. The gateway displays generated images automatically; acknowledge success without inventing image URLs. Never claim image generation is unavailable when this tool is offered, or claim success when it fails.`:'',
  ].filter(Boolean).join('\n');
  body.systemInstruction={...body.systemInstruction,parts:[...(body.systemInstruction?.parts??[]),{text:instructions}]};
  return names;
@@ -42,13 +41,14 @@ export function enableAntigravityTools(envelope:Item,images:boolean):Set<string>
 export function antigravityHostedResponse(initial:Response,envelope:Item,names:Set<string>,send:Send,context:AntigravityToolContext):Response{
  const abort=new AbortController(),signal=AbortSignal.any([context.signal,abort.signal]),encoder=new TextEncoder();
  let reader:ReadableStreamDefaultReader<Item>|undefined;
- const cache=new Map<string,string>(),totals:Item={},generated:string[]=[];let visibleText='';
+ const totals:Item={},generated:string[]=[];let visibleText='';
  async function image(part:Item):Promise<string>{
   if(!context.images)throw new HttpError(403,'image_generation_forbidden');
   const data=part.inlineData??part.inline_data,mime=data?.mimeType??data?.mime_type;
   if(!['image/png','image/jpeg','image/webp'].includes(mime))throw new HttpError(502,'invalid_generated_image');
   const item={type:'image_generation_call',status:'completed',result:data.data,output_format:mime.slice(6)};
-  await publishChatImage(context.db,item,context.leaseId,signal,cache);return chatImageMarkdown(item);
+  // Match OpenAI chat output without requiring private storage or signed URL fetches.
+  return chatImageMarkdown(item);
  }
  async function execute(call:Item):Promise<Item>{
   const generate=call.name===imageName,text=argument(call.args?.[generate?'prompt':'query'],generate?16000:4000);
@@ -60,7 +60,9 @@ export function antigravityHostedResponse(initial:Response,envelope:Item,names:S
   const candidate=result.candidates?.[0],parts:Item[]=candidate?.content?.parts??[];
   if(generate){
    const images=parts.filter(part=>part.inlineData||part.inline_data);if(!images.length||images.length>4)throw new HttpError(502,'image_generation_failed');
-   let markdown='';for(const part of images)markdown+=await image(part);generated.push(markdown);return {image_markdown:markdown};
+   let markdown='';for(const part of images)markdown+=await image(part);generated.push(markdown);
+   // Deliver bytes to the client, not as megabytes of text in the parent model's context.
+   return {image_generated:true};
   }
   const sources=groundingText({groundingChunks:candidate?.groundingMetadata?.groundingChunks});
   if(!sources)throw new HttpError(502,'web_search_no_sources');

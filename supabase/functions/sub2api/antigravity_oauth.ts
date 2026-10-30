@@ -1,3 +1,4 @@
+import {IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {enableAntigravityTools,antigravityHostedResponse,type AntigravityToolContext} from './antigravity_tools.ts';
 import { accountFetch } from './account_proxy.ts';
 import { catalogJSON } from './account_models.ts';
@@ -107,6 +108,8 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
   if (!response.ok) return response;
   if (outgoing.catalog) return modelCatalog(response, path, request);
   if (hosted) response=antigravityHostedResponse(response,envelope,names,send,hosted);
-  const normalized = await normalizeCodeAssist(response, outgoing.streaming);
-  return outgoing.claudeModel ? antigravityToClaude(normalized, outgoing.streaming, outgoing.claudeModel) : normalized;
+  // Inline generated images must survive every downstream SSE conversion stage.
+  const maxFrame=hosted?.images?IMAGE_CHAT_FRAME_LIMIT:1_048_576;
+  const normalized = await normalizeCodeAssist(response, outgoing.streaming, maxFrame);
+  return outgoing.claudeModel ? antigravityToClaude(normalized, outgoing.streaming, outgoing.claudeModel, maxFrame) : normalized;
 }

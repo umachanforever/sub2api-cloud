@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {enableAntigravityTools,antigravityHostedResponse} from '../supabase/functions/sub2api/antigravity_tools.ts';
 import {normalizeCodeAssist} from '../supabase/functions/sub2api/google_oauth.ts';
+/** Synthetic PNG fixture, with no provider data or storage dependency. */
+const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAaX2RaAAAAAASUVORK5CYII=';
 const source=values=>new Response(values.map(response=>'data: '+JSON.stringify({response})+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}});
 const value=(parts,usage=1)=>({candidates:[{content:{role:'model',parts},finishReason:'STOP'}],usageMetadata:{promptTokenCount:usage,candidatesTokenCount:usage}});
 const envelope=model=>({model,requestType:'agent',request:{contents:[{role:'user',parts:[{text:'Question'}]}],systemInstruction:{parts:[{text:'Original'}]}}});
@@ -35,29 +37,25 @@ test('hosted search runs in the cloud and resumes the original model with source
  const result=await complete(antigravityHostedResponse(source([value([{text:''},call('s2a_web_search'),{text:''}],10)]),body,names,send,context(true)));
  assert.equal(dispatched,2);assert.match(text(result),/Answer/);assert.ok(!JSON.stringify(result).includes('functionCall'));assert.equal(result.usageMetadata.promptTokenCount,18);assert.equal(result.usageMetadata.candidatesTokenCount,18);
 });
+/** Fail immediately if chat generation attempts storage access. */
 function storageContext(){
- let uploads=0;
- const c={...context(true),db:{config:{url:'https://project.supabase.co',serviceKey:'private'},rpc:async(name,args)=>{assert.equal(name,'s2a_chat_media_register');assert.equal(args.p_lease_id,'lease');return true;},fetchImpl:async(url,init)=>{
-  if(url.includes('/object/sign/'))return Response.json({signedURL:new URL(url).pathname.replace('/storage/v1','')+'?token=signed'});
-  uploads++;assert.equal(init.body.length,5);return Response.json({});
- }}};
- return {c,uploads:()=>uploads};
+ return {c:{...context(true),db:{rpc:()=>assert.fail('unexpected storage RPC'),fetchImpl:()=>assert.fail('unexpected storage upload')}},uploads:()=>0};
 }
-test('image tool uploads bytes privately and returns HTTPS Markdown through the selected model',async()=>{
+test('image tool returns inline Markdown without storage or base64 in the parent model context',async()=>{
  const body=envelope('gemini-3-flash'),names=enableAntigravityTools(body,true),f=storageContext();let sent=0;
  const send=async request=>{
-  if(++sent===1){assert.equal(request.model,'gemini-3.1-flash-image');assert.deepEqual(request.request.generationConfig.responseModalities,['TEXT','IMAGE']);return source([value([{inlineData:{mimeType:'image/png',data:'aGVsbG8='}}])]);}
-  const markdown=request.request.contents[2].parts[0].functionResponse.response.image_markdown;assert.match(markdown,/https:/);return source([value([{text:markdown}])]);
+  if(++sent===1){assert.equal(request.model,'gemini-3.1-flash-image');assert.deepEqual(request.request.generationConfig.responseModalities,['TEXT','IMAGE']);return source([value([{inlineData:{mimeType:'image/png',data:png}}])]);}
+  assert.deepEqual(request.request.contents[2].parts[0].functionResponse.response,{image_generated:true});assert.ok(!JSON.stringify(request).includes(png));return source([value([{text:'Done'}])]);
  };
- const result=await complete(antigravityHostedResponse(source([value([call('s2a_generate_image')])]),body,names,send,f.c));assert.equal(f.uploads(),1);assert.match(text(result),/!\[Generated image\]\(https:/);assert.doesNotMatch(text(result),/base64|private/);assert.equal(text(result).match(/!\[Generated image\]/g).length,1);
+ const result=await complete(antigravityHostedResponse(source([value([call('s2a_generate_image')])]),body,names,send,f.c));assert.equal(f.uploads(),0);assert.match(text(result),/!\[Generated image\]\(data:image\/png;base64,/);assert.doesNotMatch(text(result),/https:|private/);assert.equal(text(result).match(/!\[Generated image\]/g).length,1);
 });
 test('generated images reach the client when the parent only acknowledges completion',async()=>{
  const body=envelope('gemini-3-flash'),names=enableAntigravityTools(body,true),f=storageContext();let sent=0;
- const send=async()=>++sent===1?source([value([{inlineData:{mimeType:'image/png',data:'aGVsbG8='}}])]):source([value([{text:'Image generated.'}])]);
- const result=await complete(antigravityHostedResponse(source([value([call('s2a_generate_image')])]),body,names,send,f.c));assert.match(text(result),/Image generated/);assert.match(text(result),/!\[Generated image\]\(https:/);assert.equal(f.uploads(),1);
+ const send=async()=>++sent===1?source([value([{inlineData:{mimeType:'image/png',data:png}}])]):source([value([{text:'Image generated.'}])]);
+ const result=await complete(antigravityHostedResponse(source([value([call('s2a_generate_image')])]),body,names,send,f.c));assert.match(text(result),/Image generated/);assert.match(text(result),/!\[Generated image\]\(data:image\/png;base64,/);assert.equal(f.uploads(),0);
 });
 test('direct Gemini image output is published instead of being dropped by chat conversion',async()=>{
- const body=envelope('gemini-3.1-flash-image'),names=enableAntigravityTools(body,true),f=storageContext();const result=await complete(antigravityHostedResponse(source([value([{inlineData:{mimeType:'image/png',data:'aGVsbG8='}}])]),body,names,()=>assert.fail('unexpected delegate'),f.c));assert.match(text(result),/https:/);assert.equal(f.uploads(),1);
+ const body=envelope('gemini-3.1-flash-image'),names=enableAntigravityTools(body,true),f=storageContext();const result=await complete(antigravityHostedResponse(source([value([{inlineData:{mimeType:'image/png',data:png}}])]),body,names,()=>assert.fail('unexpected delegate'),f.c));assert.ok(text(result).includes('data:image/png;base64,'+png));assert.equal(f.uploads(),0);
 });
 test('ordinary text stays streaming and cancellation prevents subsequent tool dispatch',async()=>{
  const body=envelope('gemini-3-flash'),names=enableAntigravityTools(body,true);let cancelled=false;
@@ -89,6 +87,33 @@ test('Chatbox requests execute Antigravity search without exposing client tool c
 test('delegated searches reject unsafe source URLs and never invent successful results',async()=>{
  const body=envelope('gemini-3-flash'),names=enableAntigravityTools(body,false);
  const response=antigravityHostedResponse(source([value([call('s2a_web_search')])]),body,names,async()=>{const v=value([{text:'Unverified'}]);v.candidates[0].groundingMetadata={groundingChunks:[{web:{uri:'javascript:alert(1)',title:'Unsafe'}}]};return source([v]);},context(false));await assert.rejects(new Response(response.body).text(),/web_search_no_sources/);
+});
+
+test('large inline images survive every Antigravity chat conversion in JSON and SSE',async()=>{
+ const {proxy}=await import('../supabase/functions/sub2api/proxy.ts');
+ // A synthetic PNG plus padding crosses the old 1 MiB event bound without provider calls.
+ const data=Buffer.concat([Buffer.from(png,'base64'),Buffer.alloc(900_000)]).toString('base64');
+ for(const stream of [false,true])for(const model of ['gemini-3-flash','claude-sonnet-4-6']){
+  let sends=0;const finishes=[];
+  const db={config:{dataModel:'native'},rpc:async(name,args)=>{
+   if(name==='s2a_personal_acquire')return {lease_id:'lease',allow_image_generation:true,account:{id:'73',platform:'antigravity',type:'oauth',credential_storage:'vault',credential_version:1,credentials:{access_token:'private',project_id:'private-project',expires_at:Date.now()+3600000}}};
+   if(name==='s2a_personal_finish'){finishes.push(args);return null;}
+   assert.fail('unexpected RPC: '+name);
+  },fetchImpl:async()=>{
+   if(++sends===1)return source([value([call('s2a_generate_image')])]);
+   if(sends===2)return source([value([{inlineData:{mimeType:'image/png',data}}])]);
+   return source([value([{text:'Done'}])]);
+  }};
+  const request=new Request('https://edge/v1/chat/completions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({model,stream,messages:[{role:'user',content:'Draw an image'}]})});
+  const response=await proxy(request,'/v1/chat/completions','key',db,{requestId:crypto.randomUUID(),started:Date.now()});assert.equal(response.status,200);
+  let content;
+  if(stream){
+   const result=await response.text();assert.ok(result.includes('[DONE]'));assert.ok(!result.includes('upstream_error'));
+   content=result.split('\n').filter(line=>line.startsWith('data: {')).map(line=>JSON.parse(line.slice(6))).map(chunk=>chunk.choices?.[0]?.delta?.content??'').join('');
+  }else content=(await response.json()).choices[0].message.content;
+  assert.ok(content.includes('![Generated image](data:image/png;base64,'+data+')'));assert.equal(content.split('![Generated image]').length,2);
+  assert.equal(sends,3);assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');
+ }
 });
 
 test('hosted tool loops stop at a bounded number of upstream requests',async()=>{

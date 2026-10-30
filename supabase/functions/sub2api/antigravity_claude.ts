@@ -148,7 +148,7 @@ export function groundingText(grounding: Item | undefined): string {
   return (queries.length ? '\n\n---\nWeb search queries: ' + queries.join(', ') : '') + (links.length ? '\n\nSources:\n' + links.join('\n') : '');
 }
 function reason(finish: string, tools: boolean) { return finish === 'MAX_TOKENS' ? 'max_tokens' : finish !== 'STOP' ? 'refusal' : tools ? 'tool_use' : 'end_turn'; }
-export async function antigravityToClaude(response: Response, streaming: boolean, model: string): Promise<Response> {
+export async function antigravityToClaude(response: Response, streaming: boolean, model: string, maxFrame=1_048_576): Promise<Response> {
   if (!response.ok) return response;
   const id = 'msg_' + crypto.randomUUID();
   if (!streaming) {
@@ -198,10 +198,10 @@ export async function antigravityToClaude(response: Response, streaming: boolean
       pending += decoder.decode(bytes, { stream: true });
       let boundary;
       while ((boundary = /\r?\n\r?\n/.exec(pending))) {
-        if (boundary.index > 1048576) throw new HttpError(502, 'upstream_event_too_large');
+        if (boundary.index > maxFrame) throw new HttpError(502, 'upstream_event_too_large');
         frame(pending.slice(0, boundary.index), controller); pending = pending.slice(boundary.index + boundary[0].length);
       }
-      if (pending.length > 1048576) throw new HttpError(502, 'upstream_event_too_large');
+      if (pending.length > maxFrame) throw new HttpError(502, 'upstream_event_too_large');
     },
     flush(controller) {
       pending += decoder.decode(); if (pending.trim()) frame(pending, controller);

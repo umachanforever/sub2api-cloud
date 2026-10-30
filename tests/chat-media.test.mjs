@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {publishChatMedia,cleanupChatMedia} from '../supabase/functions/sub2api/chat_media.ts';
 import {completedResponse,responseToChat} from '../supabase/functions/sub2api/openai_protocol.ts';
-const image={type:'image_generation_call',id:'img-1',status:'completed',result:'aGVsbG8=',output_format:'png'};
+const image={type:'image_generation_call',id:'img-1',status:'completed',result:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAaX2RaAAAAAASUVORK5CYII=',output_format:'png'};
 const source=events=>new Response(events.map(e=>'data: '+JSON.stringify(e)+'\n\n').join(''),{headers:{'content-type':'text/event-stream'}});
 test('chat images upload once, stay private and use seven-day HTTPS signatures',async()=>{
  let uploads=0,registered=0,signed=0;
  const db={config:{url:'https://project.supabase.co',serviceKey:'private'},rpc:async(name,args)=>{assert.equal(name,'s2a_chat_media_register');assert.equal(args.p_lease_id,'lease');registered++;return true;},fetchImpl:async(url,init)=>{
   if(url.includes('/object/sign/')){signed++;assert.equal(JSON.parse(init.body).expiresIn,604800);return Response.json({signedURL:new URL(url).pathname.replace('/storage/v1','')+'?token=capability'});}
-  uploads++;assert.equal(init.body.length,5);return Response.json({});
+  uploads++;assert.equal(init.body.length,Buffer.from(image.result,'base64').length);return Response.json({});
  }};
  const upstream=source([{type:'response.output_item.done',output_index:0,item:image},{type:'response.completed',response:{status:'completed',output:[image]}}]);
  const completed=await completedResponse(publishChatMedia(db,upstream,'lease',new AbortController().signal).body);
