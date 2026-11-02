@@ -68,6 +68,8 @@ Gemini and Antigravity model lists show only models that complete an actual infe
 
 For native Gemini chat requests targeting `gemini-3-flash` or `gemini-3-flash-preview`, the gateway replaces unsupported IMAGE output modalities with TEXT and removes image-output configuration. User messages remain unchanged and the model supplies its own answer. Image models retain their generation options; provider errors remain errors. Native Gemini requests also restore gateway-generated Base64 image Markdown in model history to original inline image parts, preventing image bytes from exhausting the text context window.
 
+For Responses clients that did not declare a web-search tool, automatic gateway search returns answer text and citations without exposing its internal tool events. Explicitly declared search tools retain their native events.
+
 Chat supports native image generation. WorkBuddy displays original-image cards inline; click to preview, save or copy, without automatically opening the side panel. This requires client file tools and permission. Other clients retain inline images.
 
 ## Documentation

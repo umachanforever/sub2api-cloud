@@ -6,7 +6,7 @@ import {sseHeartbeat} from './sse_heartbeat.ts';
 import {nativeImageFileTool,NATIVE_IMAGE_FILE_GUIDANCE} from './chat_image_delivery.ts';
 import {enableChatImages,usesChatImageFiles,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
-import {enableNativeSearch} from './search_model.ts';
+import {enableNativeSearch,implicitSearchResponse} from './search_model.ts';
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
 import {normalizeServiceTier,serviceTierForUsage} from './service_tier.ts';
 import {configuredCodexCatalog,type ConfiguredModelSources} from './configured_codex_catalog.ts';
@@ -886,6 +886,7 @@ async function proxyWithIdentity(
       if (imageChat && usesChatImageFiles(body!)) {
         upstream = publishChatMedia(db, upstream, lease_id, signal, body!);
       }
+      if(autoSearch&&protocol==='responses')upstream=implicitSearchResponse(upstream,body!,imageChat?IMAGE_CHAT_FRAME_LIMIT:1_048_576);
       const tracked = trackedStream(
         upstream.body!,
         signal,
