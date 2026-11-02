@@ -49,13 +49,14 @@ test('native Gemini scope fallback passes through gateway catalog filtering and 
   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_allowlist:{enabled:true,models:['gemini-3.1-pro-preview-customtools']},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
+  if(String(url).includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
   assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models');
   return Response.json({error:{message:'insufficient authentication scopes'}},{status:403});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
  assert.equal(response.status,200);const result=await response.json();
  assert.deepEqual(result.models.map(model=>model.name),['models/gemini-3.1-pro-preview-customtools']);
- assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
+ assert.equal(finishes.length,2);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
 });
 
 test('native Gemini catalog preserves upstream metadata and opaque pagination through the gateway',async()=>{
@@ -64,10 +65,11 @@ test('native Gemini catalog preserves upstream metadata and opaque pagination th
  const value={models:[{name:'models/gemini-future',extension:{newCapability:true}}],nextPageToken:'opaque-next',extension:'native'};
  const app=createBackendHandler(config,async(url,init)=>{
   if(String(url).endsWith('/s2a_personal_acquire')){
-   assert.equal(JSON.parse(init.body).p_billing_context.inbound_endpoint,'/v1beta/models');
+   assert.match(JSON.parse(init.body).p_billing_context.inbound_endpoint,/^\/v1beta\/models/);
    return Response.json({lease_id:'lease',gemini_catalog_sources:{has_antigravity:true,sources:[{'gemini-future':'target','gemini-extra':'target','gemini-*':'target'}]},model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   }
   if(String(url).includes('/rpc/'))return Response.json({applied:true});
+  if(String(url).includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
   const target=new URL(url);assert.equal(target.searchParams.get('pageToken'),'opaque-first');assert.equal(target.searchParams.get('pageSize'),'2');
   return Response.json(value);
  });
@@ -77,7 +79,7 @@ test('native Gemini catalog preserves upstream metadata and opaque pagination th
  assert.deepEqual(merged.models.find(model=>model.name==='models/gemini-future'),value.models[0]);
  assert.equal(merged.models.filter(model=>model.name==='models/gemini-future').length,1);
  assert.ok(merged.models.some(model=>model.name==='models/gemini-extra'));
- assert.ok(merged.models.some(model=>model.name==='models/gemini-*'));
+ assert.ok(!merged.models.some(model=>model.name==='models/gemini-*'));
 });
 
 test('Antigravity effective catalogs include original defaults and preserve wildcard overrides',async()=>{
@@ -93,12 +95,12 @@ test('Antigravity effective catalogs include original defaults and preserve wild
  assert.equal((await antigravityOnlyCatalog({has_antigravity:true,sources:[]},undefined,'gemini-future').json()).name,'models/gemini-future');
 });
 
-test('AG-only native catalog returns authenticated public metadata without inference dispatch',async()=>{
+test('AG-only native catalog hides models when inference cannot acquire an account',async()=>{
  const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:'',adminIds:[],dataModel:'native'};let calls=0;
  const app=createBackendHandler(config,async(url)=>{
   assert.ok(String(url).endsWith('/s2a_personal_acquire'));calls++;
   return Response.json({gemini_catalog_only:true,gemini_catalog_sources:{has_antigravity:true,sources:[{}]},model_allowlist:{enabled:true,models:['gemini-3-flash']}});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);assert.equal(calls,1);assert.deepEqual((await response.json()).models.map(model=>model.name),['models/gemini-3-flash']);
+ assert.equal(response.status,200);assert.equal(calls,2);assert.deepEqual((await response.json()).models,[]);
 });

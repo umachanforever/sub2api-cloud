@@ -64,6 +64,7 @@ test('Anthropic and Gemini catalog filtering preserves native envelopes and hide
   const handler=app((url,init)=>{
    if(url.pathname.endsWith('/s2a_acquire'))return Response.json({lease_id:id,account:{id,...encrypted,type:'apikey',platform,credential_version:1},model_allowlist:{enabled:true,models:[allowed]}});
    if(url.pathname.endsWith('/s2a_finish')){finishes.push(JSON.parse(init.body));return Response.json(null);}
+   if(platform==='gemini'&&init.method==='POST')return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
    if(platform==='gemini')return Response.json(single?{name:'models/blocked'}:{models:[{name:'models/blocked'},{name:`models/${allowed}`,displayName:'Keep'}],nextPageToken:'next'});
    return Response.json(single?{id:'blocked'}:{data:[{id:'blocked'},{id:allowed,display_name:'Keep'}],has_more:true});
   });
@@ -71,7 +72,7 @@ test('Anthropic and Gemini catalog filtering preserves native envelopes and hide
   const response=await handler(request(path));assert.equal(response.status,200);const body=await response.json();
   if(platform==='gemini'){assert.equal(body.models.length,1);assert.equal(body.models[0].displayName,'Keep');assert.equal(body.nextPageToken,'next');}
   else{assert.equal(body.data.length,1);assert.equal(body.data[0].display_name,'Keep');assert.equal(body.has_more,true);}
-  single=true;assert.equal((await handler(request(`${path}/${allowed}`))).status,404);assert.deepEqual(finishes.map(r=>r.p_status),[200,404]);
+  single=true;assert.equal((await handler(request(`${path}/${allowed}`))).status,404);assert.deepEqual(finishes.map(r=>r.p_status),platform==='gemini'?[200,200,404]:[200,404]);
  }
 });
 

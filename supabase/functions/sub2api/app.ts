@@ -13,7 +13,7 @@ import {antigravityDiscovery} from './antigravity_discovery.ts';
 import { codexJobs } from './codex_jobs.ts';
 import { type Config, Database, HttpError } from "./db.ts";
 import { json } from "./http.ts";
-import { proxy } from "./proxy.ts";
+import { proxy, proxyModelProbe } from "./proxy.ts";
 import { recordOpsError, type ErrorContext } from "./ops_errors.ts";
 import { recordResponse } from "./ops_logs.ts";
 import { mailJobs } from "./ops_mail.ts";
@@ -22,9 +22,11 @@ import { privacyJobs } from "./privacy_jobs.ts";
 import { autoResetJobs } from "./openai_auto_reset.ts";
 import { usageAccess } from "./usage_access.ts";
 import { corsPreflight, corsResponse } from './cors.ts';
+import {ModelAvailability} from './model_availability.ts';
 
 export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, smtp?: SMTPTransport) {
   const db = new Database(config, fetchImpl);
+  const modelAvailability=new ModelAvailability();
   return async (request: Request): Promise<Response> => {
     const preflight = corsPreflight(request);
     if (preflight) return preflight;
@@ -38,6 +40,12 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         /^(?:\/functions\/v1)?\/sub2api(?=\/|$)/,
         "",
       ) || "/";
+      // Gemini clients such as Cherry Studio can append /models/:action to
+      // the configured base URL without a version. Normalize before selecting
+      // the protocol's authentication headers and applying OpenAI aliases.
+      if (/^\/(?:v1\/)?models\/[^/]+:(?:generateContent|streamGenerateContent|countTokens)$/.test(pathname)) {
+        pathname = pathname.replace(/^\/(?:v1\/)?models\//, "/v1beta/models/");
+      }
       if (/^\/(?:videos(?:\/(?:generations|edits|extensions))?(?:\/[^/]+)?(?:\/content)?|models(?:\/[^/]+)?|chat\/completions|web_search|x_search|systemone|tts|stt|realtime|custom-voices(?:\/[A-Za-z0-9_-]{1,200}(?:\/audio)?)?|embeddings|images\/(?:(?:generations|edits)(?:\/async)?|tasks\/[^/]+))$/.test(pathname)) {
         pathname = "/v1" + pathname;
       }
@@ -77,7 +85,11 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
       if (new Set(supplied).size > 1) throw new HttpError(400, "conflicting_credentials");
       const token = supplied[0];
       if (!token) throw new HttpError(401, "unauthorized");
-      if (pathname === "/antigravity/models" && request.method === "GET") return await antigravityDiscovery(request,token,db);
+      if (pathname === "/antigravity/models" && request.method === "GET") {
+        const response=await antigravityDiscovery(request,token,db);
+        return await modelAvailability.filter(response,request,JSON.stringify([token,'antigravity']),true,async(probeRequest,probePath)=>
+          await proxyModelProbe(probeRequest,probePath,token,db,{requestId:crypto.randomUUID(),started:Date.now(),endpoint:probePath},'antigravity'));
+      }
       if (pathname === "/v1/usage" && request.method === "GET") return await usageAccess(request, token, db);
       if (pathname === "/v1/sub2api/billing" && request.method === "GET") return await keyBilling(request,token,db);
       if (request.method==='POST' && pathname==='/v1beta/cachedContents') return await geminiCacheCreate(request,token,db);
@@ -98,7 +110,13 @@ export function createHandler(config: Config, fetchImpl: typeof fetch = fetch, s
         const {openAIResponsesWebSocket}=await import('./openai_responses_ws.ts');
         return await openAIResponsesWebSocket(request,token,db);
       }
-      return await proxy(request, pathname, token, db, errorContext, antigravityRoute ? "antigravity" : undefined);
+      const requiredPlatform=antigravityRoute ? "antigravity" : undefined;
+      const response=await proxy(request, pathname, token, db, errorContext, requiredPlatform);
+      if(request.method==='GET'&&['/v1/models','/v1beta/models','/backend-api/codex/models'].includes(pathname)){
+        return await modelAvailability.filter(response,request,JSON.stringify([token,requiredPlatform]),pathname==='/v1beta/models',async(probeRequest,probePath)=>
+          await proxyModelProbe(probeRequest,probePath,token,db,{requestId:crypto.randomUUID(),started:Date.now(),endpoint:probePath},requiredPlatform));
+      }
+      return response;
     } catch (error) {
       if (error instanceof HttpError) {
         errorCode = error.code;

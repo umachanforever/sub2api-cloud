@@ -105,6 +105,14 @@ export async function proxy(
   return proxyWithIdentity(request,path,await hashKey(token),db,errorContext,requiredPlatform);
 }
 
+// Only the server's model-list verifier uses this entry point. A model-specific
+// quota failure during discovery must not quarantine the account for all models.
+export async function proxyModelProbe(
+  request:Request,path:string,token:string,db:Database,errorContext:ErrorContext,requiredPlatform?:Platform,
+):Promise<Response>{
+  return proxyWithIdentity(request,path,await hashKey(token),db,errorContext,requiredPlatform,undefined,true);
+}
+
 export type ImageJobIdentity = {id:string;lease_id:string;key_hash:string;client_ip:string|null;platform:"openai"|"grok";model:string;operation:"generations"|"edits"};
 
 // Only signed workers may obtain this identity from the private queue RPC.
@@ -115,7 +123,7 @@ export async function proxyImageJob(request:Request,job:ImageJobIdentity,db:Data
 }
 
 async function proxyWithIdentity(
-  request:Request,path:string,keyHash:string,db:Database,errorContext:ErrorContext,requiredPlatform?:Platform,imageJob?:ImageJobIdentity,
+  request:Request,path:string,keyHash:string,db:Database,errorContext:ErrorContext,requiredPlatform?:Platform,imageJob?:ImageJobIdentity,modelProbe=false,
 ):Promise<Response>{
   const requestId = errorContext.requestId;
   errorContext.keyHash = keyHash;
@@ -412,7 +420,7 @@ async function proxyWithIdentity(
               p_output_tokens: usage.output,
               p_cache_creation_tokens: usage.cacheCreation,
               p_cache_read_tokens: usage.cacheRead,
-              p_cooldown_seconds: cooldown,
+              p_cooldown_seconds: modelProbe ? 0 : cooldown,
               p_credential_version: account.credential_version,
               ...(usage.firstTokenMs === undefined ? {} : { p_first_token_ms: usage.firstTokenMs }),
             });

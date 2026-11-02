@@ -56,10 +56,11 @@ test('Vertex catalog selection uses service-account credentials and releases its
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/')){assert.ok(!String(url).includes('refresh'));return Response.json(null);}
   if(String(url)==='https://oauth2.googleapis.com/token'){exchange++;return Response.json({access_token:'scoped-token',expires_in:3600});}
+  if(String(url).includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
   assert.equal(new URL(url).hostname,'aiplatform.googleapis.com');return Response.json({publisherModels:[{name:'publishers/google/models/gemini-known'}]});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);assert.equal(exchange,1);assert.equal((await response.json()).models[0].name,'models/gemini-known');assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
+ assert.equal(response.status,200);assert.equal(exchange,2);assert.equal((await response.json()).models[0].name,'models/gemini-known');assert.equal(finishes.length,2);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
 });
 
 test('Vertex publisher responses retain the original 8 MiB page limit and cancel oversized streams',async()=>{

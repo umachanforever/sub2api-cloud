@@ -868,6 +868,7 @@ for (const platform of ["openai", "anthropic", "gemini"]) {
           : { object: "list" }),
       };
     const value = await fixture(platform, (url, init) => {
+      if(platform === "gemini" && init.method === "POST")return sse([{candidates:[{content:{role:"model",parts:[{text:"OK"}]},finishReason:"STOP"}],usageMetadata:{promptTokenCount:2,candidatesTokenCount:1}}]);
       assert.equal(init.method, "GET");
       assert.equal(init.redirect, "error");
       const providerPath = platform === "gemini"
@@ -904,7 +905,7 @@ for (const platform of ["openai", "anthropic", "gemini"]) {
       assert.equal(result.data[0].inputTokenLimit, 1000);
       assert.equal(result.nextPageToken, "next");
     } else assert.deepEqual(result, list);
-    assert.equal(value.finishes.length, 1);
+    assert.equal(value.finishes.length, platform === "gemini" ? 2 : 1);
     assert.equal(value.finishes[0].p_outcome, "completed");
     assert.equal(value.finishes[0].p_input_tokens, null);
     assert.equal(value.leases[0].p_model, "__models__");
@@ -916,7 +917,7 @@ for (const platform of ["openai", "anthropic", "gemini"]) {
       (await single.json()).id,
       platform === "gemini" ? "gemini-test" : "model-test",
     );
-    assert.equal(value.finishes.length, 2);
+    assert.equal(value.finishes.length, platform === "gemini" ? 3 : 2);
   });
 }
 
@@ -933,6 +934,7 @@ test("Gemini native model list/get retains pagination and capabilities without f
     assert.equal(target.origin, "https://generativelanguage.googleapis.com");
     assert.equal(target.searchParams.get("key"), null);
     assert.equal(init.headers.get("x-goog-api-key"), "provider-secret");
+    if(init.method === "POST")return Response.json({candidates:[{content:{parts:[{text:"OK"}]}}]});
     if (target.pathname.endsWith("/gemini-test")) return Response.json(model);
     assert.equal(target.searchParams.get("pageSize"), "10");
     assert.equal(target.searchParams.get("pageToken"), "cursor/+a");
@@ -947,7 +949,7 @@ test("Gemini native model list/get retains pagination and capabilities without f
     await (await value.request("/v1beta/models/gemini-test")).json(),
     model,
   );
-  assert.equal(value.finishes.length, 2);
+  assert.equal(value.finishes.length, 3);
 });
 
 test("Anthropic model pagination is forwarded with native version and beta headers", async () => {
