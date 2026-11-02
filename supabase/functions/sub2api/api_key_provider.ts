@@ -329,7 +329,9 @@ class NativeUsageObserver {
   private platform: Platform;
   private protocol: NativeProtocol;
   private started: number;
-  constructor(platform: Platform, protocol: NativeProtocol, started: number) {
+  private maxFrame: number;
+  constructor(platform: Platform, protocol: NativeProtocol, started: number, maxFrame: number) {
+    this.maxFrame = maxFrame;
     this.platform = platform;
     this.protocol = protocol;
     this.started = started;
@@ -346,7 +348,7 @@ class NativeUsageObserver {
     while ((boundary = /\r?\n\r?\n/.exec(this.pending))) {
       const frame = this.pending.slice(0, boundary.index);
       this.pending = this.pending.slice(boundary.index + boundary[0].length);
-      if (frame.length > (this.protocol === "images" ? 32 * 1024 * 1024 : 1_048_576)) throw new Error("upstream_event_too_large");
+      if (frame.length > this.maxFrame) throw new Error("upstream_event_too_large");
       const data = frame.split(/\r?\n/).filter((line) =>
         line.startsWith("data:")
       ).map((line) => line.slice(5).trimStart()).join("\n");
@@ -359,7 +361,7 @@ class NativeUsageObserver {
         throw new Error("upstream_stream_failed");
       }
     }
-    if (this.pending.length > (this.protocol === "images" ? 32 * 1024 * 1024 : 1_048_576)) {
+    if (this.pending.length > this.maxFrame) {
       throw new Error("upstream_event_too_large");
     }
   }
@@ -421,6 +423,7 @@ export async function nativeResponse(
   started = Date.now(),
   transformValue?: (value:Item,streaming:boolean)=>Item,
   onCatalog?: (value:Item)=>Promise<void>,
+  maxFrame = protocol === "images" ? 16 * 1024 * 1024 : 1_048_576,
 ): Promise<Response> {
   if (!upstream.body) throw new HttpError(502, "invalid_upstream_response");
   if(protocol==='systemone'){
@@ -491,10 +494,10 @@ export async function nativeResponse(
   }
   return new Response(
     trackedStream(
-      nativeFrames(upstream.body, protocol === "images" ? 16 * 1024 * 1024 : undefined, transformValue),
+      nativeFrames(upstream.body, maxFrame, transformValue),
       signal,
       (usage) => finish(upstream.status, usage),
-      new NativeUsageObserver(platform, protocol, started),
+      new NativeUsageObserver(platform, protocol, started, protocol === "images" ? 32 * 1024 * 1024 : maxFrame),
     ),
     {
       status: upstream.status,

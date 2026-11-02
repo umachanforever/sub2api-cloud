@@ -23,7 +23,7 @@ import {anthropicModelCatalog,completeAnthropicCodexCatalog} from './anthropic_c
 import {usageEndpoint} from './usage_endpoint.ts';
 import {validateSystemOneJson} from './typesafe.ts';
 import {resolveProxy} from './account_proxy.ts';
-import {imageGenerationIntent} from './image_policy.ts';
+import {geminiImageGenerationIntent,imageGenerationIntent} from './image_policy.ts';
 import {countGeminiTokens} from './gemini_count_tokens.ts';
 import {validateGeminiCacheJson,geminiCacheName,resolveGeminiCache,rewriteGeminiCache} from './gemini_cache_reference.ts';
 import {voiceUpload,voiceResponse} from './grok_voice.ts';
@@ -668,7 +668,7 @@ async function proxyWithIdentity(
             if (catalog) return catalog;
           }
           const response = await accountFetch(db, account, outgoing.url, outgoing.init);
-          return "codeAssist" in outgoing && outgoing.codeAssist ? normalizeCodeAssist(response, outgoing.streaming) : response;
+          return "codeAssist" in outgoing && outgoing.codeAssist ? normalizeCodeAssist(response, outgoing.streaming, geminiImageGenerationIntent(upstreamModel,forwardedBody)?IMAGE_CHAT_FRAME_LIMIT:undefined) : response;
         };
         providerDispatched = true;
         upstream = await forward();
@@ -843,6 +843,7 @@ async function proxyWithIdentity(
               if(!mapping)throw new HttpError(502,'model_catalog_save_failed');
               if(model_sources)model_sources.mapping=mapping;
             } : undefined,
+          protocol==='gemini'&&geminiImageGenerationIntent(upstreamModel,forwardedBody)?IMAGE_CHAT_FRAME_LIMIT:undefined,
         );
       }
       if (models) {

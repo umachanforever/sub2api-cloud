@@ -1,5 +1,18 @@
 type Body=Record<string,unknown>;
 const text=(value:unknown):string=>typeof value==='string'?value.trim():'';
+// Match upstream Gemini image-output model and REST modality detection.
+export function geminiImageGenerationIntent(model:string,body:Body|undefined):boolean{
+ const name=text(model).toLowerCase().replace(/^models\//,'');
+ if(name.startsWith('gemini-')&&(name.endsWith('-image')||name.includes('-image-')))return true;
+ return ['generationConfig','generation_config'].some(key=>{
+  const config=body?.[key];
+  if(!config||typeof config!=='object'||Array.isArray(config))return false;
+  return ['responseModalities','response_modalities'].some(field=>{
+   const values=(config as Body)[field];
+   return Array.isArray(values)&&values.some(value=>value===2||text(value).toUpperCase()==='IMAGE');
+  });
+ });
+}
 function imageModel(value:unknown):boolean{
  const model=text(value).toLowerCase();return model.startsWith('gpt-image-')||model==='grok-imagine'||model==='grok-imagine-edit'||model.startsWith('grok-imagine-image');
 }
@@ -19,6 +32,7 @@ function choice(value:unknown,explicit:boolean,depth=0):boolean{
 }
 // Match upstream OpenAI intent rules and Grok's exception for passive Codex catalogs.
 export function imageGenerationIntent(path:string,model:string,body:Body|undefined,platform='openai'):boolean{
+ if(geminiImageGenerationIntent(model,body)||geminiImageGenerationIntent(text(body?.model),body))return true;
  if(/^\/(?:v1\/)?images\/(?:generations|edits)$/.test(path)||imageModel(model)||imageModel(body?.model))return true;
  if(!body)return false;
  const grok=platform==='grok';
