@@ -1,3 +1,4 @@
+import {canonicalModelCatalog} from './model_catalog_display.ts';
 import { modernCodexModel } from "./codex_models.ts";
 import { DEFAULT_PROVIDER_CATALOGS } from "./provider_models.ts";
 import { HttpError } from "./db.ts";
@@ -115,6 +116,7 @@ export function allowlistedModels(config:ModelAllowlist|undefined,source:string[
   return result;
 }
 export function filterModelCatalog(config:ModelAllowlist|undefined,value:Record<string,any>,single=false) {
+  if(!single)value=canonicalModelCatalog(value,model=>allowsModel(config,model));
   if(!config?.enabled)return value;
   if(single) {if(!allowsModel(config,value.id ?? value.name ?? ""))throw new HttpError(404,"model_not_found");return value;}
   if(Array.isArray(value.models)) return {...value,models:value.models.filter((model:Record<string,unknown>)=>allowsModel(config,String(model.name??model.slug??"")))};

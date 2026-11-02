@@ -1,3 +1,4 @@
+import {supplementGeminiBases} from './model_catalog_display.ts';
 type Model = Record<string, unknown>;
 import mappingRules from './antigravity_mapping.json' with {type:'json'};
 import {filterModelCatalog,type ModelAllowlist} from './model_policy.ts';
@@ -17,7 +18,7 @@ export function effectiveAntigravityMapping(raw: Record<string,string>): Record<
 }
 export function antigravityGeminiModels(sources:GeminiCatalogSources):Model[] {
   const ids=new Set(sources.sources.flatMap(mapping=>Object.keys(effectiveAntigravityMapping(mapping))).filter(id=>id.trim().startsWith('gemini-')));
-  return [...ids].sort().map(geminiFallbackModel);
+  return supplementGeminiBases([...ids].sort().map(geminiFallbackModel));
 }
 export function antigravityOnlyCatalog(sources:GeminiCatalogSources,allowlist?:ModelAllowlist,model?:string):Response|undefined {
   if(model&&sources.has_antigravity)return Response.json(filterModelCatalog(allowlist,geminiFallbackModel(model),true));

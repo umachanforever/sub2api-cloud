@@ -1,9 +1,11 @@
+import {canonicalModelCatalog} from './model_catalog_display.ts';
 import {codexCatalogModelAllowed} from './codex_catalog.ts';
 import {allowsModel,allowlistedModels,type ModelAllowlist} from './model_policy.ts';
 type Entry=Record<string,any>;
 // Routing wildcards and automatic modes are not ordinary Codex picker entries.
 // Automatic modes require exact group opt-in, even when a wildcard admits them.
 export function applyCodexCatalogPolicy(body:Entry,allowlist?:ModelAllowlist,ordered=false):Entry{
+ body=canonicalModelCatalog(body,model=>allowsModel(allowlist,model));
  const selected=new Set(allowlist?.enabled?allowlist.models.map(id=>id.trim()):[]);
  const models=(body.models as Entry[]).flatMap(entry=>{
   const slug=typeof entry?.slug==='string'?entry.slug.trim():'';

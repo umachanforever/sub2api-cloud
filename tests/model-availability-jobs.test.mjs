@@ -56,7 +56,7 @@ test('expired positives, invalid models and transient failures stay hidden witho
  let calls=0;
  const result=await scheduledModelFilter(Response.json({data:[{id:'gpt-custom'},{id:'gemini-expired'},{id:'gemini-temporary'},{id:'gemini-*'}]}),request(),'sk-client',{rpc:async(name,args)=>{
   calls++;assert.equal(name,'s2a_model_availability_read');assert.equal(args.p_jobs.length,2);
-  return args.p_jobs.map(job=>({...job,verdict:job.model.includes('expired')?'verified':'temporary',checked_at:new Date(Date.now()-(job.model.includes('expired')?31*60_000:0)).toISOString()}));
+  return args.p_jobs.map(job=>({...job,verdict:job.model.includes('expired')?'verified':'temporary',checked_at:new Date(Date.now()-(job.model.includes('expired')?49*60*60_000:0)).toISOString()}));
  }},false);
  assert.equal(calls,1);assert.deepEqual((await result.json()).data,[{id:'gpt-custom'}]);
  assert.match(result.headers.get('x-s2a-model-verification'),/temporary=1; unsupported=0; unverified=2/);
@@ -117,4 +117,9 @@ test('model scheduler accepts only its own short-lived signature scope',async()=
   else assert.equal((await modelAvailabilityJobs(req,db)).status,200);
  }
  assert.equal(state.claims,1);
+});
+
+test('daily verdicts remain visible throughout the 24-hour refresh interval',async()=>{
+ const result=await scheduledModelFilter(Response.json({data:[{id:'gemini-good'}]}),request(),'sk-client',{rpc:async(name,args)=>args.p_jobs.map(job=>({...job,verdict:'verified',checked_at:new Date(Date.now()-25*60*60_000).toISOString()}))},false);
+ assert.deepEqual((await result.json()).data,[{id:'gemini-good'}]);
 });

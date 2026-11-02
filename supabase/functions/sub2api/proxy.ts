@@ -396,7 +396,7 @@ async function proxyWithIdentity(
     if(geminiTokens&&forwardedBody?.generateContentRequest?.model)forwardedBody.generateContentRequest={...forwardedBody.generateContentRequest,model:'models/'+upstreamModel.replace(/^models\//,'')};
     if(cacheBinding)forwardedBody=rewriteGeminiCache(forwardedBody!,cacheBinding);
     if(grokSearch)forwardedBody=grokSearchBody(grokSearchOptions!,upstreamModel);
-    const aliasCatalog=!!(models && modelId && model_sources && mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai"));
+    const aliasCatalog=!!(models && modelId && model_sources && (mappedTarget(model_sources.mapping,decodeURIComponent(modelId),account.platform??"openai") || account.platform==='antigravity'&&resolveThinkingVariant(decodeURIComponent(modelId),model_sources.mapping)));
     const forwardedPath=aliasCatalog?path.replace(/\/models\/[^/]+$/,"/models"):gemini?`/v1beta/models/${encodeURIComponent(upstreamModel.replace(/^models\//,""))}:${gemini[2]}`:path;
     Object.assign(errorContext, { accountId: account.id, leaseId: lease_id, platform: account.platform ?? "openai", upstreamModel, stream: account.type === "apikey" ? models ? false : gemini ? gemini[2] === "streamGenerateContent" : body?.stream === true : stream });
     const attemptContext = { ...errorContext };

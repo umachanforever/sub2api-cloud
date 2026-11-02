@@ -33,6 +33,10 @@ test('durable model verification enforces leases, concurrent claims, scope isola
   assert.equal(await sql(`select public.s2a_model_availability_finish('${job.fingerprint}',gen_random_uuid(),'verified');`),'f');
   assert.equal(await sql(`select public.s2a_model_availability_finish('${job.fingerprint}','${job.lease_id}','verified');`),'t');
   assert.equal(JSON.parse(await sql(register()))[0].verdict,'verified');
+  assert.equal(await sql("select due_at-checked_at=interval '24 hours' from s2a_private.model_availability;"),'t');
+  await sql("update s2a_private.model_availability set due_at=checked_at+interval '5 minutes';");
+  await sql(await readFile(new URL('../deploy/model-availability.sql',import.meta.url),'utf8'));
+  assert.equal(await sql("select due_at-checked_at=interval '24 hours' from s2a_private.model_availability;"),'t');
   assert.deepEqual(JSON.parse(await sql('select public.s2a_model_availability_claim();')),[]);
   await sql("update s2a_private.model_availability set due_at=clock_timestamp()-interval '1 second';");
   const retry=JSON.parse(await sql('select public.s2a_model_availability_claim();'))[0];
@@ -40,6 +44,20 @@ test('durable model verification enforces leases, concurrent claims, scope isola
   await sql("update s2a_private.model_availability set lease_until=clock_timestamp()-interval '1 second';");
   assert.equal(await sql(`select public.s2a_model_availability_finish('${retry.fingerprint}','${retry.lease_id}','verified');`),'f');
   assert.equal(JSON.parse(await sql('select public.s2a_model_availability_claim();')).length,1);
+
+  await sql(register('a','d','gemini-3.8-flash-high'));
+  await sql(register('c','f','gemini-3.8-flash-high'));
+  await sql(register('a','e','gemini-3.8-flash'));
+  assert.equal(await sql("select count(*) from s2a_private.model_availability where key_hash=repeat('a',64) and model='gemini-3.8-flash-high';"),'0');
+  assert.equal(await sql("select count(*) from s2a_private.model_availability where key_hash=repeat('c',64) and model='gemini-3.8-flash-high';"),'1');
+  for(const [fingerprint,verdict] of [['1','temporary'],['2','unsupported']]){
+   const model='gemini-daily-'+verdict;
+   await sql(register('a',fingerprint,model));
+   const daily=JSON.parse(await sql('select public.s2a_model_availability_claim();')).find(job=>job.model===model);
+   assert.ok(daily);
+   assert.equal(await sql(`select public.s2a_model_availability_finish('${daily.fingerprint}','${daily.lease_id}','${verdict}');`),'t');
+   assert.equal(await sql(`select due_at-checked_at=interval '24 hours' from s2a_private.model_availability where fingerprint='${daily.fingerprint}';`),'t');
+  }
   assert.equal(await sql("select public.s2a_model_availability_scheduler_configure(null,null,false)->>'enabled';"),'false');
   await assert.rejects(sql(register('a','d','gemini-*')),/invalid_model_verification_jobs/);
  }finally{await exec('docker',['rm','-f',container]).catch(()=>{});}

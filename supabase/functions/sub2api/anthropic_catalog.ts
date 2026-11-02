@@ -1,5 +1,5 @@
 import {DEFAULT_PROVIDER_CATALOGS} from './provider_models.ts';
-import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
+import {allowlistedModels,filterModelCatalog,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
 import {compositeCodexCatalog,completeCompositeCodexCatalog,type CompositeCapabilitySource} from './composite_catalog.ts';
 
@@ -13,7 +13,7 @@ export function anthropicModelCatalog(available:string[],allowlist?:ModelAllowli
     entries=allowlistedModels(allowlist,source).map(id=>({id,type:'model',display_name:id,created_at:'2024-01-01T00:00:00Z'}));
   }
   if(model!==undefined){const entry=entries.find(entry=>entry.id===model);if(!entry)throw new HttpError(404,'model_not_found');return entry;}
-  return {object:'list',data:entries};
+  return filterModelCatalog(allowlist,{object:'list',data:entries});
 }
 
 export function anthropicCodexCatalog(available:string[],allowlist?:ModelAllowlist,capabilities:CompositeCapabilitySource[]=[]){

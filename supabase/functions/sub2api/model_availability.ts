@@ -142,6 +142,7 @@ export class ModelAvailability {
             model,
             messages: [{ role: "user", content: "Reply OK." }],
             max_tokens: 1024,
+            ...(model.startsWith('gemini-3') ? {reasoning_effort:'low'} : {}),
             stream: false,
           };
         const signal = AbortSignal.any([

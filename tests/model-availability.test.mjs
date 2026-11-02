@@ -100,3 +100,11 @@ test('listing deadlines keep prior successes and rotate unverified models withou
  assert.match(second.headers.get('x-s2a-model-verification'),/unsupported=0/);
  assert.equal(calls.filter(x=>x==='gemini-good').length,1);
 });
+
+test('base Gemini chat probes use low thinking effort so reasoning does not consume the output budget',async()=>{
+ const result=await new ModelAvailability().filter(Response.json({data:[{id:'gemini-3.8-flash'}]}),request(),'key',false,async req=>{
+  const payload=await req.json();
+  return payload.reasoning_effort==='low'?success():Response.json({choices:[{finish_reason:'length',message:{reasoning_content:'Reasoning exceeded the budget'}}]});
+ });
+ assert.deepEqual((await result.json()).data,[{id:'gemini-3.8-flash'}]);
+});

@@ -1,3 +1,4 @@
+import {supplementGeminiBases} from './model_catalog_display.ts';
 import {HttpError} from './db.ts';
 import {codexCatalogDescriptor} from './codex_catalog.ts';
 export function modelMapping(value:unknown):Record<string,string> {
@@ -30,16 +31,20 @@ export function mappedTarget(mapping:Record<string,string>,model:string,platform
  return normalized!==model?lookup(normalized):undefined;
 }
 export function mappedCatalog(value:Record<string,any>,sources:ModelSources|undefined,platform:string):Record<string,any> {
- if(!sources || !Object.keys(sources.mapping).length)return value;
+ const supplement=(catalog:Record<string,any>)=>{
+  const field=Array.isArray(catalog.data)?'data':Array.isArray(catalog.models)?'models':undefined;
+  return platform==='antigravity'&&field?{...catalog,[field]:supplementGeminiBases(catalog[field])}:catalog;
+ };
+ if(!sources || !Object.keys(sources.mapping).length)return supplement(value);
  const field=Array.isArray(value.data)?'data':Array.isArray(value.models)?'models':null;if(!field)return value;
  const idField=field==='data'?'id':['gemini','antigravity'].includes(platform)?'name':'slug';
  const id=(entry:Record<string,any>)=>String(entry?.[idField]).replace(/^models\//,'');
- const original=value[field] as Record<string,any>[],entries=sources.include_upstream?[...original]:[];
+ const original=supplement(value)[field] as Record<string,any>[],entries=sources.include_upstream?[...original]:[];
  for(const [alias,target] of Object.entries(sources.mapping)) {
   if(entries.some(entry=>id(entry)===alias))continue;
   const metadata=original.find(entry=>id(entry)===target.replace(/^models\//,''))??(idField==='slug'?codexCatalogDescriptor(alias):undefined);
   if(idField==='slug' && alias.endsWith('*'))continue;
   entries.push({...metadata,...(field==='data'?{object:'model',created:metadata?.created??0,owned_by:metadata?.owned_by??platform}:{}),[idField]:idField==='name'?`models/${alias}`:alias});
  }
- return {...value,[field]:entries};
+ return supplement({...value,[field]:entries});
 }

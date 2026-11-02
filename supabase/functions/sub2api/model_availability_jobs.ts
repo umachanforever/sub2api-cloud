@@ -40,7 +40,7 @@ export async function scheduledModelFilter(response: Response, request: Request,
   for (const job of jobs) {
     const status = byId.get(job.fingerprint);
     // A stopped scheduler must not advertise indefinitely stale successes.
-    const fresh = status?.checked_at && Date.now() - Date.parse(status.checked_at) < 30 * 60_000;
+    const fresh = status?.checked_at && Date.now() - Date.parse(status.checked_at) < 48 * 60 * 60_000;
     const verdict = fresh && status && status.verdict in counts ? status.verdict : 'unverified';
     counts[verdict]++;
     if (verdict === 'verified') available.add(job.entry);

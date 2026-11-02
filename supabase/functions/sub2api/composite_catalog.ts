@@ -7,7 +7,7 @@ import {mappedTarget} from './model_mapping.ts';
 import {defaultSolModel,modernCodexModel} from './codex_models.ts';
 import {DEFAULT_PROVIDER_CATALOGS} from './provider_models.ts';
 import {COMPOSITE_DEFAULT_IDS} from './composite_defaults.ts';
-import {allowlistedModels,type ModelAllowlist} from './model_policy.ts';
+import {allowlistedModels,filterModelCatalog,type ModelAllowlist} from './model_policy.ts';
 import {HttpError} from './db.ts';
 export type CompositeCapabilitySource={id?:string;metadata?:{models?:Record<string,Record<string,any>>};platform:string;type:string;passthrough:boolean;official:boolean;mapping:Record<string,string>;modalities:Record<string,unknown>};
 export type CompositeCatalogSources={model_routing?:Record<string,(string|number)[]>;capability_sources?:CompositeCapabilitySource[];sources:{platform:string;passthrough:boolean;mapping:Record<string,string>}[];routes:{model:string;match_type:string;platform:string;endpoint:string;upstream_model:string}[]};
@@ -31,7 +31,7 @@ export function compositeModelCatalog(input:CompositeCatalogSources,allowlist?:M
  if(!ids.size)for(const platform of precedence)if(platform!=='typesafe')for(const id of defaults(platform))ids.add(id);
  const data=allowlistedModels(allowlist,[...ids]).filter(id=>!responsesOnly||selectedRoute(input,id)?.platform!=='typesafe').map(id=>({id,object:'model',type:'model',created:0,owned_by:'composite',display_name:id}));
  if(modelId!==undefined){const entry=data.find(entry=>entry.id===modelId);if(!entry)throw new HttpError(404,'model_not_found');return entry;}
- return {object:'list',data};
+ return filterModelCatalog(allowlist,{object:'list',data});
 }
 
 function selectedRoute(input:CompositeCatalogSources,model:string){

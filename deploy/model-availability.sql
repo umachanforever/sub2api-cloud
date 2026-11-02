@@ -11,6 +11,9 @@ ALTER TABLE s2a_private.model_availability OWNER TO s2a_management;
 ALTER TABLE s2a_private.model_availability ENABLE ROW LEVEL SECURITY;
 REVOKE ALL ON s2a_private.model_availability FROM PUBLIC,anon,authenticated,service_role;
 CREATE INDEX IF NOT EXISTS model_availability_due ON s2a_private.model_availability(due_at);
+-- Preserve existing verdicts while moving previous short retries to the daily cadence.
+UPDATE s2a_private.model_availability SET due_at=checked_at+interval '24 hours'
+WHERE checked_at IS NOT NULL AND due_at<checked_at+interval '24 hours';
 
 CREATE OR REPLACE FUNCTION public.s2a_model_availability_read(p_key_hash text,p_native boolean,p_platform text,p_client_ip text,p_jobs jsonb)
 RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
@@ -27,6 +30,14 @@ BEGIN
  WHERE model_availability.key_hash=excluded.key_hash AND model_availability.native=excluded.native
  AND model_availability.platform IS NOT DISTINCT FROM excluded.platform
  AND model_availability.model=excluded.model;
+ -- Once the canonical base is advertised, stop spending quota on hidden effort aliases.
+ DELETE FROM s2a_private.model_availability a WHERE a.key_hash=p_key_hash AND a.native=p_native
+ AND a.platform IS NOT DISTINCT FROM p_platform
+ AND NOT EXISTS(SELECT FROM jsonb_array_elements(p_jobs) j WHERE j->>'fingerprint'=a.fingerprint)
+ AND EXISTS(SELECT FROM jsonb_array_elements(p_jobs) j WHERE
+  (j->>'model' LIKE 'gemini-%' AND a.model=ANY(ARRAY[(j->>'model')||'-low',(j->>'model')||'-medium',(j->>'model')||'-high',(j->>'model')||'-tiered'])) OR
+  (j->>'model' LIKE 'gpt-%' AND a.model=ANY(ARRAY[(j->>'model')||'-none',(j->>'model')||'-minimal',(j->>'model')||'-low',(j->>'model')||'-medium',(j->>'model')||'-high',(j->>'model')||'-xhigh',(j->>'model')||'-max'])) OR
+  (j->>'model' LIKE 'claude-%' AND a.model=ANY(ARRAY[(j->>'model')||'-low',(j->>'model')||'-medium',(j->>'model')||'-high',(j->>'model')||'-xhigh',(j->>'model')||'-max'])));
  SELECT coalesce(jsonb_agg(jsonb_build_object('fingerprint',a.fingerprint,'verdict',a.verdict,'checked_at',a.checked_at)),'[]'::jsonb) INTO result
  FROM s2a_private.model_availability a WHERE a.key_hash=p_key_hash AND a.native=p_native
  AND a.platform IS NOT DISTINCT FROM p_platform
@@ -41,7 +52,7 @@ BEGIN
  DELETE FROM s2a_private.model_availability WHERE last_seen<clock_timestamp()-interval '7 days' AND (lease_until IS NULL OR lease_until<clock_timestamp());
  WITH selected AS (
  SELECT fingerprint FROM s2a_private.model_availability WHERE due_at<=clock_timestamp()
- AND last_seen>clock_timestamp()-interval '24 hours' AND (lease_until IS NULL OR lease_until<clock_timestamp())
+ AND last_seen>clock_timestamp()-interval '7 days' AND (lease_until IS NULL OR lease_until<clock_timestamp())
  ORDER BY due_at,fingerprint LIMIT 6 FOR UPDATE SKIP LOCKED
  ), claimed AS (
  UPDATE s2a_private.model_availability a SET lease_id=gen_random_uuid(),lease_until=clock_timestamp()+interval '60 seconds'
@@ -52,10 +63,11 @@ END $$;
 
 CREATE OR REPLACE FUNCTION public.s2a_model_availability_finish(p_fingerprint text,p_lease_id uuid,p_verdict text)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE checked timestamptz:=clock_timestamp();
 BEGIN
  IF p_verdict IS NULL OR p_verdict NOT IN ('verified','temporary','unsupported') THEN RAISE EXCEPTION 'invalid_model_verdict'; END IF;
- UPDATE s2a_private.model_availability SET verdict=p_verdict,checked_at=clock_timestamp(),lease_id=NULL,lease_until=NULL,
- due_at=clock_timestamp()+CASE p_verdict WHEN 'verified' THEN interval '10 minutes' WHEN 'unsupported' THEN interval '30 minutes' ELSE interval '5 minutes' END
+ UPDATE s2a_private.model_availability SET verdict=p_verdict,checked_at=checked,lease_id=NULL,lease_until=NULL,
+ due_at=checked+interval '24 hours'
  WHERE fingerprint=p_fingerprint AND lease_id=p_lease_id AND lease_until>clock_timestamp();
  RETURN FOUND;
 END $$;

@@ -452,8 +452,9 @@ export async function nativeResponse(
       const completeCatalog = !value.nextPageToken && !value.has_more;
       value = modelCatalog(platform, path, value);
       if(onCatalog && !/\/models\/[^/]+$/.test(path) && completeCatalog) await onCatalog(value);
-      value = filterModelCatalog(allowlist,mappedCatalog(value,modelSources,platform),/\/models\/[^/]+$/.test(path));
+      value = mappedCatalog(value,modelSources,platform);
       if(aliasModel) {const entries=value.data??value.models;value=entries.find((entry:Item)=>(entry.id??entry.name?.replace(/^models\//,''))===aliasModel);if(!value)throw new HttpError(404,"model_not_found");}
+      value = filterModelCatalog(allowlist,value,!!aliasModel || /\/models\/[^/]+$/.test(path));
     }
     const usage = protocol === "models"
       ? {
