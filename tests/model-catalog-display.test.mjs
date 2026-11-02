@@ -68,3 +68,40 @@ test('synthesized base metadata is stable across upstream order and later identi
  assert.deepEqual(make([low,high]),first);
  assert.deepEqual(make([low,high],{mapping:{[base]:base,[base+'-high']:base+'-high'},include_upstream:true}),first);
 });
+
+test('verified provider catalogs expose one canonical Claude model for legacy aliases sharing its target',async()=>{
+ const {nativeResponse}=await import('../supabase/functions/sub2api/api_key_provider.ts');
+ const opus='claude-opus-4-6-thinking',sonnet='claude-sonnet-4-6';
+ const sources={include_upstream:true,mapping:{[opus]:opus,[sonnet]:sonnet,'claude-opus-4-6':opus,'claude-opus-4-5-thinking':opus,'claude-haiku-4-5':sonnet,'claude-sonnet-4-5-20250929':sonnet}};
+ for(const path of ['/v1/models','/v1beta/models']){
+  const response=await nativeResponse(Response.json({models:[{name:'models/'+opus,displayName:'Claude Opus 4.6 (Thinking)'},{name:'models/'+sonnet,displayName:'Claude Sonnet 4.6 (Thinking)'}],nextPageToken:'opaque'}),'antigravity','models',false,AbortSignal.timeout(5000),'request',async()=>{},path,undefined,sources);
+  const value=await response.json(),entries=value.data??value.models;
+  assert.deepEqual(entries.map(x=>x.id??x.name.replace(/^models\//,'')),[opus,sonnet]);
+  assert.equal(value.nextPageToken,'opaque');
+ }
+});
+
+test('alias-only permissions and single-model retrieval retain the requested ID in every identity field',async()=>{
+ const {nativeResponse}=await import('../supabase/functions/sub2api/api_key_provider.ts');
+ const target='claude-opus-4-6-thinking',alias='claude-opus-4-5-thinking';
+ const run=(allowlist,requested)=>nativeResponse(Response.json({models:[{name:'models/'+target,displayName:'Claude Opus 4.6 (Thinking)'}]}),'antigravity','models',false,AbortSignal.timeout(5000),'request',async()=>{},'/v1/models',allowlist,{include_upstream:true,mapping:{[target]:target,[alias]:target}},requested);
+ const list=await (await run({enabled:true,models:[alias]})).json();
+ assert.deepEqual(list.data.map(x=>x.id),[alias]);assert.equal(list.data[0].name,'models/'+alias);
+ const detail=await (await run(undefined,alias)).json();assert.equal(detail.id,alias);assert.equal(detail.name,'models/'+alias);
+});
+
+test('mapping deduplication preserves distinct targets, alias-only catalogs and redirected canonical IDs',async()=>{
+ const {deduplicateMappedModels}=await import('../supabase/functions/sub2api/model_catalog_display.ts');
+ const entries=[{id:'a',display_name:'Same label'},{id:'b',display_name:'Same label'}];
+ assert.deepEqual(deduplicateMappedModels({data:entries},()=>undefined,()=>true).data,entries);
+ assert.deepEqual(deduplicateMappedModels({data:entries},id=>id==='a'?'missing':undefined,()=>true).data,entries);
+ assert.deepEqual(deduplicateMappedModels({data:entries},id=>id==='a'?'b':'c',()=>true).data,entries);
+ assert.deepEqual(deduplicateMappedModels({data:[entries[0],entries[0],entries[1]]},()=>undefined,()=>true).data,entries);
+});
+
+test('mapped aliases do not undo the single-base display for thinking families',async()=>{
+ const {nativeResponse}=await import('../supabase/functions/sub2api/api_key_provider.ts');
+ const base='gemini-4-argon';
+ const response=await nativeResponse(Response.json({models:[{name:'models/'+base+'-high'},{name:'models/'+base+'-low'}]}),'antigravity','models',false,AbortSignal.timeout(5000),'request',async()=>{},'/v1beta/models',undefined,{include_upstream:true,mapping:{[base]:base+'-high',[base+'-high']:base+'-high',[base+'-low']:base+'-low'}});
+ assert.deepEqual((await response.json()).models.map(x=>x.name),['models/'+base]);
+});

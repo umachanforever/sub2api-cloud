@@ -1,11 +1,12 @@
+import {deduplicateMappedModels} from './model_catalog_display.ts';
 import {systemOneTokens} from './typesafe.ts';
 import {multiProtocolProvider,providerProtocol,providerEndpoint,openCodeSession,type ProviderProtocol} from './provider_routing.ts';
 import {CODEX_USER_AGENT} from './gateway.ts';
 import {grokImageBody} from './grok_images.ts';
 import { normalizeModernCodexResponses } from "./codex_models.ts";
 import { grokHeaders } from './grok_config.ts';
-import { mappedCatalog, type ModelSources } from "./model_mapping.ts";
-import { filterModelCatalog, type ModelAllowlist } from "./model_policy.ts";
+import { mappedCatalog, mappedTarget, type ModelSources } from "./model_mapping.ts";
+import { filterModelCatalog, allowsModel, type ModelAllowlist } from "./model_policy.ts";
 import type { ApiKeyCredentials, Platform } from "./gateway.ts";
 import { HttpError } from "./db.ts";
 import { parseAccountCredentials } from "./validation.ts";
@@ -455,6 +456,9 @@ export async function nativeResponse(
       value = mappedCatalog(value,modelSources,platform);
       if(aliasModel) {const entries=value.data??value.models;value=entries.find((entry:Item)=>(entry.id??entry.name?.replace(/^models\//,''))===aliasModel);if(!value)throw new HttpError(404,"model_not_found");}
       value = filterModelCatalog(allowlist,value,!!aliasModel || /\/models\/[^/]+$/.test(path));
+      if(!aliasModel && !/\/models\/[^/]+$/.test(path))value=deduplicateMappedModels(value,
+        model=>modelSources?mappedTarget(modelSources.mapping,model,platform):undefined,
+        model=>allowsModel(allowlist,model));
     }
     const usage = protocol === "models"
       ? {

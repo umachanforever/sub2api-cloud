@@ -42,3 +42,20 @@ export function canonicalModelCatalog(value: Entry, permitsBase: (model: string)
   });
   return filtered.length === entries.length ? value : { ...value, [field]: filtered };
 }
+
+// Identical labels alone do not prove equivalence. Hide a legacy alias only
+// when its actual mapping target is present, directly usable and permitted.
+export function deduplicateMappedModels(value: Entry, resolveTarget: (model: string) => string | undefined, permitsModel: (model: string) => boolean): Entry {
+  const field = Array.isArray(value.data) ? 'data' : Array.isArray(value.models) ? 'models' : undefined;
+  if (!field) return value;
+  const entries = value[field] as Entry[], names = new Set(entries.map(id)), seen = new Set<string>();
+  const targetOf = (model: string) => resolveTarget(model)?.trim().replace(/^models\//, '') ?? model;
+  const filtered = entries.filter(entry => {
+    const model = id(entry);
+    if (seen.has(model)) return false;
+    seen.add(model);
+    const target = targetOf(model);
+    return target === model || !names.has(target) || !permitsModel(target) || targetOf(target) !== target;
+  });
+  return filtered.length === entries.length ? value : { ...value, [field]: filtered };
+}

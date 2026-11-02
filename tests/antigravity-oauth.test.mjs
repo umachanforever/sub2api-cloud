@@ -75,9 +75,9 @@ for (const condition of ['expired', 'reject']) test(`Antigravity ${condition} cr
   assert.equal(result.saved[0].p_credentials.project_id, 'private-project'); assert.deepEqual(result.saved[0].p_credentials.metadata, { preserved: true });
   assert.equal(result.saved[0].p_credentials.refresh_token, 'private-refresh'); assert.match(result.saved[0].p_credentials.expires_at, /^\d{4}-\d{2}-\d{2}T/);
 });
-test('Antigravity catalogs query the real provider and expose sanitized mapped model ids', async () => {
+test('Antigravity catalogs query the real provider and expose sanitized canonical model ids', async () => {
   const result = await fixture({ models: true }); const value = JSON.parse(result.text);
-  assert.equal(value.data[0].id, 'gemini-test'); assert.equal(value.data[1].id, 'alias'); assert.doesNotMatch(result.text, /private-|quotaInfo|deprecatedModel/);
+  assert.deepEqual(value.data.map(entry=>entry.id), ['gemini-test']); assert.doesNotMatch(result.text, /private-|quotaInfo|deprecatedModel/);
 });
 test('Antigravity catalog fallback and generation retry honor the account-tier origin', async () => {
   for (const models of [false, true]) {

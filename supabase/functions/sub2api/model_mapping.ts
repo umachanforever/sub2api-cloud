@@ -44,7 +44,7 @@ export function mappedCatalog(value:Record<string,any>,sources:ModelSources|unde
   if(entries.some(entry=>id(entry)===alias))continue;
   const metadata=original.find(entry=>id(entry)===target.replace(/^models\//,''))??(idField==='slug'?codexCatalogDescriptor(alias):undefined);
   if(idField==='slug' && alias.endsWith('*'))continue;
-  entries.push({...metadata,...(field==='data'?{object:'model',created:metadata?.created??0,owned_by:metadata?.owned_by??platform}:{}),[idField]:idField==='name'?`models/${alias}`:alias});
+  entries.push({...metadata,...(field==='data'?{object:'model',created:metadata?.created??0,owned_by:metadata?.owned_by??platform}:{}),...(field==='data'&&typeof metadata?.name==='string'&&metadata.name.startsWith('models/')?{name:`models/${alias}`} : {}),[idField]:idField==='name'?`models/${alias}`:alias});
  }
  return supplement({...value,[field]:entries});
 }
