@@ -1,4 +1,6 @@
 import {publishChatMedia} from './chat_media.ts';
+import {sseHeartbeat} from './sse_heartbeat.ts';
+import {nativeImageFileTool,NATIVE_IMAGE_FILE_GUIDANCE} from './chat_image_delivery.ts';
 import {enableChatImages,usesChatImageFiles,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
@@ -526,7 +528,10 @@ async function proxyWithIdentity(
 
       let native: ReturnType<typeof apiKeyRequest> | undefined;
       let upstream: Response;
-      imageChat=chat&&platform==='antigravity'&&!apiKey&&!structuredChat&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===true;
+      imageChat=chat&&['antigravity','gemini'].includes(platform)&&!structuredChat&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===true;
+      if(chat&&!structuredChat&&Array.isArray(forwardedBody?.messages)&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===true&&nativeImageFileTool(body!)){
+        forwardedBody={...forwardedBody,messages:[...forwardedBody!.messages,{role:'system',content:NATIVE_IMAGE_FILE_GUIDANCE}]};
+      }
       const nativeAnthropicBridge=(platform==='anthropic'||platform==='antigravity')&&!apiKey&&(chat||protocol==='responses');
       const vertexCache={scope:db,identity:JSON.stringify([account.id,account.credential_version,account.proxy_id??null])};
       const nativeGeminiBridge=platform==='gemini'&&(chat||messages||protocol==='responses');
@@ -534,7 +539,7 @@ async function proxyWithIdentity(
       let geminiBody=forwardedBody;
       if(nativeGeminiBridge){
         let source;try{source=chat?chatToAPIResponses(forwardedBody!):messages?await originalMessagesToResponses(forwardedBody!):forwardedBody!;}catch{throw new HttpError(400,'invalid_request');}
-        chatBridge=await originalGeminiBridge(source,keyHash);geminiBody=chatBridge.body;
+        chatBridge=await originalGeminiBridge(source,keyHash,imageChat?IMAGE_CHAT_FRAME_LIMIT:1_048_576);geminiBody=chatBridge.body;
       }
       let anthropicBody=forwardedBody;
       if(nativeAnthropicBridge){
@@ -856,9 +861,9 @@ async function proxyWithIdentity(
         await upstream.body?.cancel();
         throw new HttpError(502, "invalid_upstream_stream");
       }
-      // Keep original images inline; do not auto-open client presentation tools.
-      if (imageChat && platform === 'openai' && usesChatImageFiles(body!)) {
-        upstream = publishChatMedia(db, upstream, lease_id, signal);
+      // One original-file delivery path for GPT and Gemini, including Antigravity images.
+      if (imageChat && usesChatImageFiles(body!)) {
+        upstream = publishChatMedia(db, upstream, lease_id, signal, body!);
       }
       const tracked = trackedStream(
         upstream.body!,
@@ -879,7 +884,7 @@ async function proxyWithIdentity(
       }
       // Forward only protocol headers; provider cookies and request metadata stay private.
       return new Response(
-        chat
+        sseHeartbeat(chat
           ? streamChat(
             tracked,
             `chatcmpl-${requestId}`,
@@ -890,7 +895,7 @@ async function proxyWithIdentity(
           )
           : messages
           ? streamMessages(tracked, `msg_${requestId}`, body!.model as string)
-          : tracked,
+          : tracked),
         {
           status: upstream.status,
           headers: {
