@@ -1,4 +1,4 @@
-import {deduplicateMappedModels} from './model_catalog_display.ts';
+import {deduplicateMappedModels,deduplicateAntigravityGeminiModels} from './model_catalog_display.ts';
 import {systemOneTokens} from './typesafe.ts';
 import {multiProtocolProvider,providerProtocol,providerEndpoint,openCodeSession,type ProviderProtocol} from './provider_routing.ts';
 import {CODEX_USER_AGENT} from './gateway.ts';
@@ -456,7 +456,7 @@ export async function nativeResponse(
       value = mappedCatalog(value,modelSources,platform);
       if(aliasModel) {const entries=value.data??value.models;value=entries.find((entry:Item)=>(entry.id??entry.name?.replace(/^models\//,''))===aliasModel);if(!value)throw new HttpError(404,"model_not_found");}
       value = filterModelCatalog(allowlist,value,!!aliasModel || /\/models\/[^/]+$/.test(path));
-      if(!aliasModel && !/\/models\/[^/]+$/.test(path))value=deduplicateMappedModels(value,
+      if(!aliasModel && !/\/models\/[^/]+$/.test(path))value=(platform==='antigravity'?deduplicateAntigravityGeminiModels:deduplicateMappedModels)(value,
         model=>modelSources?mappedTarget(modelSources.mapping,model,platform):undefined,
         model=>allowsModel(allowlist,model));
     }

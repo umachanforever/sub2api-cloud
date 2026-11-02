@@ -105,3 +105,33 @@ test('mapped aliases do not undo the single-base display for thinking families',
  const response=await nativeResponse(Response.json({models:[{name:'models/'+base+'-high'},{name:'models/'+base+'-low'}]}),'antigravity','models',false,AbortSignal.timeout(5000),'request',async()=>{},'/v1beta/models',undefined,{include_upstream:true,mapping:{[base]:base+'-high',[base+'-high']:base+'-high',[base+'-low']:base+'-low'}});
  assert.deepEqual((await response.json()).models.map(x=>x.name),['models/'+base]);
 });
+
+test('Antigravity Gemini renamed legacy IDs display only the provider named canonical model',async()=>{
+ const {nativeResponse}=await import('../supabase/functions/sub2api/api_key_provider.ts');
+ const canonical='gemini-3.5-flash-lite',ids=['gemini-2.5-flash',canonical,'gemini-2.5-flash-thinking','gemini-2.5-flash-lite'];
+ const models=ids.map(id=>({name:'models/'+id,displayName:'Gemini 3.5 Flash Lite',supportedGenerationMethods:['generateContent','streamGenerateContent','countTokens']}));
+ const sources={include_upstream:true,mapping:Object.fromEntries(ids.map(id=>[id,id]))};
+ const run=(platform,path,allowlist,alias)=>nativeResponse(Response.json({models} ),platform,'models',false,AbortSignal.timeout(5000),'request',async()=>{},path,allowlist,sources,alias);
+ for(const path of ['/v1/models','/v1beta/models']){
+  const value=await (await run('antigravity',path)).json();
+  assert.deepEqual((value.data??value.models).map(x=>x.id??x.name.replace(/^models\//,'')),[canonical]);
+  const alias=ids[0],restricted=await (await run('antigravity',path,{enabled:true,models:[alias]})).json();
+  assert.deepEqual((restricted.data??restricted.models).map(x=>x.id??x.name.replace(/^models\//,'')),[alias]);
+  const detail=await (await run('antigravity',path,undefined,alias)).json();assert.equal(detail.id??detail.name.replace(/^models\//,''),alias);
+  const untouched=await (await run('gemini',path)).json();assert.equal((untouched.data??untouched.models).length,4);
+ }
+});
+
+test('provider label consolidation preserves missing canonical IDs, custom routing and different capabilities',async()=>{
+ const {deduplicateAntigravityGeminiModels}=await import('../supabase/functions/sub2api/model_catalog_display.ts');
+ const alias={id:'gemini-2.5-flash',displayName:'Gemini 3.5 Flash Lite',supportedGenerationMethods:['generateContent']};
+ const canonical={...alias,id:'gemini-3.5-flash-lite'};
+ const run=(data,resolve=()=>undefined,permits=()=>true)=>deduplicateAntigravityGeminiModels({data},resolve,permits).data;
+ assert.deepEqual(run([alias]),[alias]);
+ assert.deepEqual(run([alias,canonical],model=>model===alias.id?'custom-target':undefined),[alias,canonical]);
+ assert.deepEqual(run([alias,canonical],()=>undefined,model=>model!==canonical.id),[alias,canonical]);
+ const different={...canonical,supportedGenerationMethods:['countTokens']};assert.deepEqual(run([alias,different]),[alias,different]);
+ const renamed={...canonical,displayName:'Different label'};assert.deepEqual(run([alias,renamed]),[alias,renamed]);
+ assert.deepEqual(run([alias,canonical]),[canonical]);
+ assert.deepEqual(run([canonical,alias]),[canonical]);
+});

@@ -59,3 +59,22 @@ export function deduplicateMappedModels(value: Entry, resolveTarget: (model: str
   });
   return filtered.length === entries.length ? value : { ...value, [field]: filtered };
 }
+
+// Antigravity also advertises retired Gemini IDs under their replacement's
+// display name while keeping identity routing. Prefer the matching public ID
+// only when it is present with the same label and generation capabilities.
+export function deduplicateAntigravityGeminiModels(value: Entry, resolveTarget: (model: string) => string | undefined, permitsModel: (model: string) => boolean): Entry {
+  const entries = value.data ?? value.models;
+  if (!Array.isArray(entries)) return value;
+  const byId = new Map<string, Entry>(entries.map(entry => [id(entry), entry]));
+  const self = (model: string) => (resolveTarget(model)?.trim().replace(/^models\//, '') ?? model) === model;
+  const inferred = new Map<string, string>();
+  for (const entry of entries) {
+    const model = id(entry), label = entry.displayName;
+    if (!model.startsWith('gemini-') || typeof label !== 'string' || !/^Gemini \d+(?:\.\d+)*(?: [a-zA-Z0-9]+)+$/.test(label) || !self(model)) continue;
+    const target = label.toLowerCase().replace(/ /g, '-'), canonical = byId.get(target);
+    if (target !== model && canonical?.displayName === label && self(target) &&
+      JSON.stringify(entry.supportedGenerationMethods) === JSON.stringify(canonical.supportedGenerationMethods)) inferred.set(model, target);
+  }
+  return deduplicateMappedModels(value, model => inferred.get(model) ?? resolveTarget(model), permitsModel);
+}
