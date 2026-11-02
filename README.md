@@ -66,6 +66,8 @@ Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless 
 
 Gemini and Antigravity model lists show only models that complete an actual inference probe with usable output. A listing verifies models for up to 50 seconds; pending models rotate on subsequent listings, and successful results are cached for 10 minutes per worker and client key. Temporary quota/capacity failures are retried later. The `x-s2a-model-verification` response header distinguishes verified, temporary, unsupported, and unverified counts. The first listing may take longer and consume provider quota. Antigravity supports thinking variants, account-tier endpoint selection, bounded retries, persistent model backoff with the upstream Gemini text quota scope and separate capacity handling, signature recovery, and explicitly opted-in AI Credits fallback; discovery probes never enable credit overages. See the [upstream parity audit](docs/UPSTREAM_MODEL_PARITY_AUDIT.md) for behavior and limits.
 
+For native Gemini chat requests targeting `gemini-3-flash` or `gemini-3-flash-preview`, the gateway replaces unsupported IMAGE output modalities with TEXT and removes image-output configuration. User messages remain unchanged and the model supplies its own answer. Image models retain their generation options; provider errors remain errors.
+
 Chat supports native image generation. WorkBuddy displays original-image cards inline; click to preview, save or copy, without automatically opening the side panel. This requires client file tools and permission. Other clients retain inline images.
 
 ## Documentation

@@ -1,3 +1,4 @@
+import {normalizeGeminiTextOutput} from './gemini_text_output.ts';
 import {resolveThinkingVariant} from './antigravity_policy.ts';
 import {publishChatMedia} from './chat_media.ts';
 import {sseHeartbeat} from './sse_heartbeat.ts';
@@ -467,6 +468,7 @@ async function proxyWithIdentity(
         return result;
       }
       if(db.config.dataModel==='native'&&(reservation as {allow_image_generation?:boolean}).allow_image_generation===false&&!models&&!inputTokens&&!messageTokens&&!geminiTokens&&imageGenerationIntent(path,upstreamModel,body,account.platform))throw new HttpError(403,'image_generation_forbidden');
+      if(protocol==='gemini'&&!geminiTokens&&forwardedBody&&['gemini','antigravity'].includes(account.platform??''))normalizeGeminiTextOutput(upstreamModel,forwardedBody);
       if(cacheBinding&&String(account.id)!==cacheBinding.account_id)throw new HttpError(503,'cache_account_unavailable');
       if (search) {
         if(account.type==='service_account')throw new HttpError(501,'provider_protocol_unsupported');
