@@ -1,3 +1,4 @@
+import {resolveThinkingVariant} from './antigravity_policy.ts';
 import {publishChatMedia} from './chat_media.ts';
 import {sseHeartbeat} from './sse_heartbeat.ts';
 import {nativeImageFileTool,NATIVE_IMAGE_FILE_GUIDANCE} from './chat_image_delivery.ts';
@@ -375,7 +376,8 @@ async function proxyWithIdentity(
       upstream_model?:string;
       model_sources?:ModelSources;
     };
-    const mappedModel=voice||systemOne?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel;
+    const variant = account.platform==='antigravity' && !models && model_sources ? resolveThinkingVariant(routingModel,model_sources.mapping,body) : undefined;
+    const mappedModel=variant ?? (voice||systemOne?routingModel:upstream_model ?? (model_sources ? mappedTarget(model_sources.mapping,routingModel,account.platform??"openai") : undefined) ?? routingModel);
     const upstreamModel = cacheBinding?.upstream_model ?? ((account.platform ?? "openai") === "openai" ? defaultSolModel(mappedModel) ?? mappedModel : mappedModel);
     let dispatchedModel = upstreamModel;
     let effectiveServiceTier:string|null=null;
@@ -632,7 +634,7 @@ async function proxyWithIdentity(
         let credentials = await credentialsFor(db, account);
         const forward = async () => {
           if (platform === 'antigravity') {
-            const outgoing = antigravityOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, nativeAnthropicBridge?anthropicBody:forwardedBody, request, signal, protocol === 'messages'||nativeAnthropicBridge ? body?.model as string : undefined);
+            const outgoing = antigravityOAuthRequest(credentials, nativeAnthropicBridge?'messages':protocol, nativeAnthropicBridge?'/v1/messages':forwardedPath, nativeAnthropicBridge?anthropicBody:forwardedBody, request, signal, protocol === 'messages'||nativeAnthropicBridge ? body?.model as string : undefined, !modelProbe && account.overages_enabled===true);
             if (outgoing.upstreamModel) {
               dispatchedModel = outgoing.upstreamModel;
               errorContext.upstreamModel = dispatchedModel;
@@ -775,13 +777,20 @@ async function proxyWithIdentity(
         if(upstream.status===401&&account.type==='service_account')invalidateVertexTokenContext(vertexCache);
         chatBridge?.close();
         const status = upstream.status;
+        const modelBackoff = platform==='antigravity' && [429,503].includes(status) ? Number(upstream.headers.get('x-s2a-model-backoff') ?? 0) : 0;
+        if (!modelProbe && modelBackoff > 0 && db.config.dataModel==='native') {
+          await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:dispatchedModel,p_seconds:Math.min(86400,Math.ceil(modelBackoff))});
+        }
+        if (!modelProbe && platform==='antigravity' && upstream.headers.get('x-s2a-credits-exhausted')==='true' && db.config.dataModel==='native') {
+          await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:'AICredits',p_seconds:18000});
+        }
         const rejection = await upstreamErrorCode(upstream);
         await upstreamFailure(status, rejection === "upstream_rejected_request" ? "upstream_http" : rejection);
         await upstream.body?.cancel();
         await finish(
           status,
           { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "failed" },
-          status === 429
+          modelBackoff > 0 ? 0 : status === 429
             ? 60
             : status >= 500 || status === 401 || status === 403
             ? 15

@@ -6,6 +6,7 @@ import { DEFAULT_PROVIDER_CATALOGS } from './provider_models.ts';
 import type { GoogleOAuthClients } from './google_oauth_config.ts';
 export type { GoogleOAuthClients } from './google_oauth_config.ts';
 export type GoogleCredentials = OAuthCredentials & {
+  plan_type?: string;
   client_secret?: string;
   oauth_type?: string;
   project_id?: string;

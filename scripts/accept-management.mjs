@@ -711,6 +711,7 @@ try {
     sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
     sql(readFileSync(root + "/deploy/pinned-models.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
+    sql(readFileSync(root + "/tests/antigravity-backoff.database.sql", "utf8"));
     sql(readFileSync(root + "/tests/pinned-models.database.sql", "utf8"));
     sql(readFileSync(root + "/tests/configured-models.database.sql", "utf8"));
     sql(`BEGIN; SET LOCAL ROLE s2a_management;

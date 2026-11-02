@@ -82,8 +82,8 @@ test('Antigravity catalogs query the real provider and expose sanitized mapped m
 test('Antigravity falls back between the fixed daily and production origins before consuming a response', async () => {
   for (const models of [false, true]) {
     const result = await fixture({ fallback: true, models }); assert.equal(result.calls.length, 2);
-    assert.equal(new URL(result.calls[0]).hostname, models ? 'cloudcode-pa.googleapis.com' : 'daily-cloudcode-pa.googleapis.com');
-    assert.equal(new URL(result.calls[1]).hostname, models ? 'daily-cloudcode-pa.googleapis.com' : 'cloudcode-pa.googleapis.com');
+    assert.equal(new URL(result.calls[0]).hostname, 'cloudcode-pa.googleapis.com');
+    assert.equal(new URL(result.calls[1]).hostname, 'daily-cloudcode-pa.googleapis.com');
   }
 });
 test('Antigravity rejects missing projects and unsupported protocols before network dispatch', () => {

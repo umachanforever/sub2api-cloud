@@ -934,7 +934,7 @@ test("Gemini native model list/get retains pagination and capabilities without f
     assert.equal(target.origin, "https://generativelanguage.googleapis.com");
     assert.equal(target.searchParams.get("key"), null);
     assert.equal(init.headers.get("x-goog-api-key"), "provider-secret");
-    if(init.method === "POST")return Response.json({candidates:[{content:{parts:[{text:"OK"}]}}]});
+    if(init.method === "POST")return Response.json({candidates:[{finishReason:"STOP",content:{parts:[{text:"OK"}]}}]});
     if (target.pathname.endsWith("/gemini-test")) return Response.json(model);
     assert.equal(target.searchParams.get("pageSize"), "10");
     assert.equal(target.searchParams.get("pageToken"), "cursor/+a");

@@ -84,10 +84,45 @@ $$;
 ALTER FUNCTION s2a_private.anthropic_catalog_models(bigint) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.anthropic_catalog_models(bigint) FROM PUBLIC,anon,authenticated,service_role;
 
+-- Model cooldowns share the upstream account.extra representation.
+CREATE OR REPLACE FUNCTION s2a_private.model_backoff_active(extra jsonb,model text)
+RETURNS boolean LANGUAGE plpgsql STABLE SET search_path='' AS $$
+BEGIN
+ RETURN coalesce((extra->'model_rate_limits'->model->>'rate_limit_reset_at')::timestamptz>clock_timestamp(),false);
+EXCEPTION WHEN invalid_datetime_format OR datetime_field_overflow THEN RETURN false;
+END $$;
+ALTER FUNCTION s2a_private.model_backoff_active(jsonb,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.model_backoff_active(jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION public.s2a_personal_model_backoff(p_lease_id uuid,p_version bigint,p_upstream_model text,p_seconds integer)
+RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
+DECLARE lease s2a_private.personal_gateway_leases%ROWTYPE; entry jsonb; limits jsonb;
+BEGIN
+ IF p_seconds IS NULL OR p_seconds NOT BETWEEN 1 AND 86400 OR p_upstream_model IS NULL
+  OR p_upstream_model !~ '^[a-zA-Z0-9._-]{1,200}$' THEN RETURN false; END IF;
+ SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id AND credential_version<=p_version
+  AND model<>'__models__' AND finished_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE;
+ IF NOT FOUND THEN RETURN false; END IF;
+ PERFORM 1 FROM s2a_private.accounts WHERE id=lease.account_id FOR UPDATE;
+ SELECT coalesce(jsonb_object_agg(m.key,m.value),'{}'::jsonb) INTO limits
+ FROM s2a_private.accounts a CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(a.extra->'model_rate_limits')='object'
+  THEN a.extra->'model_rate_limits' ELSE '{}'::jsonb END) m
+ WHERE a.id=lease.account_id AND s2a_private.model_backoff_active(a.extra,m.key);
+ entry:=jsonb_build_object('rate_limited_at',clock_timestamp(),'rate_limit_reset_at',clock_timestamp()+make_interval(secs=>p_seconds));
+ limits:=limits||jsonb_build_object(p_upstream_model,entry);
+ IF p_upstream_model<>'AICredits' THEN limits:=limits||jsonb_build_object(lease.model,entry); END IF;
+ UPDATE s2a_private.accounts SET extra=coalesce(extra,'{}'::jsonb)||jsonb_build_object('model_rate_limits',limits)
+ WHERE id=lease.account_id AND s2a_credential_version=p_version AND platform='antigravity' AND deleted_at IS NULL;
+ RETURN FOUND;
+END $$;
+ALTER FUNCTION public.s2a_personal_model_backoff(uuid,bigint,text,integer) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION public.s2a_personal_model_backoff(uuid,bigint,text,integer) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.s2a_personal_model_backoff(uuid,bigint,text,integer) TO service_role;
+
 -- Explicit account mappings also define the scheduler's model allowlist.
 CREATE OR REPLACE FUNCTION s2a_private.account_mapping_accepts(platform text,account_type text,extra jsonb,mapping jsonb,model text)
 RETURNS boolean LANGUAGE plpgsql IMMUTABLE SET search_path='' AS $$
-DECLARE normalized text; pattern text;
+DECLARE normalized text; pattern text; suffix text;
 BEGIN
  IF model='__models__' THEN RETURN true; END IF;
  IF platform='openai' AND (CASE
@@ -115,6 +150,12 @@ BEGIN
      IF model=pattern OR normalized=pattern OR (right(pattern,1)='*' AND
          (starts_with(model,left(pattern,-1)) OR starts_with(normalized,left(pattern,-1)))) THEN RETURN true; END IF;
  END LOOP;
+ IF platform='antigravity' AND starts_with(normalized,'gemini-') AND normalized !~ '-(low|medium|high|tiered)$' THEN
+  FOREACH suffix IN ARRAY ARRAY['-high','-medium','-low','-tiered'] LOOP
+   IF EXISTS(SELECT FROM jsonb_each_text(mapping) m WHERE m.key=normalized||suffix OR
+    (right(m.key,1)='*' AND starts_with(normalized||suffix,left(m.key,-1)))) THEN RETURN true; END IF;
+  END LOOP;
+ END IF;
  RETURN false;
 END $$;
 ALTER FUNCTION s2a_private.account_mapping_accepts(text,text,jsonb,jsonb,text) OWNER TO s2a_management;
@@ -330,6 +371,12 @@ BEGIN
                 accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
             FOR UPDATE OF accounts LOOP
             IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',routed_model) THEN CONTINUE; END IF;
+            IF a.platform='antigravity' AND p_model<>'__models__' AND (
+                s2a_private.model_backoff_active(a.extra,p_model) OR s2a_private.model_backoff_active(a.extra,routed_model) OR
+                s2a_private.model_backoff_active(a.extra,(SELECT m.value
+                 FROM jsonb_each_text(s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping')) m
+                 WHERE m.key=routed_model OR (right(m.key,1)='*' AND starts_with(routed_model,left(m.key,-1)))
+                 ORDER BY (m.key=routed_model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1))) THEN CONTINUE; END IF;
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
             INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket,composite_route)
@@ -360,7 +407,7 @@ BEGIN
             ORDER BY candidate.rank,(m.key=candidate.model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1;
         END IF;
     END IF;
-    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text,'model_passthrough',
+    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text,'overages_enabled',a.extra->'overages_enabled'='true'::jsonb AND NOT s2a_private.model_backoff_active(a.extra,'AICredits'),'model_passthrough',
         CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean
             WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END)
         || CASE WHEN p_model='__models__' THEN jsonb_build_object('model_metadata',a.extra->'upstream_model_metadata') ELSE '{}'::jsonb END,

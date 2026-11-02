@@ -49,7 +49,7 @@ test('native Gemini scope fallback passes through gateway catalog filtering and 
   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_allowlist:{enabled:true,models:['gemini-3.1-pro-preview-customtools']},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
-  if(String(url).includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
+  if(String(url).includes(':generateContent'))return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]});
   assert.equal(url,'https://generativelanguage.googleapis.com/v1beta/models');
   return Response.json({error:{message:'insufficient authentication scopes'}},{status:403});
  });
@@ -69,7 +69,7 @@ test('native Gemini catalog preserves upstream metadata and opaque pagination th
    return Response.json({lease_id:'lease',gemini_catalog_sources:{has_antigravity:true,sources:[{'gemini-future':'target','gemini-extra':'target','gemini-*':'target'}]},model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   }
   if(String(url).includes('/rpc/'))return Response.json({applied:true});
-  if(String(url).includes(':generateContent'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
+  if(String(url).includes(':generateContent'))return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]});
   const target=new URL(url);assert.equal(target.searchParams.get('pageToken'),'opaque-first');assert.equal(target.searchParams.get('pageSize'),'2');
   return Response.json(value);
  });

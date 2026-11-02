@@ -3,13 +3,13 @@ import assert from 'node:assert/strict';
 import {ModelAvailability} from '../supabase/functions/sub2api/model_availability.ts';
 const request=()=>new Request('https://gateway/v1/models',{headers:{authorization:'Bearer client','x-real-ip':'192.0.2.1'}});
 const listing=()=>Response.json({data:[{id:'gpt-custom'},{id:'gemini-good',extension:42},{id:'gemini-bad'},{id:'gemini-*'}],nextPageToken:'opaque',extension:true},{headers:{etag:'"unfiltered"','last-modified':'yesterday'}});
-const success=()=>Response.json({choices:[{message:{content:'OK'}}]});
+const success=()=>Response.json({choices:[{finish_reason:'stop',message:{content:'OK'}}]});
 
 test('only successful Gemini inference survives while other providers, metadata and pagination remain intact',async()=>{
  const cache=new ModelAvailability();const calls=[];
  const result=await cache.filter(listing(),request(),'key',false,async(req,path)=>{
   const body=await req.json();calls.push(body.model);
-  assert.equal(path,'/v1/chat/completions');assert.equal(body.max_tokens,8);assert.equal(body.stream,false);
+  assert.equal(path,'/v1/chat/completions');assert.equal(body.max_tokens,1024);assert.equal(body.stream,false);
   assert.equal(req.headers.get('x-real-ip'),'192.0.2.1');
   return body.model==='gemini-good'?success():Response.json({error:{}},{status:404});
  });
@@ -39,8 +39,8 @@ test('transient failures retry after 15 seconds and duplicate simultaneous listi
 test('native probes require candidates and do not treat a blocked response or malformed success as available',async()=>{
  const cache=new ModelAvailability();const models=['gemini-good','gemini-blocked','gemini-invalid'];
  const result=await cache.filter(Response.json({models:models.map(id=>({name:'models/'+id}))}),request(),'key',true,async(req,path)=>{
-  const payload=await req.json();assert.equal(payload.generationConfig.maxOutputTokens,8);assert.ok(payload.contents.length);
-  if(path.includes('gemini-good'))return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
+  const payload=await req.json();assert.equal(payload.generationConfig.maxOutputTokens,1024);assert.ok(payload.contents.length);
+  if(path.includes('gemini-good'))return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]});
   return path.includes('gemini-blocked')?Response.json({promptFeedback:{blockReason:'SAFETY'}}):new Response('invalid');
  });
  assert.deepEqual((await result.json()).models,[{name:'models/gemini-good'}]);
@@ -66,8 +66,8 @@ test('gateway verifies real inference, excludes rejected models, settles probe l
   if(String(url).includes('/rpc/'))return Response.json(null);
   if(init.method==='GET')return Response.json({models:[{name:'models/gemini-good',displayName:'Keep'},{name:'models/gemini-bad'}],nextPageToken:'next'});
   probes.push(String(url));assert.equal(init.headers.get('x-goog-api-key'),'provider-key');
-  assert.equal(JSON.parse(init.body).generationConfig.maxOutputTokens,8);
-  return String(url).includes('gemini-good')?Response.json({candidates:[{content:{parts:[{text:'OK'}]}}],usageMetadata:{promptTokenCount:3,candidatesTokenCount:1}}):Response.json({error:{message:'not supported'}},{status:404});
+  assert.equal(JSON.parse(init.body).generationConfig.maxOutputTokens,1024);
+  return String(url).includes('gemini-good')?Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}],usageMetadata:{promptTokenCount:3,candidatesTokenCount:1}}):Response.json({error:{message:'not supported'}},{status:404});
  });
  const list=()=>app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
  assert.deepEqual(await (await list()).json(),{models:[{name:'models/gemini-good',displayName:'Keep'}],nextPageToken:'next'});
@@ -91,7 +91,7 @@ test('a model verification 429 cannot cool down the account and hide other worki
   if(String(url).endsWith('/s2a_personal_finish')){const result=JSON.parse(init.body);finishes.push(result);if(result.p_cooldown_seconds>0)cooldown=true;return Response.json({applied:true});}
   if(String(url).includes('/rpc/'))return Response.json(null);
   if(init.method==='GET')return Response.json({models:['gemini-limited-a','gemini-limited-b','gemini-good'].map(id=>({name:'models/'+id}))});
-  return String(url).includes('gemini-good')?Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]}):Response.json({error:{message:'Model quota exhausted'}},{status:429});
+  return String(url).includes('gemini-good')?Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]}):Response.json({error:{message:'Model quota exhausted'}},{status:429});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
  assert.equal(response.status,200);
@@ -110,7 +110,7 @@ test('native Gemini catalogs verify every advertised model, including Claude and
   const cache=new ModelAvailability();const checked=[];
   const result=await cache.filter(Response.json({models:models.map(id=>({name:'models/'+id})),nextPageToken:'next'}),request(),'key',true,async(req,path)=>{
    const model=decodeURIComponent(path.split('/').at(-1).split(':')[0]);checked.push(model);
-   return model.endsWith('-good')?Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]}):new Response(null,{status:404});
+   return model.endsWith('-good')?Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]}):new Response(null,{status:404});
   });
   assert.deepEqual(checked.sort(),[...models].sort());
   assert.deepEqual((await result.json()).models.map(entry=>entry.name),models.filter(model=>model.endsWith('-good')).map(model=>'models/'+model));
@@ -122,4 +122,33 @@ test('standard Gemini provider catalogs cannot bypass verification through Claud
  const result=await cache.filter(Response.json({data:[{id:'claude-unavailable',owned_by:'google'},{id:'custom-unavailable',owned_by:'google'},{id:'claude-independent',owned_by:'anthropic'}]}),request(),'key',false,async req=>{checked.push((await req.json()).model);return new Response(null,{status:404});});
  assert.deepEqual(checked.sort(),['claude-unavailable','custom-unavailable']);
  assert.deepEqual((await result.json()).data,[{id:'claude-independent',owned_by:'anthropic'}]);
+});
+
+test('empty, reasoning-only and token-truncated successes do not prove a usable model',async()=>{
+ for(const native of [true,false]){
+ const result=await new ModelAvailability().filter(Response.json({data:['good','empty','truncated','thinking'].map(x=>({id:'gemini-'+x}))}),request(),'key',native,async(req,path)=>{
+ const model=native?path:(await req.json()).model;
+ const reason=model.includes('truncated')?(native?'MAX_TOKENS':'length'):(native?'STOP':'stop');
+ const text=model.includes('empty')?'':'OK';
+ return Response.json(native?{candidates:[{finishReason:reason,content:{parts:[{text,...(model.includes('thinking')?{thought:true}:{})}]}}]}:{choices:[{finish_reason:reason,message:model.includes('thinking')?{reasoning_content:text}:{content:text}}]});
+ });
+ assert.deepEqual((await result.json()).data.map(x=>x.id),['gemini-good']);
+ }
+});
+
+test('listing deadlines keep prior successes and rotate unverified models without caching cancellation as unsupported',async()=>{
+ const cache=new ModelAvailability(Date.now,{listing:60,probe:50});
+ const entries=['gemini-good','gemini-slow-a','gemini-slow-b','gemini-slow-c','gemini-slow-d','gemini-later'];
+ const calls=[];let pass=0;
+ const run=()=>cache.filter(Response.json({data:entries.map(id=>({id}))}),request(),'scope',false,async req=>{
+ const {model}=await req.json();calls.push(model);
+ if(pass===0&&model.includes('slow'))await new Promise((resolve,reject)=>{
+ const timer=setTimeout(resolve,1000);req.signal.addEventListener('abort',()=>{clearTimeout(timer);reject(req.signal.reason);},{once:true});
+ });
+ return success();
+ });
+ const first=await run();assert.ok((await first.json()).data.some(x=>x.id==='gemini-good'));assert.ok(!calls.includes('gemini-later'));
+ pass++;const second=await run();assert.ok((await second.json()).data.some(x=>x.id==='gemini-later'));
+ assert.match(second.headers.get('x-s2a-model-verification'),/unsupported=0/);
+ assert.equal(calls.filter(x=>x==='gemini-good').length,1);
 });

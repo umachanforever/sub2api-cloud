@@ -1,7 +1,8 @@
 import { HttpError } from "./db.ts";
 
 type Entry = Record<string, any>;
-type Result = { available: boolean; until: number };
+type Verdict = "verified" | "temporary" | "unsupported";
+type Result = { available: boolean; until: number; verdict: Verdict };
 type Probe = (request: Request, path: string) => Promise<Response>;
 
 // Kept per handler and credential scope. Only completed inference proves availability.
@@ -9,8 +10,11 @@ export class ModelAvailability {
   private results = new Map<string, Result>();
   private pending = new Map<string, Promise<boolean>>();
   private now: () => number;
-  constructor(now = Date.now) {
+  private cursor = 0;
+  private budgets: {listing: number; probe: number};
+  constructor(now = Date.now, budgets = {listing: 50_000, probe: 20_000}) {
     this.now = now;
+    this.budgets = budgets;
   }
 
   private async check(
@@ -26,33 +30,36 @@ export class ModelAvailability {
     if (pending) return pending;
     const work = (async () => {
       let available = false, ttl = 15_000;
+      let verdict: Verdict = "temporary";
       try {
         const response = await probe(request, path);
         if (response.ok) {
           const value = await response.json();
           available = !value?.error &&
             (path.startsWith("/v1beta/")
-              ? Array.isArray(value?.candidates) && value.candidates.length > 0
-              : Array.isArray(value?.choices) && value.choices.length > 0);
-          ttl = available ? 10 * 60_000 : 60_000;
+              ? Array.isArray(value?.candidates) && value.candidates.some((candidate: Entry) => candidate.finishReason === 'STOP' && candidate.content?.parts?.some((part: Entry) => !part.thought && (typeof part.text === 'string' && part.text.trim() || part.inlineData?.data || part.functionCall)))
+              : Array.isArray(value?.choices) && value.choices.some((choice: Entry) => ['stop','tool_calls'].includes(choice.finish_reason) && (typeof choice.message?.content === 'string' && choice.message.content.trim() || choice.message?.tool_calls?.length)));
+          verdict = available ? "verified" : "temporary";
+          ttl = available ? 10 * 60_000 : 15_000;
         } else {
-          ttl = [400, 404, 405, 410, 422, 501].includes(response.status)
+          ttl = [404, 405, 410, 501].includes(response.status)
             ? 5 * 60_000
             : 15_000;
+          if(ttl===5*60_000)verdict="unsupported";
           await response.body?.cancel();
         }
       } catch (error) {
         if (
           error instanceof HttpError &&
-          [400, 404, 405, 410, 422, 501].includes(error.status)
-        ) ttl = 5 * 60_000;
+          [404, 405, 410, 501].includes(error.status)
+        ) { ttl = 5 * 60_000; verdict="unsupported"; }
       }
       // Client cancellation and the listing deadline must not poison later requests.
       if (!canceled.aborted) {
         if (this.results.size >= 1000) {
           this.results.delete(this.results.keys().next().value!);
         }
-        this.results.set(key, { available, until: this.now() + ttl });
+        this.results.set(key, { available, until: this.now() + ttl, verdict });
       }
       return available;
     })();
@@ -98,13 +105,22 @@ export class ModelAvailability {
       Number(id(b).startsWith("gemini-")) - Number(id(a).startsWith("gemini-"))
     );
     if (!candidates.length) return response;
+    const jobs = await Promise.all(candidates.map(async entry => {
+      const fingerprint = await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify([scope,native,entry])));
+      return {entry,key:Array.from(new Uint8Array(fingerprint),byte=>byte.toString(16).padStart(2,'0')).join('')};
+    }));
     const available = new Set<Entry>();
+    // Include every current positive before spending time on uncached models.
+    for(const {entry,key} of jobs) { const cached=this.results.get(key); if(cached?.available && cached.until>this.now())available.add(entry); }
+    const offset=this.cursor % jobs.length;
+    const ordered=[...jobs.slice(offset),...jobs.slice(0,offset)];
     let next = 0;
-    const deadline = AbortSignal.timeout(45_000);
+    const deadline = AbortSignal.timeout(this.budgets.listing);
     const canceled = AbortSignal.any([request.signal, deadline]);
     await Promise.all(Array.from({ length: 2 }, async () => {
-      while (next < candidates.length) {
-        const entry = candidates[next++], model = id(entry);
+      while (next < ordered.length) {
+        const {entry,key} = ordered[next++], model = id(entry);
+        if(available.has(entry))continue;
         if (request.signal.aborted || deadline.aborted) break;
         if (!/^[a-zA-Z0-9._-]+$/.test(model)) continue;
         const path = native
@@ -118,18 +134,20 @@ export class ModelAvailability {
         const payload = native
           ? {
             contents: [{ role: "user", parts: [{ text: "Reply OK." }] }],
-            generationConfig: { maxOutputTokens: 8 },
+            generationConfig: { maxOutputTokens: 1024,
+              ...(model.startsWith('gemini-3') ? {thinkingConfig:{thinkingLevel:'low'}} : model.startsWith('gemini-2.5') ? {thinkingConfig:{thinkingBudget:0}} : {}),
+            },
           }
           : {
             model,
             messages: [{ role: "user", content: "Reply OK." }],
-            max_tokens: 8,
+            max_tokens: 1024,
             stream: false,
           };
         const signal = AbortSignal.any([
           request.signal,
           deadline,
-          AbortSignal.timeout(10_000),
+          AbortSignal.timeout(this.budgets.probe),
         ]);
         const probeRequest = new Request(new URL(path, request.url), {
           method: "POST",
@@ -137,19 +155,12 @@ export class ModelAvailability {
           body: JSON.stringify(payload),
           signal,
         });
-        const fingerprint = await crypto.subtle.digest(
-          "SHA-256",
-          new TextEncoder().encode(JSON.stringify([scope, native, entry])),
-        );
-        const key = Array.from(
-          new Uint8Array(fingerprint),
-          (byte) => byte.toString(16).padStart(2, "0"),
-        ).join("");
         if (await this.check(key, probeRequest, path, probe, canceled)) {
           available.add(entry);
         }
       }
     }));
+    this.cursor = (offset + Math.max(1,next-2)) % jobs.length;
     if (request.signal.aborted) throw request.signal.reason;
     await response.body?.cancel();
     const headers = new Headers(response.headers);
@@ -163,6 +174,9 @@ export class ModelAvailability {
     ) headers.delete(name);
     headers.set("cache-control", "no-store");
     headers.set("content-type", "application/json");
+    const counts={verified:0,temporary:0,unsupported:0,unverified:0};
+    for(const {key} of jobs){const result=this.results.get(key);counts[result && result.until>this.now() ? result.verdict : 'unverified']++;}
+    headers.set('x-s2a-model-verification',Object.entries(counts).map(([name,count])=>`${name}=${count}`).join('; '));
     return new Response(
       JSON.stringify({
         ...body,

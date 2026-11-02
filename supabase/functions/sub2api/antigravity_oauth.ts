@@ -1,3 +1,4 @@
+import {paidAntigravityTier, retryInfo, recoverRequest} from './antigravity_policy.ts';
 import {IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {enableAntigravityTools,antigravityHostedResponse,type AntigravityToolContext} from './antigravity_tools.ts';
 import { accountFetch } from './account_proxy.ts';
@@ -12,10 +13,10 @@ import { antigravityIdentity,antigravityUserAgent } from './antigravity_identity
 
 const PROD = 'https://cloudcode-pa.googleapis.com';
 const DAILY = 'https://daily-cloudcode-pa.googleapis.com';
-type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string; upstreamModel?: string };
+type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string; upstreamModel?: string; overagesEnabled?: boolean };
 
 export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol: NativeProtocol, path: string,
-  body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal, responseModel?: string): Outgoing {
+  body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal, responseModel?: string, overagesEnabled = false): Outgoing {
   const claudeModel = protocol === 'messages' && typeof body?.model === 'string' ? body.model : undefined;
   const claudeStreaming = body?.stream === true;
   const searchOnly = !!(claudeModel && antigravitySearchOnly(body!));
@@ -47,7 +48,8 @@ export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol
     inner.systemInstruction = { ...instruction, parts: [{ text: antigravityIdentity }, ...existing] };
   }
   return {
-    url: DAILY + '/v1internal:streamGenerateContent?alt=sse', fallbackURL: PROD + '/v1internal:streamGenerateContent?alt=sse',
+    url: (paidAntigravityTier(credentials.plan_type) ? DAILY : PROD) + '/v1internal:streamGenerateContent?alt=sse', fallbackURL: (paidAntigravityTier(credentials.plan_type) ? PROD : DAILY) + '/v1internal:streamGenerateContent?alt=sse',
+    overagesEnabled,
     catalog: false, streaming: validated.streaming, upstreamModel: decodeURIComponent(match[1]), ...(claudeModel ? { claudeModel: responseModel ?? claudeModel } : {}),
     init: { method: 'POST', headers, redirect: 'error', signal, body: JSON.stringify({
       project, requestId: 'agent-' + crypto.randomUUID(), userAgent: 'antigravity', requestType: searchOnly ? 'web_search' : 'agent',
@@ -90,17 +92,74 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
   const envelope = JSON.parse(String(outgoing.init.body ?? '{}'));
   const names = hosted && !outgoing.catalog ? enableAntigravityTools(envelope, hosted.images) : new Set<string>();
   const send = async (body:Record<string,any>,signal:AbortSignal):Promise<Response> => {
-    for (const [index, url] of [outgoing.url, outgoing.fallbackURL].entries()) {
+    // Bound retries to the hosted request budget; never replay a consumed stream.
+    const started = Date.now();
+    let index = 0, signatureStage = 0, budgetRecovered = false, credits = false, attempts = 0;
+    const urls = [outgoing.url, outgoing.fallbackURL];
+    while (attempts++ < 5) {
       let response: Response;
-      try { response = await accountFetch(db, account, url, {...outgoing.init,body:JSON.stringify(body),signal}); }
+      try { response = await accountFetch(db, account, urls[index], {...outgoing.init,body:JSON.stringify(body),signal}); }
       catch (error) {
         if (signal.aborted) throw new HttpError(504, 'upstream_timeout');
         if (error instanceof HttpError) throw error;
-        if (index === 0) continue;
+        if (index === 0) { index++; continue; }
         throw new HttpError(502, 'upstream_request_failed');
       }
-      if (index === 0 && ([404, 408, 429].includes(response.status) || response.status >= 500)) { await response.body?.cancel(); continue; }
-      return response;
+      response = new Response(response.body,{status:response.status,statusText:response.statusText,headers:new Headers(response.headers)});
+      // Upstream headers cannot manufacture a trusted scheduler instruction.
+      response.headers.delete('x-s2a-model-backoff');
+      response.headers.delete('x-s2a-credits-exhausted');
+      if (response.ok || !([400,404,408,429].includes(response.status) || response.status>=500)) return response;
+      // Read only bounded error bodies, never clone an unbounded provider stream.
+      const reader = response.body?.getReader();
+      let size = 0; const chunks: Uint8Array[] = [];
+      if (reader) try {
+        while (true) { const {done,value} = await reader.read(); if(done) break; size += value.length; if(size > 65536) break; chunks.push(value); }
+      } finally { await reader.cancel().catch(()=>{}); }
+      const bytes = new Uint8Array(chunks.reduce((sum,chunk)=>sum+chunk.length,0)); let offset=0;
+      for(const chunk of chunks) { bytes.set(chunk,offset); offset+=chunk.length; }
+      const text = new TextDecoder().decode(bytes.subarray(0,offset));
+      let value; try { value = JSON.parse(text); } catch { value = {}; }
+      const info = retryInfo(response.status,response.headers,value);
+      if (credits && response.status===429 && !info.delay && /google_one_ai|insufficient credits?|credits? exhausted|credit balance|resource has been exhausted/i.test(text)) {
+        response.headers.set('x-s2a-credits-exhausted','true');
+        response.headers.set('x-s2a-model-backoff','15');
+      }
+      response.headers.delete('content-length'); response.headers.delete('content-encoding');
+      const result = () => new Response(text,{status:response.status,headers:response.headers});
+      if(response.headers.get('x-s2a-credits-exhausted')==='true')return result();
+      if (attempts >= 5 || signal.aborted) {
+        if (info.modelScoped && !outgoing.catalog) response.headers.set('x-s2a-model-backoff',String(Math.max(1,Math.ceil((info.delay||15000)/1000))));
+        return result();
+      }
+      if (response.status === 400) {
+        let fixed;
+        if(/signature|thought_signature/i.test(text)) {
+          while(signatureStage < (outgoing.claudeModel ? 2 : 1) && !fixed) {
+            signatureStage++;
+            fixed=recoverRequest(body,text,{claude:!!outgoing.claudeModel,tools:signatureStage===2});
+          }
+        } else if(!budgetRecovered) { fixed=recoverRequest(body,text);budgetRecovered=!!fixed; }
+        if(fixed) {body=fixed;continue;}
+      }
+      if (response.status === 429 && info.quota && outgoing.overagesEnabled && !credits) {
+        credits=true; body={...body,enabledCreditTypes:['GOOGLE_ONE_AI']}; continue;
+      }
+      if (info.modelScoped && !outgoing.catalog) {
+        if (!info.quota && info.delay <= 2000 && Date.now()-started < 6000) {
+          const delay = Math.max(info.delay, info.capacity ? 1000 : 250);
+          await new Promise<void>((resolve,reject)=>{
+            const abort=()=>{clearTimeout(timer);reject(new HttpError(504,'upstream_timeout'));};
+            const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},delay);
+            if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});
+          });
+          continue;
+        }
+        response.headers.set('x-s2a-model-backoff',String(Math.max(1,Math.ceil((info.delay||15000)/1000))));
+        return result();
+      }
+      if (index === 0 && ([404,408,429].includes(response.status) || response.status >= 500)) { index++; continue; }
+      return result();
     }
     throw new HttpError(502, 'upstream_request_failed');
   };

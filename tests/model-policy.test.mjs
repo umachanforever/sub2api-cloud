@@ -64,7 +64,7 @@ test('Anthropic and Gemini catalog filtering preserves native envelopes and hide
   const handler=app((url,init)=>{
    if(url.pathname.endsWith('/s2a_acquire'))return Response.json({lease_id:id,account:{id,...encrypted,type:'apikey',platform,credential_version:1},model_allowlist:{enabled:true,models:[allowed]}});
    if(url.pathname.endsWith('/s2a_finish')){finishes.push(JSON.parse(init.body));return Response.json(null);}
-   if(platform==='gemini'&&init.method==='POST')return Response.json({candidates:[{content:{parts:[{text:'OK'}]}}]});
+   if(platform==='gemini'&&init.method==='POST')return Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]});
    if(platform==='gemini')return Response.json(single?{name:'models/blocked'}:{models:[{name:'models/blocked'},{name:`models/${allowed}`,displayName:'Keep'}],nextPageToken:'next'});
    return Response.json(single?{id:'blocked'}:{data:[{id:'blocked'},{id:allowed,display_name:'Keep'}],has_more:true});
   });
