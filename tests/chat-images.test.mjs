@@ -117,6 +117,42 @@ test('string assistant history round-trips through chat conversion as visual inp
  const plain={input:[{role:'assistant',content:'No images'}]};enableChatImages(plain);assert.equal(plain.input[0].content,'No images');
 });
 
+/** Parse synthetic downstream SSE without imposing an image-sized client frame limit. */
+function chatFrames(text){
+ return text.split('\n\n').filter(Boolean).map(frame=>frame.slice(6)).map(data=>data==='[DONE]'?data:JSON.parse(data));
+}
+
+test('large chat images use bounded downstream frames with exact bytes and terminal ordering',async()=>{
+ const large={...image,result:Buffer.concat([Buffer.from(png,'base64'),Buffer.alloc(2*1024*1024)]).toString('base64')};
+ for(const itemDone of [false,true]){
+  const events=[...(itemDone?[{type:'response.output_item.done',output_index:0,item:large}]:[]),{type:'response.completed',response:{status:'completed',output:[large],usage:{input_tokens:1,output_tokens:2}}}];
+  const reader=streamChat(source(events),'id','gpt-6-luna',true,IMAGE_CHAT_FRAME_LIMIT).getReader();
+  let text='',count=0;
+  for(;;){const next=await reader.read();if(next.done)break;assert.ok(next.value.byteLength<20*1024,'one SSE frame must stay below 20 KiB for base64');text+=new TextDecoder().decode(next.value);count++;}
+  const frames=chatFrames(text),parts=frames.filter(value=>typeof value==='object');
+  assert.ok(count>100);assert.equal(parts.map(value=>value.choices?.[0]?.delta?.content??'').join(''),chatImageMarkdown(large));
+  assert.equal(parts.filter(value=>value.choices?.[0]?.finish_reason==='stop').length,1);
+  assert.equal(parts.at(-2).choices[0].finish_reason,'stop');assert.equal(parts.at(-1).usage.completion_tokens,2);assert.equal(frames.at(-1),'[DONE]');
+ }
+});
+
+test('bounded chat content preserves Unicode, subsequent text and stream failures',async()=>{
+ const text='a'.repeat(16383)+'\u{1F426}'.repeat(10000);
+ const events=[{type:'response.output_text.delta',delta:text},{type:'response.output_text.delta',delta:'tail'},{type:'response.completed',response:{status:'completed',output:[]}}];
+ const values=chatFrames(await new Response(streamChat(source(events),'id','gpt-6-luna')).text());
+ assert.equal(values.filter(value=>typeof value==='object').map(value=>value.choices?.[0]?.delta?.content??'').join(''),text+'tail');
+ assert.ok(!JSON.stringify(values).includes('�'));
+ const failed=chatFrames(await new Response(streamChat(source([{type:'response.output_text.delta',delta:text},{type:'response.failed'}]),'id','gpt-6-luna')).text());
+ assert.equal(failed.at(-1).error.code,'upstream_error');assert.ok(!failed.includes('[DONE]'));
+});
+
+test('cancel while a large chat content frame is draining cancels upstream',async()=>{
+ let cancelled=0,pulls=0;
+ const upstream=new ReadableStream({pull(controller){pulls++;controller.enqueue(new TextEncoder().encode('data: '+JSON.stringify({type:'response.output_text.delta',delta:'x'.repeat(2*1024*1024)})+'\n\n'));},cancel(){cancelled++;}});
+ const reader=streamChat(upstream,'id','gpt-6-luna',false,IMAGE_CHAT_FRAME_LIMIT).getReader();
+ const first=await reader.read();assert.ok(first.value.byteLength<20*1024);await reader.cancel();assert.equal(cancelled,1);assert.ok(pulls<=2);
+});
+
 test('full OAuth chat route returns the same inline image in JSON and SSE without storage',async()=>{
  const {createHandler}=await import('./handler.mjs');
  for(const stream of [false,true])for(const itemDone of [false,true]){

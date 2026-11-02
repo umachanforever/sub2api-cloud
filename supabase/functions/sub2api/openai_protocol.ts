@@ -467,12 +467,42 @@ export function streamChat(
     failed = false,
     textSent = false,
     refusalSent = false;
+  const pending: (Item | string)[] = [];
+  let frames: Iterator<Uint8Array> | undefined, ended = false;
+  /** Bound downstream content frames independently from image-sized upstream frames. */
+  function* serialize(value: Item | string): Generator<Uint8Array> {
+    if (typeof value === 'string') { yield encoder.encode(`data: ${value}\n\n`); return; }
+    const choice = value.choices?.[0], content = choice?.delta?.content;
+    if (typeof content !== 'string' || content.length <= 16_384) {
+      yield encoder.encode(`data: ${JSON.stringify(value)}\n\n`); return;
+    }
+    for (let offset = 0; offset < content.length;) {
+      let end = Math.min(offset + 16_384, content.length);
+      // Avoid splitting a UTF-16 surrogate pair while preserving exact concatenation.
+      if (end < content.length && /[\uD800-\uDBFF]/.test(content[end - 1])) end--;
+      const delta = offset === 0 ? {...choice.delta, content: content.slice(offset, end)} : {content: content.slice(offset, end)};
+      const part = {...value, choices: [{...choice, delta, finish_reason: end === content.length ? choice.finish_reason : null}]};
+      yield encoder.encode(`data: ${JSON.stringify(part)}\n\n`);
+      offset = end;
+    }
+  }
+  /** Emit one frame per pull so slow consumers retain cancellation and backpressure. */
+  function drain(controller: ReadableStreamDefaultController<Uint8Array>): boolean {
+    for (;;) {
+      if (frames) {
+        const next = frames.next();
+        if (!next.done) { controller.enqueue(next.value); return true; }
+        frames = undefined;
+      }
+      if (pending.length) { frames = serialize(pending.shift()!); continue; }
+      if (ended) { controller.close(); return true; }
+      return false;
+    }
+  }
   return new ReadableStream<Uint8Array>({
     async pull(controller) {
-      const send = (value: Item) =>
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify(value)}\n\n`),
-        );
+      if (drain(controller)) return;
+      const send = (value: Item) => { pending.push(value); };
       const chunk = (delta: Item, finish: string | null = null) => ({
         id,
         object: "chat.completion.chunk",
@@ -496,8 +526,8 @@ export function streamChat(
           if (done) {
             if (failed) throw new Error("Upstream generation failed");
             if (!terminal) throw new Error("Upstream ended without completion");
-            controller.enqueue(encoder.encode("data: [DONE]\n\n"));
-            controller.close();
+            pending.push('[DONE]');
+            ended = true;
             return;
           }
           if (["response.failed", "error"].includes(event.type)) {
@@ -634,11 +664,15 @@ export function streamChat(
           },
         });
         await events.return(undefined);
-        controller.close();
+        ended = true;
+      } finally {
+        if (!cancelled) drain(controller);
       }
     },
     async cancel() {
       cancelled = true;
+      pending.length = 0;
+      frames = undefined;
       // Cancel the reader first: the iterator may be awaiting an upstream read.
       await reader.cancel().catch(() => {});
       await events.return(undefined);
