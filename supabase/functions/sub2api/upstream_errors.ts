@@ -21,7 +21,8 @@ export async function upstreamErrorCode(response: Response): Promise<string> {
     const body = JSON.parse(new TextDecoder().decode(bytes));
     const error = body?.error;
     const code = typeof error?.code === 'string' ? error.code.toLowerCase() : '';
-    const message = typeof error?.message === 'string' ? error.message.toLowerCase() : typeof body?.detail === 'string' ? body.detail.toLowerCase() : '';
+    const message = typeof error?.message === 'string' ? error.message.toLowerCase() : typeof body?.message === 'string' ? body.message.toLowerCase() : typeof body?.detail === 'string' ? body.detail.toLowerCase() : '';
+    if(response.status===400 && message.includes('invalid project resource name'))return 'upstream_project_configuration_error';
     if (['model_not_found', 'invalid_model', 'unknown_model'].includes(code)) return 'upstream_model_not_found';
     if (['model_access_denied', 'model_not_available'].includes(code)) return 'upstream_model_access_denied';
     if (/model.{0,240}(?:not supported|unsupported).{0,240}(?:account|subscription|plan)/s.test(message)) return 'upstream_model_access_denied';

@@ -19,6 +19,7 @@ import {
 
 export type Account = StoredCredentials & {
   overages_enabled?: boolean;
+  model_rate_limited?: boolean;
   websocket_settings?: Record<string,unknown>;
   codex_settings?: import("./codex_identity.ts").CodexSettings;
   id: string;

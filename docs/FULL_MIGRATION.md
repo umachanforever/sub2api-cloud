@@ -16,3 +16,6 @@ The project reuses the original Go management backend and Vue console with a Sup
 The personal gateway operates without commercial balance debits or subscription settlement. Original management features remain in the Go backend; they do not introduce a workstation dependency into cloud AI requests.
 
 For deployment commands and configuration, see [Deployment](DEPLOYMENT.md). The shared record and credential boundaries are described in [Architecture](ARCHITECTURE.md). Upstream route references are retained in `upstream-route-inventory.json`.
+
+
+Gemini/Antigravity runtime parity is tracked in [the upstream parity audit](UPSTREAM_MODEL_PARITY_AUDIT.md). Implemented cloud behavior includes thinking-variant routing, tier-selected inference origins, upstream RPC retry classification, shared Gemini text quota scopes, separate provider-capacity handling, opted-in credits admission/recovery, and signature recovery. Full sticky account binding, configurable error-policy/settings propagation, and short existing-cooldown waiting remain runtime gaps; retaining those Go implementations does not activate them in the Edge Function.

@@ -57,6 +57,43 @@ export function paidAntigravityTier(value: unknown): boolean {
     /^(pro|ultra|g1-(?:pro|ultra)-.+-tier)$/.test(value.trim().toLowerCase());
 }
 
+export function normalizeAntigravityModel(model: string): string {
+  let value = model.trim().toLowerCase();
+  for (
+    const prefix of [
+      "/publishers/google/models/",
+      "/publishers/anthropic/models/",
+      "/models/",
+    ]
+  ) {
+    const index = value.lastIndexOf(prefix);
+    if (index >= 0) return value.slice(index + prefix.length);
+  }
+  return value.replace(
+    /^(publishers\/(google|anthropic)\/models\/|models\/)/,
+    "",
+  );
+}
+
+function retryDuration(value: unknown): number {
+  if (
+    typeof value !== "string" ||
+    !/^(?:(?:\d+(?:\.\d*)?|\.\d+)(?:ns|us|µs|μs|ms|s|m|h))+$/.test(value)
+  ) return 0;
+  const units: Record<string, number> = {
+    ns: 1e-6,
+    us: 0.001,
+    "µs": 0.001,
+    "μs": 0.001,
+    ms: 1,
+    s: 1000,
+    m: 60000,
+    h: 3600000,
+  };
+  return [...value.matchAll(/((?:\d+(?:\.\d*)?|\.\d+))(ns|us|µs|μs|ms|s|m|h)/g)]
+    .reduce((ms, match) => ms + Number(match[1]) * units[match[2]], 0);
+}
+
 export function retryInfo(
   status: number,
   headers: HeadersInit,
@@ -64,37 +101,45 @@ export function retryInfo(
 ) {
   const error = value?.error ?? value?.response?.error ?? {};
   const details = Array.isArray(error.details) ? error.details : [];
-  const text = JSON.stringify(error).toLowerCase();
-  const capacity = text.includes("model_capacity_exhausted");
-  const quota = /quota[_ ]exhausted/.test(text);
-  let delay = 0;
-  const retry = new Headers(headers).get("retry-after");
-  if (retry) {
-    delay = /^\d+(\.\d+)?$/.test(retry)
-      ? Number(retry) * 1000
-      : Math.max(0, Date.parse(retry) - Date.now());
-  }
+  let model = "", rateLimited = false, capacity = false, delay = 0;
   for (const detail of details) {
-    const raw = detail?.retryDelay;
-    const seconds = typeof raw === "string" && /^\d+(\.\d+)?s$/.test(raw)
-      ? parseFloat(raw)
-      : typeof raw === "object" && raw
-      ? Number(raw.seconds ?? 0) + Number(raw.nanos ?? 0) / 1e9
-      : 0;
-    if (Number.isFinite(seconds)) delay = Math.max(delay, seconds * 1000);
+    if (detail?.["@type"] === "type.googleapis.com/google.rpc.ErrorInfo") {
+      if (typeof detail.metadata?.model === "string") {
+        model = normalizeAntigravityModel(detail.metadata.model);
+      }
+      rateLimited ||= detail.reason === "RATE_LIMIT_EXCEEDED";
+      capacity ||= detail.reason === "MODEL_CAPACITY_EXHAUSTED";
+    } else if (
+      detail?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo"
+    ) delay = retryDuration(detail.retryDelay);
   }
-  const modelScoped = [429, 503].includes(status) &&
-    (capacity || quota ||
-      details.some((detail: ObjectValue) =>
-        detail?.metadata?.model || detail?.metadata?.modelName
-      ));
-  if (modelScoped && !capacity && !quota && delay === 0) delay = 30000;
+  const modelScoped = [429, 503].includes(status) && !!model &&
+    ((error.status === "RESOURCE_EXHAUSTED" && rateLimited) ||
+      (error.status === "UNAVAILABLE" && capacity));
+  if (modelScoped && delay <= 0) delay = 30000;
+  // Retry-After remains a fallback for unstructured errors; structured RPC data wins.
+  if (!modelScoped) {
+    const raw = new Headers(headers).get("retry-after");
+    const parsed = raw
+      ? (/^\d+(\.\d+)?$/.test(raw)
+        ? Number(raw) * 1000
+        : Date.parse(raw) - Date.now())
+      : 0;
+    delay = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  }
   return {
     modelScoped,
-    delay: Number.isFinite(delay) ? Math.min(Math.max(delay, 0), 86400000) : 0,
-    capacity,
-    quota,
+    delay: Math.min(Math.max(delay, 0), 86400000),
+    capacity: modelScoped && capacity,
+    quota: status === 429 &&
+      /quota[_ ]exhausted/.test(JSON.stringify(error).toLowerCase()),
+    model: modelScoped ? model : "",
   };
+}
+
+export function signatureError(message: string): boolean {
+  return /signature|thought_signature/i.test(message) ||
+    /expected/i.test(message) && /thinking|redacted_thinking/i.test(message);
 }
 
 // Recover only errors that explicitly identify an invalid signature or budget.
@@ -107,12 +152,31 @@ export function recoverRequest(
 ): ObjectValue | undefined {
   const fixed = structuredClone(body);
   let changed = false;
-  if (/signature|thought_signature/i.test(message)) {
+  if (signatureError(message)) {
     if (recovery.claude && fixed.request?.generationConfig?.thinkingConfig) {
       delete fixed.request.generationConfig.thinkingConfig;
       changed = true;
     }
-    for (const content of Array.isArray(fixed.request?.contents) ? fixed.request.contents : []) {
+    if (!recovery.claude) {
+      const replace = (value: unknown): void => {
+        if (!value || typeof value !== "object") return;
+        for (const [key, child] of Object.entries(value)) {
+          if (
+            key === "thoughtSignature" &&
+            child !== "skip_thought_signature_validator"
+          ) {
+            (value as ObjectValue)[key] = "skip_thought_signature_validator";
+            changed = true;
+          } else replace(child);
+        }
+      };
+      replace(fixed.request);
+    }
+    for (
+      const content of Array.isArray(fixed.request?.contents)
+        ? fixed.request.contents
+        : []
+    ) {
       for (const part of Array.isArray(content?.parts) ? content.parts : []) {
         if (!part || typeof part !== "object" || Array.isArray(part)) continue;
         if (recovery.claude) {

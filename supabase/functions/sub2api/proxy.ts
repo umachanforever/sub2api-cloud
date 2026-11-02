@@ -642,9 +642,11 @@ async function proxyWithIdentity(
             }
             native = outgoing;
             upstreamEndpoint=usageEndpoint(outgoing.url);
-            return await forwardAntigravity(db, account, outgoing, forwardedPath, request,
+            const antigravityResponse = await forwardAntigravity(db, account, outgoing, forwardedPath, request,
               (chat||messages||protocol==='responses')&&!structuredChat&&!['json_object','json_schema'].includes((body?.text as {format?:{type?:string}}|undefined)?.format?.type??'')&&!(body?.output_config as {format?:unknown}|undefined)?.format
                 ? {db,leaseId:lease_id,images:(reservation as {allow_image_generation?:boolean}).allow_image_generation===true,signal} : undefined);
+            if(outgoing.creditsSucceeded && !modelProbe && db.config.dataModel==='native')await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:'AICredits',p_seconds:0});
+            return antigravityResponse;
           }
           const googleBody=nativeGeminiBridge&&(!(credentials as {project_id?:string}).project_id||(credentials as {oauth_type?:string}).oauth_type==='ai_studio')?await originalGeminiRestBody(geminiBody!):geminiBody;
           const outgoing = platform === "grok"
@@ -670,7 +672,7 @@ async function proxyWithIdentity(
         };
         providerDispatched = true;
         upstream = await forward();
-        if (upstream.status === 401) {
+        if (upstream.status === 401 && !(platform==='antigravity' && upstream.headers.get('x-s2a-credits-exhausted')==='true')) {
           await upstreamFailure(401);
           await upstream.body?.cancel();
           credentials = await credentialsFor(db, account, credentials.access_token);
@@ -777,28 +779,31 @@ async function proxyWithIdentity(
         if(upstream.status===401&&account.type==='service_account')invalidateVertexTokenContext(vertexCache);
         chatBridge?.close();
         const status = upstream.status;
+        const rejection = await upstreamErrorCode(upstream);
+        const creditFailure=platform==='antigravity' && upstream.headers.get('x-s2a-credits-exhausted')==='true';
+        const capacityFailure=platform==='antigravity' && upstream.headers.get('x-s2a-model-capacity')==='true';
+        const projectFailure=['gemini','antigravity'].includes(platform) && status===400 && rejection==='upstream_project_configuration_error';
         const modelBackoff = platform==='antigravity' && [429,503].includes(status) ? Number(upstream.headers.get('x-s2a-model-backoff') ?? 0) : 0;
         if (!modelProbe && modelBackoff > 0 && db.config.dataModel==='native') {
-          await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:dispatchedModel,p_seconds:Math.min(86400,Math.ceil(modelBackoff))});
+          await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:upstream.headers.get('x-s2a-rate-limit-model')||dispatchedModel,p_seconds:Math.min(86400,Math.ceil(modelBackoff))});
         }
         if (!modelProbe && platform==='antigravity' && upstream.headers.get('x-s2a-credits-exhausted')==='true' && db.config.dataModel==='native') {
           await db.rpc('s2a_personal_model_backoff',{p_lease_id:lease_id,p_version:account.credential_version,p_upstream_model:'AICredits',p_seconds:18000});
         }
-        const rejection = await upstreamErrorCode(upstream);
         await upstreamFailure(status, rejection === "upstream_rejected_request" ? "upstream_http" : rejection);
         await upstream.body?.cancel();
         await finish(
           status,
           { input: null, output: null, cacheCreation: null, cacheRead: null, outcome: "failed" },
-          modelBackoff > 0 ? 0 : status === 429
+          projectFailure ? 60 : creditFailure || capacityFailure || platform==='antigravity' && status===503 || modelBackoff > 0 ? 0 : status === 429
             ? 60
             : status >= 500 || status === 401 || status === 403
             ? 15
             : 0,
         );
         // Provider errors can contain account details; retain only the stable category.
-        const failure = new HttpError(status >= 400 && status < 500 ? status : 502, rejection);
-        if (!imageJob && !customVoiceMethod && ([401, 403, 429].includes(status) || status >= 500)) {
+        const failure = new HttpError(capacityFailure ? 503 : status >= 400 && status < 500 ? status : 502, rejection);
+        if (!imageJob && !customVoiceMethod && !capacityFailure && (projectFailure || [401, 403, 429].includes(status) || status >= 500)) {
           lastUpstreamError = failure;
           excluded.push(account.id);
           continue;

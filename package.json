@@ -16,6 +16,7 @@
     "credentials:import": "node --env-file=.env.local scripts/import-credentials.mjs",
     "frontend": "pnpm --dir frontend --ignore-workspace dev",
     "deploy": "node --env-file=.env.local scripts/deploy.mjs",
+    "verify:antigravity-parity": "node scripts/check-antigravity-policy-parity.mjs",
     "verify:cloud": "node scripts/verify-cloud.mjs",
     "verify:images": "node scripts/verify-image-tasks.mjs",
     "verify:storage": "node --env-file=.env.local scripts/verify-storage.mjs",

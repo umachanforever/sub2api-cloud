@@ -79,11 +79,11 @@ test('Antigravity catalogs query the real provider and expose sanitized mapped m
   const result = await fixture({ models: true }); const value = JSON.parse(result.text);
   assert.equal(value.data[0].id, 'gemini-test'); assert.equal(value.data[1].id, 'alias'); assert.doesNotMatch(result.text, /private-|quotaInfo|deprecatedModel/);
 });
-test('Antigravity falls back between the fixed daily and production origins before consuming a response', async () => {
+test('Antigravity catalog fallback and generation retry honor the account-tier origin', async () => {
   for (const models of [false, true]) {
     const result = await fixture({ fallback: true, models }); assert.equal(result.calls.length, 2);
     assert.equal(new URL(result.calls[0]).hostname, 'cloudcode-pa.googleapis.com');
-    assert.equal(new URL(result.calls[1]).hostname, 'daily-cloudcode-pa.googleapis.com');
+    assert.equal(new URL(result.calls[1]).hostname, models ? 'daily-cloudcode-pa.googleapis.com' : 'cloudcode-pa.googleapis.com');
   }
 });
 test('Antigravity rejects missing projects and unsupported protocols before network dispatch', () => {

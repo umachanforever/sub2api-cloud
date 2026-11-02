@@ -94,11 +94,30 @@ END $$;
 ALTER FUNCTION s2a_private.model_backoff_active(jsonb,text) OWNER TO s2a_management;
 REVOKE ALL ON FUNCTION s2a_private.model_backoff_active(jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
 
+-- Upstream model_rate_limit.go uses official model IDs plus one Gemini text scope.
+CREATE OR REPLACE FUNCTION s2a_private.antigravity_model_key(mapping jsonb,model text)
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path='' AS $$
+ SELECT lower(btrim(coalesce((SELECT m.value FROM jsonb_each_text(mapping) m
+  WHERE m.key=model OR (right(m.key,1)='*' AND starts_with(model,left(m.key,-1)))
+  ORDER BY (m.key=model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1),model)));
+$$;
+ALTER FUNCTION s2a_private.antigravity_model_key(jsonb,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.antigravity_model_key(jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
+
+CREATE OR REPLACE FUNCTION s2a_private.antigravity_model_limited(extra jsonb,mapping jsonb,model text)
+RETURNS boolean LANGUAGE sql STABLE SET search_path='' AS $$
+ SELECT s2a_private.model_backoff_active(extra,model_key) OR
+  (starts_with(model_key,'gemini-') AND position('-image' IN model_key)=0 AND s2a_private.model_backoff_active(extra,'antigravity:gemini'))
+ FROM (SELECT s2a_private.antigravity_model_key(mapping,model) AS model_key) m;
+$$;
+ALTER FUNCTION s2a_private.antigravity_model_limited(jsonb,jsonb,text) OWNER TO s2a_management;
+REVOKE ALL ON FUNCTION s2a_private.antigravity_model_limited(jsonb,jsonb,text) FROM PUBLIC,anon,authenticated,service_role;
+
 CREATE OR REPLACE FUNCTION public.s2a_personal_model_backoff(p_lease_id uuid,p_version bigint,p_upstream_model text,p_seconds integer)
 RETURNS boolean LANGUAGE plpgsql SECURITY DEFINER SET search_path='' AS $$
 DECLARE lease s2a_private.personal_gateway_leases%ROWTYPE; entry jsonb; limits jsonb;
 BEGIN
- IF p_seconds IS NULL OR p_seconds NOT BETWEEN 1 AND 86400 OR p_upstream_model IS NULL
+ IF p_seconds IS NULL OR (p_seconds NOT BETWEEN 1 AND 86400 AND NOT (p_seconds=0 AND p_upstream_model='AICredits')) OR p_upstream_model IS NULL
   OR p_upstream_model !~ '^[a-zA-Z0-9._-]{1,200}$' THEN RETURN false; END IF;
  SELECT * INTO lease FROM s2a_private.personal_gateway_leases WHERE id=p_lease_id AND credential_version<=p_version
   AND model<>'__models__' AND finished_at IS NULL AND expires_at>clock_timestamp() FOR UPDATE;
@@ -108,9 +127,12 @@ BEGIN
  FROM s2a_private.accounts a CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(a.extra->'model_rate_limits')='object'
   THEN a.extra->'model_rate_limits' ELSE '{}'::jsonb END) m
  WHERE a.id=lease.account_id AND s2a_private.model_backoff_active(a.extra,m.key);
+ IF p_seconds=0 THEN limits:=limits-'AICredits'; ELSE
  entry:=jsonb_build_object('rate_limited_at',clock_timestamp(),'rate_limit_reset_at',clock_timestamp()+make_interval(secs=>p_seconds));
  limits:=limits||jsonb_build_object(p_upstream_model,entry);
- IF p_upstream_model<>'AICredits' THEN limits:=limits||jsonb_build_object(lease.model,entry); END IF;
+ IF starts_with(p_upstream_model,'gemini-') AND position('-image' IN p_upstream_model)=0 THEN
+  limits:=limits||jsonb_build_object('antigravity:gemini',entry); END IF;
+ END IF;
  UPDATE s2a_private.accounts SET extra=coalesce(extra,'{}'::jsonb)||jsonb_build_object('model_rate_limits',limits)
  WHERE id=lease.account_id AND s2a_credential_version=p_version AND platform='antigravity' AND deleted_at IS NULL;
  RETURN FOUND;
@@ -371,12 +393,9 @@ BEGIN
                 accounts.priority,accounts.last_used_at NULLS FIRST,accounts.id
             FOR UPDATE OF accounts LOOP
             IF NOT s2a_private.account_mapping_accepts(a.platform,a.type,a.extra,s2a_private.account_credentials(a.id)->'model_mapping',routed_model) THEN CONTINUE; END IF;
-            IF a.platform='antigravity' AND p_model<>'__models__' AND (
-                s2a_private.model_backoff_active(a.extra,p_model) OR s2a_private.model_backoff_active(a.extra,routed_model) OR
-                s2a_private.model_backoff_active(a.extra,(SELECT m.value
-                 FROM jsonb_each_text(s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping')) m
-                 WHERE m.key=routed_model OR (right(m.key,1)='*' AND starts_with(routed_model,left(m.key,-1)))
-                 ORDER BY (m.key=routed_model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1))) THEN CONTINUE; END IF;
+            IF a.platform='antigravity' AND p_model<>'__models__'
+                AND s2a_private.antigravity_model_limited(a.extra,s2a_private.account_model_mapping(a.platform,a.extra,s2a_private.account_credentials(a.id)->'model_mapping'),routed_model)
+                AND NOT (coalesce(a.extra->'overages_enabled'='true'::jsonb,false) AND NOT s2a_private.model_backoff_active(a.extra,'AICredits')) THEN CONTINUE; END IF;
             now_at:=clock_timestamp();
             IF (SELECT count(*) FROM s2a_private.personal_gateway_leases WHERE account_id=a.id AND finished_at IS NULL AND expires_at>now_at)>=greatest(a.concurrency,1) THEN CONTINUE; END IF;
             INSERT INTO s2a_private.personal_gateway_leases(request_id,user_id,key_id,group_id,account_id,credential_version,model,stream,fingerprint,expires_at,count_only,web_search,search_operation,inbound_endpoint,client_ip,responses_websocket,composite_route)
@@ -407,7 +426,7 @@ BEGIN
             ORDER BY candidate.rank,(m.key=candidate.model) DESC,octet_length(m.key) DESC,m.key COLLATE "C" LIMIT 1;
         END IF;
     END IF;
-    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text,'overages_enabled',a.extra->'overages_enabled'='true'::jsonb AND NOT s2a_private.model_backoff_active(a.extra,'AICredits'),'model_passthrough',
+    RETURN jsonb_build_object('lease_id',lease.id::text,'account',account || jsonb_build_object('proxy_id',a.proxy_id::text,'overages_enabled',a.extra->'overages_enabled'='true'::jsonb AND NOT s2a_private.model_backoff_active(a.extra,'AICredits'),'model_rate_limited',a.platform='antigravity' AND p_model<>'__models__' AND s2a_private.antigravity_model_limited(a.extra,s2a_private.account_model_mapping(a.platform,a.extra,account->'credentials'->'model_mapping'),routed_model),'model_passthrough',
         CASE WHEN jsonb_typeof(a.extra->'openai_passthrough')='boolean' THEN (a.extra->>'openai_passthrough')::boolean
             WHEN jsonb_typeof(a.extra->'openai_oauth_passthrough')='boolean' THEN (a.extra->>'openai_oauth_passthrough')::boolean ELSE false END)
         || CASE WHEN p_model='__models__' THEN jsonb_build_object('model_metadata',a.extra->'upstream_model_metadata') ELSE '{}'::jsonb END,

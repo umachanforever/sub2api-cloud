@@ -80,3 +80,10 @@ for (const exhausted of [true,false]) test(`upstream rate limit survives ${exhau
  const body=await response.text();assert.equal(JSON.parse(body).error.type,'upstream_rejected_request');assert.equal(body.includes('private@'),false);
  assert.equal(acquisitions,exhausted?2:3);assert.equal(finished,exhausted?1:3);
 });
+
+test('Google project configuration failures have a fixed category without leaking the project',async()=>{
+ for(const payload of [{error:{message:'Invalid project resource name projects/private-project'}},{message:'Invalid project resource name projects/private-project'}]){
+ assert.equal(await upstreamErrorCode(Response.json(payload,{status:400})),'upstream_project_configuration_error');
+ }
+ assert.equal(await upstreamErrorCode(Response.json({error:{message:'Invalid project resource name'}},{status:404})),'upstream_rejected_request');
+});

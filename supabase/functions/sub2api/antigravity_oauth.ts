@@ -1,4 +1,4 @@
-import {paidAntigravityTier, retryInfo, recoverRequest} from './antigravity_policy.ts';
+import {paidAntigravityTier, retryInfo, recoverRequest, signatureError, normalizeAntigravityModel} from './antigravity_policy.ts';
 import {IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {enableAntigravityTools,antigravityHostedResponse,type AntigravityToolContext} from './antigravity_tools.ts';
 import { accountFetch } from './account_proxy.ts';
@@ -11,9 +11,11 @@ import { cleanAntigravityTools } from './antigravity_schema.ts';
 import { claudeToAntigravity, antigravityToClaude, antigravitySearchOnly } from './antigravity_claude.ts';
 import { antigravityIdentity,antigravityUserAgent } from './antigravity_identity.ts';
 
+// Capacity is provider-wide, not an account quota. Match upstream's worker-local deduplication.
+const capacityCooldowns=new Map<string,{until:number;status:number;text:string}>();
 const PROD = 'https://cloudcode-pa.googleapis.com';
 const DAILY = 'https://daily-cloudcode-pa.googleapis.com';
-type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string; upstreamModel?: string; overagesEnabled?: boolean };
+type Outgoing = ReturnType<typeof apiKeyRequest> & { catalog: boolean; fallbackURL: string; claudeModel?: string; upstreamModel?: string; overagesEnabled?: boolean; creditsSucceeded?: boolean };
 
 export function antigravityOAuthRequest(credentials: GoogleCredentials, protocol: NativeProtocol, path: string,
   body: Record<string, unknown> | undefined, request: Request, signal: AbortSignal, responseModel?: string, overagesEnabled = false): Outgoing {
@@ -94,22 +96,42 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
   const send = async (body:Record<string,any>,signal:AbortSignal):Promise<Response> => {
     // Bound retries to the hosted request budget; never replay a consumed stream.
     const started = Date.now();
-    let index = 0, signatureStage = 0, budgetRecovered = false, credits = false, attempts = 0;
-    const urls = [outgoing.url, outgoing.fallbackURL];
+    let index = 0, signatureStage = 0, budgetRecovered = false, credits = !outgoing.catalog && outgoing.overagesEnabled===true && account.model_rate_limited===true, attempts = 0, smartAttempts=0;
+    let creditsAttempted=credits;
+    let creditFallback:{status:number;headers:Headers;text:string}|undefined;
+    if(credits)body={...body,enabledCreditTypes:['GOOGLE_ONE_AI']};
+    const capacityKey=normalizeAntigravityModel(String(body.model??''));
+    const cached=capacityCooldowns.get(capacityKey);
+    if(!outgoing.catalog && cached && cached.until>Date.now())return new Response(cached.text,{status:cached.status,headers:{'content-type':'application/json','x-s2a-model-capacity':'true'}});
+    const urls = outgoing.catalog ? [outgoing.url, outgoing.fallbackURL] : [outgoing.url];
+    const pause = (delay:number) => new Promise<void>((resolve,reject)=>{
+      const abort=()=>{clearTimeout(timer);reject(new HttpError(504,'upstream_timeout'));};
+      const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},delay);
+      if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});
+    });
     while (attempts++ < 5) {
       let response: Response;
       try { response = await accountFetch(db, account, urls[index], {...outgoing.init,body:JSON.stringify(body),signal}); }
       catch (error) {
         if (signal.aborted) throw new HttpError(504, 'upstream_timeout');
         if (error instanceof HttpError) throw error;
-        if (index === 0) { index++; continue; }
-        throw new HttpError(502, 'upstream_request_failed');
+        if(creditFallback) {
+          response=new Response(creditFallback.text,{status:creditFallback.status,headers:creditFallback.headers});
+          creditFallback=undefined;credits=false;body={...body};delete body.enabledCreditTypes;
+        } else {
+          if (outgoing.catalog && index===0) {index++;continue;}
+          if(attempts<3){await pause(1000*2**(attempts-1));continue;}
+          throw new HttpError(502, 'upstream_request_failed');
+        }
       }
       response = new Response(response.body,{status:response.status,statusText:response.statusText,headers:new Headers(response.headers)});
       // Upstream headers cannot manufacture a trusted scheduler instruction.
       response.headers.delete('x-s2a-model-backoff');
       response.headers.delete('x-s2a-credits-exhausted');
-      if (response.ok || !([400,404,408,429].includes(response.status) || response.status>=500)) return response;
+      response.headers.delete('x-s2a-model-capacity');
+      response.headers.delete('x-s2a-rate-limit-model');
+      if(response.ok){capacityCooldowns.delete(capacityKey);if(credits)outgoing.creditsSucceeded=true;}
+      if (response.ok || !([400,404,408,429].includes(response.status) || response.status>=500 || credits && response.status>=400)) return response;
       // Read only bounded error bodies, never clone an unbounded provider stream.
       const reader = response.body?.getReader();
       let size = 0; const chunks: Uint8Array[] = [];
@@ -118,23 +140,41 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
       } finally { await reader.cancel().catch(()=>{}); }
       const bytes = new Uint8Array(chunks.reduce((sum,chunk)=>sum+chunk.length,0)); let offset=0;
       for(const chunk of chunks) { bytes.set(chunk,offset); offset+=chunk.length; }
-      const text = new TextDecoder().decode(bytes.subarray(0,offset));
+      let text = new TextDecoder().decode(bytes.subarray(0,offset));
       let value; try { value = JSON.parse(text); } catch { value = {}; }
-      const info = retryInfo(response.status,response.headers,value);
-      if (credits && response.status===429 && !info.delay && /google_one_ai|insufficient credits?|credits? exhausted|credit balance|resource has been exhausted/i.test(text)) {
-        response.headers.set('x-s2a-credits-exhausted','true');
-        response.headers.set('x-s2a-model-backoff','15');
+      const creditInfo=retryInfo(response.status,response.headers,value);
+      const exhausted=credits && response.status<500 && response.status!==408 && !creditInfo.modelScoped && /google_one_ai|insufficient credits?|not enough credits?|credits? exhausted|credit balance|minimumcreditamountforusage|minimum credit|resource has been exhausted/i.test(text);
+      if(creditFallback) {
+        response=new Response(creditFallback.text,{status:creditFallback.status,headers:creditFallback.headers});
+        text=creditFallback.text;
+        try {value=JSON.parse(text);}catch{value={};}
+        creditFallback=undefined;credits=false;body={...body};delete body.enabledCreditTypes;
       }
+      const info=retryInfo(response.status,response.headers,value);
+      if(exhausted)response.headers.set('x-s2a-credits-exhausted','true');
       response.headers.delete('content-length'); response.headers.delete('content-encoding');
-      const result = () => new Response(text,{status:response.status,headers:response.headers});
+      const result = () => {
+        if(!outgoing.catalog && info.capacity) {
+          response.headers.delete('x-s2a-model-backoff');
+          response.headers.set('x-s2a-model-capacity','true');
+          if(capacityCooldowns.size>=1000)capacityCooldowns.delete(capacityCooldowns.keys().next().value!);
+          capacityCooldowns.set(capacityKey,{until:Date.now()+10000,status:response.status,text});
+        } else if(!outgoing.catalog && response.status===429) {
+          response.headers.set('x-s2a-model-backoff',String(Math.max(1,Math.ceil((info.delay||30000)/1000))));
+          response.headers.set('x-s2a-rate-limit-model',/^[a-zA-Z0-9._-]{1,200}$/.test(info.model)?info.model:capacityKey);
+        }
+        return new Response(text,{status:response.status,headers:response.headers});
+      };
       if(response.headers.get('x-s2a-credits-exhausted')==='true')return result();
       if (attempts >= 5 || signal.aborted) {
         if (info.modelScoped && !outgoing.catalog) response.headers.set('x-s2a-model-backoff',String(Math.max(1,Math.ceil((info.delay||15000)/1000))));
         return result();
       }
+      // Node exhaustion precedes quota/credits handling in the upstream loop.
+      if(response.status===429 && index<urls.length-1 && text.includes('Resource has been exhausted') && !text.includes('capacity on this model')) {index++;continue;}
       if (response.status === 400) {
         let fixed;
-        if(/signature|thought_signature/i.test(text)) {
+        if(signatureError(text)) {
           while(signatureStage < (outgoing.claudeModel ? 2 : 1) && !fixed) {
             signatureStage++;
             fixed=recoverRequest(body,text,{claude:!!outgoing.claudeModel,tools:signatureStage===2});
@@ -142,23 +182,24 @@ export async function forwardAntigravity(db: Database, account: Account, outgoin
         } else if(!budgetRecovered) { fixed=recoverRequest(body,text);budgetRecovered=!!fixed; }
         if(fixed) {body=fixed;continue;}
       }
-      if (response.status === 429 && info.quota && outgoing.overagesEnabled && !credits) {
-        credits=true; body={...body,enabledCreditTypes:['GOOGLE_ONE_AI']}; continue;
+      if (!outgoing.catalog && response.status === 429 && info.quota && outgoing.overagesEnabled && !creditsAttempted) {
+        creditFallback={status:response.status,headers:new Headers(response.headers),text};
+        creditsAttempted=true;credits=true; body={...body,enabledCreditTypes:['GOOGLE_ONE_AI']}; continue;
       }
       if (info.modelScoped && !outgoing.catalog) {
-        if (!info.quota && info.delay <= 2000 && Date.now()-started < 6000) {
-          const delay = Math.max(info.delay, info.capacity ? 1000 : 250);
-          await new Promise<void>((resolve,reject)=>{
-            const abort=()=>{clearTimeout(timer);reject(new HttpError(504,'upstream_timeout'));};
-            const timer=setTimeout(()=>{signal.removeEventListener('abort',abort);resolve();},delay);
-            if(signal.aborted)abort();else signal.addEventListener('abort',abort,{once:true});
-          });
+        if (!info.quota && (info.capacity || info.delay < 7000 && smartAttempts<1) && Date.now()-started < 6000) {
+          const delay = info.capacity ? 1000 : Math.max(info.delay,1000);
+          smartAttempts++;
+          await pause(delay);
           continue;
         }
         response.headers.set('x-s2a-model-backoff',String(Math.max(1,Math.ceil((info.delay||15000)/1000))));
         return result();
       }
-      if (index === 0 && ([404,408,429].includes(response.status) || response.status >= 500)) { index++; continue; }
+      if(!outgoing.catalog && ([429,503].includes(response.status) || response.status===500 && value?.error?.status==='INTERNAL') && attempts<3 && Date.now()-started<6000) {
+        await pause(1000*2**(attempts-1));continue;
+      }
+      if (outgoing.catalog && index === 0 && ([404,408,429].includes(response.status) || response.status >= 500)) { index++; continue; }
       return result();
     }
     throw new HttpError(502, 'upstream_request_failed');
