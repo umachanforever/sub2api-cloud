@@ -1,3 +1,4 @@
+import {verifiedCatalog} from './handler.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {modelAllowlist,modelCandidates,allowsModel,allowlistedModels,filterModelCatalog,DEFAULT_PROVIDER_MODELS} from '../supabase/functions/sub2api/model_policy.ts';
@@ -6,7 +7,7 @@ import {encryptCredentials} from '../supabase/functions/sub2api/credential_store
 const actor='11111111-1111-4111-8111-111111111111',id='22222222-2222-4222-8222-222222222222';
 const config={url:'https://db.example',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[actor]};
 const request=(path,method='GET',body,envelope=true)=>new Request(`https://gateway${path}`,{method,headers:{authorization:'Bearer session',...(envelope?{'x-s2a-frontend':'1'}:{})},...(body===undefined?{}:{body:JSON.stringify(body)})});
-const app=fetcher=>createHandler(config,async(url,init)=>String(url).endsWith('/auth/v1/user')?Response.json({id:actor}):fetcher(new URL(url),init));
+const app=fetcher=>createHandler(config,async(url,init)=>String(url).endsWith('/s2a_model_availability_read')?verifiedCatalog(init):String(url).endsWith('/auth/v1/user')?Response.json({id:actor}):fetcher(new URL(url),init));
 test('allowlists normalize ordered case-insensitive duplicates and validate trailing wildcards',()=>{
  assert.deepEqual(modelAllowlist({enabled:true,models:[' GPT-5.4 ','','gpt-5.4','claude-*']}),{enabled:true,models:['GPT-5.4','claude-*']});
  assert.deepEqual(modelAllowlist({}),{enabled:false,models:[]});
@@ -72,7 +73,7 @@ test('Anthropic and Gemini catalog filtering preserves native envelopes and hide
   const response=await handler(request(path));assert.equal(response.status,200);const body=await response.json();
   if(platform==='gemini'){assert.equal(body.models.length,1);assert.equal(body.models[0].displayName,'Keep');assert.equal(body.nextPageToken,'next');}
   else{assert.equal(body.data.length,1);assert.equal(body.data[0].display_name,'Keep');assert.equal(body.has_more,true);}
-  single=true;assert.equal((await handler(request(`${path}/${allowed}`))).status,404);assert.deepEqual(finishes.map(r=>r.p_status),platform==='gemini'?[200,200,404]:[200,404]);
+  single=true;assert.equal((await handler(request(`${path}/${allowed}`))).status,404);assert.deepEqual(finishes.map(r=>r.p_status),[200,404]);
  }
 });
 

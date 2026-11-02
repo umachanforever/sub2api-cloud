@@ -6,3 +6,8 @@ export function createBackendHandler(config, fetchImpl, smtp) {
 }
 
 export const createHandler = createBackendHandler;
+
+// Explicit fixture for catalogs whose models were already verified by the worker.
+export function verifiedCatalog(init) {
+ return Response.json(JSON.parse(init.body).p_jobs.map(job=>({...job,verdict:'verified',checked_at:new Date().toISOString()})));
+}

@@ -1,3 +1,4 @@
+import {verifiedCatalog} from './handler.mjs';
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createBackendHandler as createHandler } from './handler.mjs';
@@ -25,6 +26,7 @@ async function fixture(
   const stored = await encryptCredentials(credentials, config.encryptionKey);
   const finishes = [], leases = [];
   const handler = createHandler({...config,...(requestLimits?{requestLimits}:{})}, async (url, init) => {
+    if (String(url).endsWith("/s2a_model_availability_read")) return verifiedCatalog(init);
     if (String(url).endsWith("/s2a_acquire")) {
       leases.push(JSON.parse(init.body));
       return Response.json({
@@ -905,7 +907,7 @@ for (const platform of ["openai", "anthropic", "gemini"]) {
       assert.equal(result.data[0].inputTokenLimit, 1000);
       assert.equal(result.nextPageToken, "next");
     } else assert.deepEqual(result, list);
-    assert.equal(value.finishes.length, platform === "gemini" ? 2 : 1);
+    assert.equal(value.finishes.length, 1);
     assert.equal(value.finishes[0].p_outcome, "completed");
     assert.equal(value.finishes[0].p_input_tokens, null);
     assert.equal(value.leases[0].p_model, "__models__");
@@ -917,7 +919,7 @@ for (const platform of ["openai", "anthropic", "gemini"]) {
       (await single.json()).id,
       platform === "gemini" ? "gemini-test" : "model-test",
     );
-    assert.equal(value.finishes.length, platform === "gemini" ? 3 : 2);
+    assert.equal(value.finishes.length, 2);
   });
 }
 
@@ -949,7 +951,7 @@ test("Gemini native model list/get retains pagination and capabilities without f
     await (await value.request("/v1beta/models/gemini-test")).json(),
     model,
   );
-  assert.equal(value.finishes.length, 3);
+  assert.equal(value.finishes.length, 2);
 });
 
 test("Anthropic model pagination is forwarded with native version and beta headers", async () => {

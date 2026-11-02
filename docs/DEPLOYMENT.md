@@ -42,6 +42,8 @@ Clients should handle realtime connection closure and establish a new session wh
 
 Use the cloud `/v1/models` endpoint to discover the models available to the configured provider account. Account model mappings translate application-facing model names to supported upstream names. Changes made in the original account editor are visible to the cloud gateway through the same database records.
 
+Model inference verification runs in the cloud, independently of client listing requests. Provisioning installs `deploy/model-availability.sql` and `deploy/model-availability-scheduler.sql`; deployment enables the signed `s2a-models-jobs` schedule every minute. Each invocation claims at most six models with database leases and probes up to three concurrently. Successful verdicts are persisted and rechecked after 10 minutes; temporary failures retry after 5 minutes and unsupported models after 30 minutes. New models remain hidden until their first successful scheduled probe. Listing responses still apply current key policies and provider catalogs. Run `npm run verify:schedulers` to check signed HTTP delivery, including the model worker.
+
 Cloud requests write provider-reported input, output, and cache token counts to the original `usage_logs` table. Missing provider values remain available as nulls in the request details. The personal request path writes zero monetary costs and does not debit balances or require subscriptions.
 
 ## Secrets and access

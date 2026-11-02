@@ -1,3 +1,4 @@
+import {verifiedCatalog} from './handler.mjs';
 import test from 'node:test';
 import {GEMINI_FALLBACK_IDS} from '../supabase/functions/sub2api/gemini_catalog.ts';
 import assert from 'node:assert/strict';
@@ -52,6 +53,7 @@ test('Vertex catalog enforces pagination and rejects malformed or empty provider
 test('Vertex catalog selection uses service-account credentials and releases its gateway lease',async()=>{
  const finishes=[];let exchange=0;
  const app=createBackendHandler({url:'https://db.invalid',serviceKey:'private',encryptionKey:'',adminIds:[],dataModel:'native'},async(url,init)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return verifiedCatalog(init);
   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',account:{id:'1',type:'service_account',platform:'gemini',credential_version:1,credential_storage:'vault',credentials}});
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
   if(String(url).includes('/rpc/')){assert.ok(!String(url).includes('refresh'));return Response.json(null);}
@@ -60,7 +62,7 @@ test('Vertex catalog selection uses service-account credentials and releases its
   assert.equal(new URL(url).hostname,'aiplatform.googleapis.com');return Response.json({publisherModels:[{name:'publishers/google/models/gemini-known'}]});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);assert.equal(exchange,2);assert.equal((await response.json()).models[0].name,'models/gemini-known');assert.equal(finishes.length,2);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
+ assert.equal(response.status,200);assert.equal(exchange,1);assert.equal((await response.json()).models[0].name,'models/gemini-known');assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
 });
 
 test('Vertex publisher responses retain the original 8 MiB page limit and cancel oversized streams',async()=>{

@@ -53,58 +53,6 @@ test('non-Gemini catalogs and upstream failures do not dispatch inference',async
  assert.equal(calls,0);
 });
 
-import {createBackendHandler} from './handler.mjs';
-import {encryptCredentials} from '../supabase/functions/sub2api/credential_store.ts';
-test('gateway verifies real inference, excludes rejected models, settles probe leases and reuses successful verification',async()=>{
- const config={url:'https://db.invalid',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
- const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);
- const probes=[],finishes=[];
- const app=createBackendHandler(config,async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'gemini'});
-  if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:crypto.randomUUID(),account:{...stored,id:'account',type:'apikey',platform:'gemini',credential_version:1}});
-  if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
-  if(String(url).includes('/rpc/'))return Response.json(null);
-  if(init.method==='GET')return Response.json({models:[{name:'models/gemini-good',displayName:'Keep'},{name:'models/gemini-bad'}],nextPageToken:'next'});
-  probes.push(String(url));assert.equal(init.headers.get('x-goog-api-key'),'provider-key');
-  assert.equal(JSON.parse(init.body).generationConfig.maxOutputTokens,1024);
-  return String(url).includes('gemini-good')?Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}],usageMetadata:{promptTokenCount:3,candidatesTokenCount:1}}):Response.json({error:{message:'not supported'}},{status:404});
- });
- const list=()=>app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.deepEqual(await (await list()).json(),{models:[{name:'models/gemini-good',displayName:'Keep'}],nextPageToken:'next'});
- assert.equal(probes.length,2);assert.equal(finishes.length,3);
- assert.ok(finishes.some(result=>result.p_input_tokens===3&&result.p_output_tokens===1));
- assert.ok(finishes.some(result=>result.p_status===404&&result.p_outcome==='failed'));
- assert.equal((await (await list()).json()).models.length,1);
- assert.equal(probes.length,2);assert.equal(finishes.length,4);
-});
-
-test('a model verification 429 cannot cool down the account and hide other working Gemini models',async()=>{
- const config={url:'https://db.invalid',serviceKey:'service',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
- const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);
- let cooldown=false;const finishes=[];
- const app=createBackendHandler(config,async(url,init)=>{
-  if(String(url).endsWith('/s2a_personal_acquire')){
-   const args=JSON.parse(init.body);
-   if(cooldown&&args.p_model!=='__models__')return Response.json({error:'no_available_account',status:503});
-   return Response.json({lease_id:crypto.randomUUID(),account:{...stored,id:'account',type:'apikey',platform:'gemini',credential_version:1}});
-  }
-  if(String(url).endsWith('/s2a_personal_finish')){const result=JSON.parse(init.body);finishes.push(result);if(result.p_cooldown_seconds>0)cooldown=true;return Response.json({applied:true});}
-  if(String(url).includes('/rpc/'))return Response.json(null);
-  if(init.method==='GET')return Response.json({models:['gemini-limited-a','gemini-limited-b','gemini-good'].map(id=>({name:'models/'+id}))});
-  return String(url).includes('gemini-good')?Response.json({candidates:[{finishReason:'STOP',content:{parts:[{text:'OK'}]}}]}):Response.json({error:{message:'Model quota exhausted'}},{status:429});
- });
- const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);
- assert.deepEqual((await response.json()).models.map(entry=>entry.name),['models/gemini-good']);
- assert.equal(cooldown,false);
- assert.ok(finishes.some(result=>result.p_status===429));
- assert.ok(finishes.every(result=>result.p_cooldown_seconds===0));
- // A public request cannot opt out of normal account cooldown with a header.
- await app(new Request('https://gateway/v1beta/models/gemini-limited-a:generateContent',{method:'POST',headers:{authorization:'Bearer sk-client','content-type':'application/json','x-s2a-model-probe':'true'},body:JSON.stringify({contents:[{parts:[{text:'Hello'}]}]})}));
- assert.equal(cooldown,true);
- assert.ok(finishes.some(result=>result.p_status===429&&result.p_cooldown_seconds===60));
-});
-
 test('native Gemini catalogs verify every advertised model, including Claude and catalogs without Gemini-prefixed entries',async()=>{
  for(const models of [['gemini-good','claude-good','claude-unavailable','other-unavailable'],['claude-unavailable']]){
   const cache=new ModelAvailability();const checked=[];

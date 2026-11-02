@@ -1,3 +1,4 @@
+import {verifiedCatalog} from './handler.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {mergeGeminiCatalog,geminiCatalogScopeFallback} from '../supabase/functions/sub2api/gemini_catalog.ts';
@@ -45,6 +46,7 @@ test('native Gemini scope fallback passes through gateway catalog filtering and 
  const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:Buffer.alloc(32,7).toString('base64'),adminIds:[],dataModel:'native'};
  const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);const finishes=[];
  const app=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return verifiedCatalog(init);
   if(String(url).endsWith('/s2a_personal_key_policy'))return Response.json({platform:'gemini'});
   if(String(url).endsWith('/s2a_personal_acquire'))return Response.json({lease_id:'lease',model_allowlist:{enabled:true,models:['gemini-3.1-pro-preview-customtools']},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
   if(String(url).endsWith('/s2a_personal_finish')){finishes.push(JSON.parse(init.body));return Response.json({applied:true});}
@@ -56,7 +58,7 @@ test('native Gemini scope fallback passes through gateway catalog filtering and 
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
  assert.equal(response.status,200);const result=await response.json();
  assert.deepEqual(result.models.map(model=>model.name),['models/gemini-3.1-pro-preview-customtools']);
- assert.equal(finishes.length,2);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
+ assert.equal(finishes.length,1);assert.equal(finishes[0].p_outcome,'completed');assert.equal(finishes[0].p_input_tokens,null);
 });
 
 test('native Gemini catalog preserves upstream metadata and opaque pagination through the gateway',async()=>{
@@ -64,6 +66,7 @@ test('native Gemini catalog preserves upstream metadata and opaque pagination th
  const stored=await encryptCredentials({api_key:'provider-key'},config.encryptionKey);
  const value={models:[{name:'models/gemini-future',extension:{newCapability:true}}],nextPageToken:'opaque-next',extension:'native'};
  const app=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return verifiedCatalog(init);
   if(String(url).endsWith('/s2a_personal_acquire')){
    assert.match(JSON.parse(init.body).p_billing_context.inbound_endpoint,/^\/v1beta\/models/);
    return Response.json({lease_id:'lease',gemini_catalog_sources:{has_antigravity:true,sources:[{'gemini-future':'target','gemini-extra':'target','gemini-*':'target'}]},model_sources:{mapping:{},include_upstream:true},account:{...stored,id:'1',platform:'gemini',type:'apikey',credential_version:1}});
@@ -95,12 +98,13 @@ test('Antigravity effective catalogs include original defaults and preserve wild
  assert.equal((await antigravityOnlyCatalog({has_antigravity:true,sources:[]},undefined,'gemini-future').json()).name,'models/gemini-future');
 });
 
-test('AG-only native catalog hides models when inference cannot acquire an account',async()=>{
+test('AG-only native catalog hides models until the scheduled worker verifies them',async()=>{
  const config={url:'https://database.invalid',serviceKey:'private',encryptionKey:'',adminIds:[],dataModel:'native'};let calls=0;
  const app=createBackendHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return Response.json([]);
   assert.ok(String(url).endsWith('/s2a_personal_acquire'));calls++;
   return Response.json({gemini_catalog_only:true,gemini_catalog_sources:{has_antigravity:true,sources:[{}]},model_allowlist:{enabled:true,models:['gemini-3-flash']}});
  });
  const response=await app(new Request('https://gateway/v1beta/models',{headers:{authorization:'Bearer sk-client'}}));
- assert.equal(response.status,200);assert.equal(calls,2);assert.deepEqual((await response.json()).models,[]);
+ assert.equal(response.status,200);assert.equal(calls,1);assert.deepEqual((await response.json()).models,[]);
 });

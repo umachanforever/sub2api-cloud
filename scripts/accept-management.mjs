@@ -758,6 +758,8 @@ try {
 
     sql(readFileSync(root + "/deploy/gateway-maintenance.sql", "utf8"));
     sql(readFileSync(root + "/deploy/personal-gateway.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/model-availability.sql", "utf8"));
+    sql(readFileSync(root + "/deploy/model-availability-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/deploy/gemini-cache-scheduler.sql", "utf8"));
     sql(readFileSync(root + "/tests/gemini-cache-scheduler.database.sql", "utf8"));

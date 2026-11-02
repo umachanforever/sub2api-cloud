@@ -118,6 +118,14 @@ export async function proxyModelProbe(
   return proxyWithIdentity(request,path,await hashKey(token),db,errorContext,requiredPlatform,undefined,true);
 }
 
+// The signed model worker receives hashes from the private queue, never from clients.
+export async function proxyScheduledModelProbe(
+  request:Request,path:string,keyHash:string,db:Database,errorContext:ErrorContext,requiredPlatform?:Platform,
+):Promise<Response>{
+  if(!/^[a-f0-9]{64}$/.test(keyHash))throw new HttpError(400,'invalid_model_probe_identity');
+  return proxyWithIdentity(request,path,keyHash,db,errorContext,requiredPlatform,undefined,true);
+}
+
 export type ImageJobIdentity = {id:string;lease_id:string;key_hash:string;client_ip:string|null;platform:"openai"|"grok";model:string;operation:"generations"|"edits"};
 
 // Only signed workers may obtain this identity from the private queue RPC.

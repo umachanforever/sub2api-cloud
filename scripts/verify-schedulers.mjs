@@ -9,12 +9,12 @@ export async function verifySchedulers(env=process.env,fetcher=fetch,pause=ms=>n
   if(!response.ok){await response.body?.cancel();throw Error('Scheduler database verification failed: HTTP '+response.status);}
   const value=await response.json();if(!Array.isArray(value))throw Error('Invalid scheduler database response');return value;
  };
- const expected=['s2a-codex-jobs','s2a-gemini-cache-jobs','s2a-images-jobs','s2a-batch-images-jobs','s2a-gateway-maintenance'];
- const jobs=await sql("SELECT jobname,active,EXISTS(SELECT FROM public.settings WHERE key='openai_codex_version_auto_sync_enabled' AND value='false') AS codex_disabled FROM cron.job WHERE jobname IN ('s2a-codex-jobs','s2a-gemini-cache-jobs','s2a-images-jobs','s2a-batch-images-jobs','s2a-gateway-maintenance')");
+ const expected=['s2a-codex-jobs','s2a-gemini-cache-jobs','s2a-images-jobs','s2a-batch-images-jobs','s2a-gateway-maintenance','s2a-models-jobs'];
+ const jobs=await sql("SELECT jobname,active,EXISTS(SELECT FROM public.settings WHERE key='openai_codex_version_auto_sync_enabled' AND value='false') AS codex_disabled FROM cron.job WHERE jobname IN ('s2a-codex-jobs','s2a-gemini-cache-jobs','s2a-images-jobs','s2a-batch-images-jobs','s2a-gateway-maintenance','s2a-models-jobs')");
  for(const name of expected)if(!jobs.some(job=>job.jobname===name&&job.active===true))throw Error('Scheduler is missing or disabled: '+name);
- const dispatched=await sql("SELECT 'codex' AS kind,public.s2a_codex_jobs_dispatch() AS request_id UNION ALL SELECT 'gemini-cache',public.s2a_gemini_cache_jobs_dispatch() UNION ALL SELECT 'images',public.s2a_image_jobs_dispatch() UNION ALL SELECT 'batch-images',public.s2a_batch_image_jobs_dispatch()");
- const kinds=['codex','gemini-cache','images','batch-images'];
- if(dispatched.length!==4||new Set(dispatched.map(row=>row.kind)).size!==4||dispatched.some(row=>!kinds.includes(row.kind)))throw Error('Invalid scheduler dispatch response');
+ const dispatched=await sql("SELECT 'codex' AS kind,public.s2a_codex_jobs_dispatch() AS request_id UNION ALL SELECT 'gemini-cache',public.s2a_gemini_cache_jobs_dispatch() UNION ALL SELECT 'images',public.s2a_image_jobs_dispatch() UNION ALL SELECT 'batch-images',public.s2a_batch_image_jobs_dispatch() UNION ALL SELECT 'models',public.s2a_model_availability_jobs_dispatch()");
+ const kinds=['codex','gemini-cache','images','batch-images','models'];
+ if(dispatched.length!==5||new Set(dispatched.map(row=>row.kind)).size!==5||dispatched.some(row=>!kinds.includes(row.kind)))throw Error('Invalid scheduler dispatch response');
  const pending=new Map(),results=[];
  for(const row of dispatched){
   if(row.kind==='codex'&&row.request_id===null&&jobs.some(job=>job.jobname==='s2a-codex-jobs'&&job.codex_disabled===true)){results.push('codex-disabled-by-setting');continue;}

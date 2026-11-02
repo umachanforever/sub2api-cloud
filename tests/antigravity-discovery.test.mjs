@@ -11,8 +11,9 @@ test('Antigravity discovery preserves the pinned upstream catalog including meta
  const expected=[...section.matchAll(/ID: "([^"]+)", DisplayName: "([^"]+)", CreatedAt: "([^"]+)"/g)].map(([,id,display_name,created_at])=>({id,type:'model',display_name,created_at}));
  assert.equal(expected.length,48);assert.deepEqual(ANTIGRAVITY_MODELS,expected);
 });
-test('discovery enforces native key policy and hides Gemini models without an inference account',async()=>{
+test('discovery enforces native key policy and hides Gemini models until scheduled verification succeeds',async()=>{
  let lookups=0;const handler=createBackendHandler(config,async(url,init)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return Response.json([]);
   if(String(url).endsWith('/s2a_personal_key_policy')){lookups++;const args=JSON.parse(init.body);assert.equal(args.p_key_hash,await hashKey('sk-client'));assert.equal(args.p_client_ip,'192.0.2.5');return Response.json({model_allowlist:{enabled:true,models:['gemini-2.5-flash']}});}
   if(String(url).includes('/rpc/'))return Response.json(null);
   assert.fail('Static discovery must not contact a provider');
@@ -29,6 +30,7 @@ test('static discovery rejects missing, revoked and network-restricted credentia
 });
 test('Antigravity static discovery accepts native keys and rejects conflicting credentials',async()=>{
  let calls=0;const handler=createBackendHandler(config,async(url)=>{
+  if(String(url).endsWith('/s2a_model_availability_read'))return Response.json([]);
   if(String(url).endsWith('/s2a_personal_key_policy')){calls++;return Response.json({model_allowlist:{enabled:false,models:[]}});}
   return Response.json(null);
  });

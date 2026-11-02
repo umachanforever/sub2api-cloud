@@ -5,7 +5,7 @@ type Verdict = "verified" | "temporary" | "unsupported";
 type Result = { available: boolean; until: number; verdict: Verdict };
 type Probe = (request: Request, path: string) => Promise<Response>;
 
-// Kept per handler and credential scope. Only completed inference proves availability.
+// Bounded inference verifier used by scheduled workers. Only completed inference proves availability.
 export class ModelAvailability {
   private results = new Map<string, Result>();
   private pending = new Map<string, Promise<boolean>>();
