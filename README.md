@@ -64,7 +64,7 @@ Open usage directly in a browser: `https://<project-ref>.supabase.co/functions/v
 
 Model aliases such as `gpt-6` and `gpt-6.1` select their `-sol` variants unless an account mapping overrides them. Available models depend on your subscription account.
 
-Chat-generated images use inline Markdown data URLs in JSON and SSE responses, matching `codex-agent-bridge`. OpenAI OAuth and Antigravity chat output no longer requires a separate signed Storage URL download. Clients must support inline images; image permissions still apply. Streaming content is segmented to avoid oversized individual SSE events; client total-response limits still apply. Independent image-task storage and existing signed-link history remain supported.
+Chat images use native image generation. WorkBuddy and other OpenAI OAuth clients declaring `show_widget` display original PNG/JPEG/WebP files through private Storage image sources signed for seven days, avoiding large base64 text deltas. The client renders an image rather than a bare link; SVG/HTML widget drawings do not replace generated art. Other clients and Antigravity retain inline image output with segmented streaming content. Image permissions, independent image tasks, and previous image references remain supported. Generated images stay inline by default, including when `present_files` is advertised; the gateway does not synthesize preview calls. Original source references remain available in model context for explicit download/copy/export requests, subject to client file tools and permissions.
 
 ## Documentation
 

@@ -7,16 +7,19 @@ type Item=Record<string,any>;
 export async function publishChatImage(db:Database,item:Item,leaseId:string,signal:AbortSignal,cache=new Map<string,string>()):Promise<void>{
   if(item?.type!=='image_generation_call')return;
   // Validate failure and format before storing any bytes or issuing a URL.
-  chatImageMarkdown(item);
+  const markdown=chatImageMarkdown(item);
   const digest=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(item.result));
   const hash=Array.from(new Uint8Array(digest),byte=>byte.toString(16).padStart(2,'0')).join('');
   let url=cache.get(hash);
   if(!url){
-   const format=item.output_format==='jpeg'||item.output_format==='jpg'?'jpg':item.output_format==='webp'?'webp':'png';
+   // Use verified byte signatures, not potentially inaccurate provider metadata.
+   const mime=/data:(image\/(?:png|jpeg|webp|gif));base64,/.exec(markdown)?.[1];
+   if(!mime||mime==='image/gif')throw new HttpError(502,'invalid_generated_image');
+   const format=mime==='image/jpeg'?'jpg':mime==='image/webp'?'webp':'png';
    const path=imageArtifactPath('imgtask_'+crypto.randomUUID().replaceAll('-',''),1,format);
    if(!await db.rpc<boolean>('s2a_chat_media_register',{p_lease_id:leaseId,p_path:path}))throw new HttpError(403,'image_generation_forbidden');
    const binary=atob(item.result),bytes=Uint8Array.from(binary,char=>char.charCodeAt(0));
-   await putArtifact(db,path,bytes,format==='jpg'?'image/jpeg':'image/'+format,signal);
+   await putArtifact(db,path,bytes,mime,signal);
    url=await signArtifact(db,path,604800);cache.set(hash,url);
   }
   item.chat_image_url=url;

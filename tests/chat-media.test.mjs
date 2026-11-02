@@ -25,3 +25,14 @@ test('expired chat media is deleted before removing its cleanup record',async()=
  const db={config:{url:'https://project.supabase.co',serviceKey:'private'},rpc:async(name)=>{calls.push(name);return name==='s2a_chat_media_expired'?[path]:null;},fetchImpl:async()=>{calls.push('delete');return Response.json({});}};
  assert.equal(await cleanupChatMedia(db),1);assert.deepEqual(calls,['s2a_chat_media_expired','delete','s2a_chat_media_deleted']);
 });
+
+test('storage failures never return a successful image reference',async()=>{
+ for(const failure of ['upload','sign']){
+  const db={config:{url:'https://project.supabase.co',serviceKey:'synthetic'},rpc:async()=>true,fetchImpl:async url=>{
+   if(failure==='upload'||url.includes('/object/sign/'))return new Response('synthetic storage failure',{status:503});
+   return Response.json({});
+  }};
+  const upstream=source([{type:'response.output_item.done',output_index:0,item:image},{type:'response.completed',response:{status:'completed',output:[image]}}]);
+  await assert.rejects(completedResponse(publishChatMedia(db,upstream,'lease',new AbortController().signal).body),/artifact_storage_unavailable/);
+ }
+});

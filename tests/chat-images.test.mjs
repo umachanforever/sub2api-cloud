@@ -82,7 +82,7 @@ test('unexpected upstream image output cannot corrupt structured JSON',async()=>
 test('signed generated image history becomes visual input for follow-up edits',()=>{
  const url='https://project.supabase.co/storage/v1/object/sign/sub2api-artifacts/images/imgtask_'+'a'.repeat(32)+'/image-1.png?token=signed';
  const body={input:[{role:'assistant',content:[{type:'output_text',text:'![Generated image]('+url+')'}]}]};
- enableChatImages(body);assert.equal(body.input.length,2);assert.equal(body.input[1].content[1].image_url,url);assert.equal(body.input[0].content[0].text,'[Previously generated image]');
+ enableChatImages(body);assert.equal(body.input.length,2);assert.equal(body.input[1].content[1].image_url,url);assert.ok(body.input[1].content.some(part=>part.type==='input_text'&&part.text.includes(url)&&part.text.includes('do not open or print automatically')));assert.equal(body.input[0].content[0].text,'[Previously generated image]');
 });
 
 test('actual image bytes determine MIME even with absent or incorrect output_format',()=>{

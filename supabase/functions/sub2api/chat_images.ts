@@ -4,6 +4,12 @@ export const IMAGE_CHAT_FRAME_LIMIT = 32 * 1024 * 1024;
 /** Match the inline image limit used by codex-agent-bridge. */
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
+/** Detect client renderers that should load original image files instead of large text deltas. */
+export function usesChatImageFiles(body: Item): boolean {
+  return (body.tools ?? []).some((tool: Item) => tool.type === 'function' &&
+    ['show_widget', 'present_files'].includes(tool.name ?? tool.function?.name));
+}
+
 export function enableChatImages(body: Item): boolean {
   const format = body.text?.format?.type ?? body.response_format?.type;
   if (format === 'json_object' || format === 'json_schema') return false;
@@ -12,6 +18,8 @@ export function enableChatImages(body: Item): boolean {
   }
   body.instructions = [body.instructions,
     'When the user asks you to create or edit an image, use the image_generation tool. For ordinary text questions, answer normally. Never claim an image was generated unless the tool returned one.',
+    usesChatImageFiles(body) ? 'Generated images must stay inline in the chat by default. Do not automatically call present_files, preview_url, open_result_view, or open a browser/side panel for generated images. Only when the user explicitly requests downloading, saving, copying, or exporting an existing generated image, download the original image with available file tools and present the local file if needed. Never redraw, compress, or regenerate it for export. Do not print the source URL in chat.' : '',
+    usesChatImageFiles(body) ? 'For image generation requests, use the provider-hosted image generation tool (exposed to the model as image_gen.imagegen) to produce the actual image. The gateway API tool type is image_generation; that is not necessarily its model-facing callable name. Do not discover or call the separate client ImageGen tool, including via ToolSearch or DeferExecuteTool, for these requests. Do not substitute SVG, HTML, canvas or show_widget drawings for generated images. The gateway delivers the original image for direct display by the client.' : '',
   ].filter(Boolean).join('\n\n');
   // Restore both string and multipart assistant history as visual input, not tokens.
   if (Array.isArray(body.input)) body.input = body.input.flatMap((item: Item) => {
@@ -27,7 +35,7 @@ export function enableChatImages(body: Item): boolean {
       });
       return {...part, text};
     });
-    return images.length ? [{...item, content}, {type: 'message', role: 'user', content: [{type: 'input_text', text: 'Previously generated image, provided for visual reference:'}, ...images]}] : [item];
+    return images.length ? [{...item, content}, {type: 'message', role: 'user', content: [{type: 'input_text', text: 'Previously generated image, provided for visual reference:'}, ...images, ...images.filter((image: Item) => image.image_url.startsWith('https:')).map((image: Item) => ({type: 'input_text', text: 'Original image source for user-requested file export only (do not open or print automatically): ' + image.image_url}))]}] : [item];
   });
   return true;
 }

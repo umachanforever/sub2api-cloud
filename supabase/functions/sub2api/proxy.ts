@@ -1,4 +1,5 @@
-import {enableChatImages,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
+import {publishChatMedia} from './chat_media.ts';
+import {enableChatImages,usesChatImageFiles,IMAGE_CHAT_FRAME_LIMIT} from './chat_images.ts';
 import {REQUEST_TIMEOUT_MS,keepRequestLease} from './request_lease.ts';
 import {enableNativeSearch} from './search_model.ts';
 import {applyFastPolicy,type FastPolicyContext} from './fast_policy.ts';
@@ -847,8 +848,10 @@ async function proxyWithIdentity(
         await upstream.body?.cancel();
         throw new HttpError(502, "invalid_upstream_stream");
       }
-      // Keep inline image bytes in Chat Completions, matching codex-agent-bridge.
-      // Desktop clients can consume them without a second storage URL fetch.
+      // Keep original images inline; do not auto-open client presentation tools.
+      if (imageChat && platform === 'openai' && usesChatImageFiles(body!)) {
+        upstream = publishChatMedia(db, upstream, lease_id, signal);
+      }
       const tracked = trackedStream(
         upstream.body!,
         signal,
