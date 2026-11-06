@@ -46,6 +46,8 @@ For local Supabase, use `npm run up -- --local`. Stop the local Supabase stack w
 
 Use the base URL shown in the console:
 
+For a custom Cloudflare entry point that forwards to the existing backend, see the [Worker proxy setup](deploy/cloudflare/README.md). API responses are streamed without caching; existing API keys remain valid.
+
 ```text
 https://<project-ref>.supabase.co/functions/v1/sub2api/v1
 ```

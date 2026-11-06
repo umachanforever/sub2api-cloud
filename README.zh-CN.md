@@ -46,6 +46,8 @@ npm run up -- --cloud
 
 使用控制台显示的 Base URL：
 
+如需通过 Cloudflare 自定义域名转发到现有后端，参见 [Worker 代理配置](deploy/cloudflare/README.md)。代理透传流式响应、不缓存 API 内容，原有 API 密钥继续有效。
+
 ```text
 https://<project-ref>.supabase.co/functions/v1/sub2api/v1
 ```
